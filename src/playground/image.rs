@@ -14,7 +14,7 @@ use vulkano::sync::GpuFuture;
 use crate::playground::{init, init_cmd_buf};
 
 pub fn image() {
-    let (queue_family_index, device, queue, memory_allocator) = init(None);
+    let (queue_family_index, device, queue, memory_allocator, m) = init(None);
     let (cmd_buf_alloc, mut cmd_buf_builder) = init_cmd_buf(device.clone(), queue.clone());
 
     mod cs {

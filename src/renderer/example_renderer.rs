@@ -1,18 +1,22 @@
-use crate::renderer::texture::create_texture_image;
+use crate::renderer::texture::create_texture;
 use crate::renderer::{init_renderer, start_renderer};
 use std::sync::Arc;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::view::ImageView;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage};
-use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
+use vulkano::pipeline::graphics::input_assembly::{InputAssemblyState, PrimitiveTopology};
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexDefinition};
 use vulkano::pipeline::graphics::viewport;
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline};
 use vulkano::render_pass::{RenderPass, Subpass};
-use vulkano::sampler::{BorderColor, Sampler, SamplerCreateInfo, SamplerMipmapMode, SamplerReductionMode};
+use vulkano::sampler::{
+    BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
+    SamplerReductionMode,
+};
 use vulkano::shader::ShaderModule;
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
@@ -50,7 +54,7 @@ fn get_pipeline(
     GraphicsPipeline::start()
         .vertex_input_state(MyVertex::per_vertex()) // describes layout of vertex input
         .vertex_shader(vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-        .input_assembly_state(InputAssemblyState::new()) //Indicate type of primitives (default is list of triangles)
+        .input_assembly_state(InputAssemblyState::new().topology(PrimitiveTopology::TriangleStrip)) //Indicate type of primitives (default is list of triangles)
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
         .fragment_shader(fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
         .render_pass(Subpass::from(render_pass, 0).unwrap()) // This pipeline object concerns the first pass of the render pass
@@ -104,41 +108,27 @@ pub(crate) fn render() {
     )
     .unwrap();
 
-    let image = create_texture_image(
-        &setup_info.memory_allocator,
-        setup_info.queue.queue_family_index(),
-        &mut cmd_buf_builder,
-    );
+    let texture = create_texture(&setup_info.memory_allocator, &mut cmd_buf_builder);
 
-    let view = ImageView::new_default(image.clone()).unwrap();
-    
-    Sampler::new(
+    let sampler = Sampler::new(
         setup_info.device.clone(),
         SamplerCreateInfo {
-            mag_filter: Filter::Nearest,
-            min_filter: Filter::Nearest,
-            mipmap_mode: SamplerMipmapMode::Nearest,
-            address_mode: [],
-            mip_lod_bias: 0.0,
-            anisotropy: None,
-            compare: None,
-            lod: (),
-            border_color: BorderColor::FloatTransparentBlack,
-            unnormalized_coordinates: false,
-            reduction_mode: SamplerReductionMode::WeightedAverage,
-            sampler_ycbcr_conversion: None,
-            _ne: (),
-        }
+            mag_filter: Filter::Linear,
+            min_filter: Filter::Linear,
+            address_mode: [SamplerAddressMode::Repeat; 3],
+            ..Default::default()
+        },
     )
+    .unwrap();
 
-    let cmd_buf = cmd_buf_builder.build().unwrap();
+    // let cmd_buf = cmd_buf_builder.build().unwrap();
 
-    let future = sync::now(setup_info.device.clone())
-        .then_execute(setup_info.queue.clone(), cmd_buf)
-        .unwrap()
-        .then_signal_fence_and_flush()
-        .unwrap();
-    future.wait(None).unwrap();
+    // let future = sync::now(setup_info.device.clone())
+    //     .then_execute(setup_info.queue.clone(), cmd_buf)
+    //     .unwrap()
+    //     .then_signal_fence_and_flush()
+    //     .unwrap();
+    // future.wait(None).unwrap();
 
     start_renderer(
         setup_info,
@@ -148,5 +138,7 @@ pub(crate) fn render() {
         vs,
         fs,
         get_pipeline,
+        vec![WriteDescriptorSet::image_view_sampler(0, texture, sampler)],
+        cmd_buf_builder,
     );
 }

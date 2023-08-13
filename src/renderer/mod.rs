@@ -9,8 +9,12 @@ use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+    PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+};
+use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
+use vulkano::descriptor_set::{
+    DescriptorSetWithOffsets, DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet,
 };
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
@@ -23,7 +27,7 @@ use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
@@ -51,6 +55,8 @@ pub struct RenderSetupInfo {
     window: Arc<Window>,
     memory_allocator: StandardMemoryAllocator,
     queue: Arc<Queue>,
+    pub swapchain: Arc<Swapchain>,
+    pub images: Vec<Arc<SwapchainImage>>,
     pub cmd_buf_allocator: StandardCommandBufferAllocator,
 }
 
@@ -116,6 +122,12 @@ pub fn init_renderer() -> RenderSetupInfo {
     let (physical_device, queue_family_index) =
         select_physical_device(&instance, &surface, &device_extensions);
 
+    println!(
+        "Using device: {} (type: {:?})",
+        physical_device.properties().device_name,
+        physical_device.properties().device_type,
+    );
+
     let (device, mut queues) = Device::new(
         physical_device.clone(),
         DeviceCreateInfo {
@@ -141,11 +153,29 @@ pub fn init_renderer() -> RenderSetupInfo {
         .surface_formats(&surface, Default::default())
         .unwrap()[0]
         .0;
-    let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
+
+    // Create the swapchain
+    let (mut swapchain, images) = {
+        Swapchain::new(
+            device.clone(),
+            surface.clone(),
+            SwapchainCreateInfo {
+                min_image_count: caps.min_image_count,
+                image_format: Some(image_format),
+                image_extent: dimensions.into(),
+                image_usage: ImageUsage::COLOR_ATTACHMENT,
+                composite_alpha: composite_alpha,
+                ..Default::default()
+            },
+        )
+            .unwrap()
+    };
     let cmd_buf_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
         StandardCommandBufferAllocatorCreateInfo::default(),
     );
+
+    let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
 
     RenderSetupInfo {
         device,
@@ -157,8 +187,10 @@ pub fn init_renderer() -> RenderSetupInfo {
         composite_alpha,
         window,
         memory_allocator,
-        cmd_buf_allocator,
         queue,
+        swapchain,
+        images,
+        cmd_buf_allocator,
     }
 }
 
@@ -210,6 +242,7 @@ fn get_command_buffers(
     vertex_buffer: &Subbuffer<[u8]>,
     vertex_count: u32,
     cmd_buf_allocator: &StandardCommandBufferAllocator,
+    descriptor_sets: Arc<PersistentDescriptorSet>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -231,6 +264,12 @@ fn get_command_buffers(
                 )
                 .unwrap()
                 .bind_pipeline_graphics(pipeline.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    0,
+                    descriptor_sets.clone(),
+                )
                 .bind_vertex_buffers(0, vertex_buffer.clone())
                 .draw(vertex_count, 1, 0, 0)
                 .unwrap()
@@ -243,7 +282,7 @@ fn get_command_buffers(
 }
 
 pub fn start_renderer(
-    setup_info: RenderSetupInfo,
+    mut setup_info: RenderSetupInfo,
     mut viewport: Viewport,
     vertex_buffer: Subbuffer<[u8]>,
     vertex_count: u32,
@@ -256,26 +295,16 @@ pub fn start_renderer(
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Arc<GraphicsPipeline>,
+    write_descriptor_sets: Vec<WriteDescriptorSet>,
+    cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) {
-    // Create the swapchain
-    let (mut swapchain, images) = {
-        Swapchain::new(
-            setup_info.device.clone(),
-            setup_info.surface,
-            SwapchainCreateInfo {
-                min_image_count: setup_info.caps.min_image_count,
-                image_format: Some(setup_info.image_format),
-                image_extent: setup_info.dimensions.into(),
-                image_usage: ImageUsage::COLOR_ATTACHMENT,
-                composite_alpha: setup_info.composite_alpha,
-                ..Default::default()
-            },
-        )
-        .unwrap()
-    };
 
-    let render_pass = get_render_pass(setup_info.device.clone(), &swapchain);
-    let framebuffers = get_framebuffers(&images, &render_pass);
+
+    let render_pass = get_render_pass(setup_info.device.clone(), &setup_info.swapchain);
+    let descriptor_set_allocator = StandardDescriptorSetAllocator::new(setup_info.device.clone());
+
+    let framebuffers = get_framebuffers(&setup_info.images, &render_pass);
+
     let pipeline = get_pipeline(
         vs.clone(),
         fs.clone(),
@@ -283,6 +312,17 @@ pub fn start_renderer(
         viewport.clone(),
         render_pass.clone(),
     );
+    println!("Pipeline layout: {:?}", pipeline.layout());
+
+    let layout = pipeline.layout().set_layouts().get(0).unwrap();
+
+    let set = PersistentDescriptorSet::new(
+        &descriptor_set_allocator,
+        layout.clone(),
+        write_descriptor_sets,
+    )
+    .unwrap();
+
     let mut command_buffers = get_command_buffers(
         &setup_info.device.clone(),
         &setup_info.queue,
@@ -291,14 +331,24 @@ pub fn start_renderer(
         &vertex_buffer,
         vertex_count,
         &setup_info.cmd_buf_allocator,
+        set.clone(),
     );
 
     let mut window_resized = false;
     let mut recreate_swapchain = false;
 
-    let frames_in_flight = images.len();
+    let frames_in_flight = setup_info.images.len();
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
     let mut previous_fence_i = 0;
+
+    let mut prev_frame_end = Some(
+        cmd_buf_builder
+            .build()
+            .unwrap()
+            .execute(setup_info.queue.clone())
+            .unwrap()
+            .boxed(),
+    );
 
     // blocks main thread forever and calls closure whenever the event loop receives an event
     setup_info
@@ -319,17 +369,18 @@ pub fn start_renderer(
             Event::MainEventsCleared => {
                 if window_resized || recreate_swapchain {
                     recreate_swapchain = false;
+                    prev_frame_end.as_mut().unwrap().cleanup_finished();
                     let new_dimensions = setup_info.window.inner_size();
                     let (new_swapchain, new_images) =
-                        match swapchain.recreate(SwapchainCreateInfo {
+                        match setup_info.swapchain.recreate(SwapchainCreateInfo {
                             image_extent: new_dimensions.into(),
-                            ..swapchain.create_info()
+                            ..setup_info.swapchain.create_info()
                         }) {
                             Ok(r) => r,
                             Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
                             Err(e) => panic!("Failed to recreate swapchain: {e}"),
                         };
-                    swapchain = new_swapchain;
+                    setup_info.swapchain = new_swapchain;
                     let new_framebuffers = get_framebuffers(&new_images, &render_pass);
                     if window_resized {
                         window_resized = false;
@@ -349,12 +400,13 @@ pub fn start_renderer(
                             &vertex_buffer,
                             vertex_count,
                             &setup_info.cmd_buf_allocator,
+                            set.clone(),
                         );
                     }
                 }
 
                 let (image_i, suboptimal, acquire_future) =
-                    match swapchain::acquire_next_image(swapchain.clone(), None) {
+                    match swapchain::acquire_next_image(setup_info.swapchain.clone(), None) {
                         Ok(r) => r,
                         Err(AcquireError::OutOfDate) => {
                             recreate_swapchain = true;
@@ -390,7 +442,7 @@ pub fn start_renderer(
                     .unwrap()
                     .then_swapchain_present(
                         setup_info.queue.clone(),
-                        SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_i),
+                        SwapchainPresentInfo::swapchain_image_index(setup_info.swapchain.clone(), image_i),
                     )
                     .then_signal_fence_and_flush();
 

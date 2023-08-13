@@ -18,6 +18,7 @@ use vulkano::VulkanLibrary;
 // pub mod compute;
 // pub(crate) mod graphics;
 // pub mod image;
+mod image;
 pub(crate) mod window;
 
 fn init(

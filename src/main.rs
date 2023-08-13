@@ -9,4 +9,5 @@ fn main() {
     // playground::window::window_playground();
 
     renderer::example_renderer::render();
+    // renderer::example::render();
 }
