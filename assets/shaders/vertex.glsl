@@ -1,13 +1,18 @@
 #version 460
 
 layout(location = 0) in vec2 position;
-// declares that each vertex has an attribute named `position` and of type vec2 -> corresponds to our MyVertex struct
-layout(location = 1) in vec3 color;
+layout(location = 0) out vec2 tex_coords;
 
-layout(location = 0) out vec3 fragColor;
+layout(set = 0, binding = 1) buffer CameraUniform {
+    mat4 view_proj;
+    vec4 view_position;
+} camera;
+layout(set = 0, binding = 2) uniform ModelUniform {
+    mat4 model;
+} model;
 
 
-void main() { // called once for each vertex
-    gl_Position = vec4(position, 0.0, 1.0);
-    fragColor = color;
+void main() {
+    gl_Position = vec4(position, 0.0, 1.0) * camera.view_proj * model.model;
+    tex_coords = position + vec2(0.5);
 }

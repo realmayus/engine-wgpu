@@ -1,10 +1,6 @@
-mod camera;
-pub(crate) mod example_renderer;
-mod texture;
-
 use std::sync::Arc;
 
-use vulkano::buffer::{Buffer, Subbuffer};
+use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
@@ -14,7 +10,7 @@ use vulkano::command_buffer::{
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::{
-    DescriptorSetWithOffsets, DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet,
+    DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet,
 };
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
@@ -31,18 +27,24 @@ use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
-    AcquireError, CompositeAlpha, Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo,
-    SwapchainCreationError, SwapchainPresentInfo,
+    AcquireError, CompositeAlpha, PresentInfo, Surface, SurfaceCapabilities, Swapchain,
+    SwapchainCreateInfo, SwapchainCreationError, SwapchainPresentInfo,
 };
 use vulkano::sync::future::FenceSignalFuture;
 use vulkano::sync::{FlushError, GpuFuture};
 use vulkano::{swapchain, sync, VulkanLibrary};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::PhysicalSize;
-use winit::event::{Event, WindowEvent};
+use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
+
+use crate::renderer::camera::Camera;
+
+mod camera;
+pub(crate) mod example_renderer;
+mod texture;
 
 pub struct RenderSetupInfo {
     device: Arc<Device>,
@@ -147,6 +149,11 @@ pub fn init_renderer() -> RenderSetupInfo {
         .surface_capabilities(&surface, Default::default())
         .expect("failed to get surface capabilities");
 
+    println!(
+        "Max swapchain images: {:?}, min: {:?}",
+        caps.max_image_count, caps.min_image_count
+    );
+
     let dimensions = window.inner_size();
     let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
     let image_format = physical_device
@@ -168,7 +175,7 @@ pub fn init_renderer() -> RenderSetupInfo {
                 ..Default::default()
             },
         )
-            .unwrap()
+        .unwrap()
     };
     let cmd_buf_allocator = StandardCommandBufferAllocator::new(
         device.clone(),
@@ -297,9 +304,8 @@ pub fn start_renderer(
     ) -> Arc<GraphicsPipeline>,
     write_descriptor_sets: Vec<WriteDescriptorSet>,
     cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    mut camera: Camera,
 ) {
-
-
     let render_pass = get_render_pass(setup_info.device.clone(), &setup_info.swapchain);
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(setup_info.device.clone());
 
@@ -312,7 +318,6 @@ pub fn start_renderer(
         viewport.clone(),
         render_pass.clone(),
     );
-    println!("Pipeline layout: {:?}", pipeline.layout());
 
     let layout = pipeline.layout().set_layouts().get(0).unwrap();
 
@@ -337,18 +342,19 @@ pub fn start_renderer(
     let mut window_resized = false;
     let mut recreate_swapchain = false;
 
-    let frames_in_flight = setup_info.images.len();
-    let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
-    let mut previous_fence_i = 0;
+    let cmd_buf = cmd_buf_builder.build().unwrap();
 
-    let mut prev_frame_end = Some(
-        cmd_buf_builder
-            .build()
-            .unwrap()
-            .execute(setup_info.queue.clone())
-            .unwrap()
-            .boxed(),
-    );
+    let future = sync::now(setup_info.device.clone())
+        .then_execute(setup_info.queue.clone(), cmd_buf)
+        .unwrap()
+        .then_signal_fence_and_flush()
+        .unwrap();
+    future.wait(None).unwrap();
+
+    let mut is_left_pressed = false;
+    let mut is_right_pressed = false;
+    let mut is_up_pressed = false;
+    let mut is_down_pressed = false;
 
     // blocks main thread forever and calls closure whenever the event loop receives an event
     setup_info
@@ -366,11 +372,67 @@ pub fn start_renderer(
             } => {
                 window_resized = true;
             }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state,
+                                virtual_keycode: Some(keycode),
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => {
+                let is_pressed = state == ElementState::Pressed;
+                match keycode {
+                    VirtualKeyCode::W | VirtualKeyCode::Up => {
+                        is_up_pressed = is_pressed;
+                    }
+                    VirtualKeyCode::A | VirtualKeyCode::Left => {
+                        is_left_pressed = is_pressed;
+                    }
+                    VirtualKeyCode::S | VirtualKeyCode::Down => {
+                        is_down_pressed = is_pressed;
+                    }
+                    VirtualKeyCode::D | VirtualKeyCode::Right => {
+                        is_right_pressed = is_pressed;
+                    }
+                    _ => {}
+                }
+            }
             Event::MainEventsCleared => {
+                let forward = camera.target - camera.eye;
+                let forward_norm = forward.normalize();
+                let forward_mag = forward.length();
+
+                if is_up_pressed && forward_mag > 5.0 {
+                    camera.eye += forward_norm * 5.0;
+                }
+                if is_down_pressed {
+                    camera.eye -= forward_norm * 5.0;
+                }
+
+                let right = forward_norm.cross(camera.up);
+
+                let forward = camera.target - camera.eye;
+                let forward_mag = forward.length();
+
+                if is_right_pressed {
+                    camera.eye = camera.target - (forward - right * 5.0).normalize() * forward_mag;
+                }
+                if is_left_pressed {
+                    camera.eye = camera.target - (forward + right * 5.0).normalize() * forward_mag;
+                }
+            }
+            Event::RedrawEventsCleared => {
+                // TODO: Optimization: Implement Frames in Flight
                 if window_resized || recreate_swapchain {
                     recreate_swapchain = false;
-                    prev_frame_end.as_mut().unwrap().cleanup_finished();
+
                     let new_dimensions = setup_info.window.inner_size();
+
                     let (new_swapchain, new_images) =
                         match setup_info.swapchain.recreate(SwapchainCreateInfo {
                             image_extent: new_dimensions.into(),
@@ -378,12 +440,14 @@ pub fn start_renderer(
                         }) {
                             Ok(r) => r,
                             Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                            Err(e) => panic!("Failed to recreate swapchain: {e}"),
+                            Err(e) => panic!("failed to recreate swapchain: {e}"),
                         };
                     setup_info.swapchain = new_swapchain;
                     let new_framebuffers = get_framebuffers(&new_images, &render_pass);
+
                     if window_resized {
                         window_resized = false;
+
                         viewport.dimensions = new_dimensions.into();
                         let new_pipeline = get_pipeline(
                             vs.clone(),
@@ -393,7 +457,7 @@ pub fn start_renderer(
                             render_pass.clone(),
                         );
                         command_buffers = get_command_buffers(
-                            &setup_info.device,
+                            &setup_info.device.clone(),
                             &setup_info.queue,
                             &new_pipeline,
                             &new_framebuffers,
@@ -405,6 +469,8 @@ pub fn start_renderer(
                     }
                 }
 
+                // acquire_next_image gives us the image index on which we are allowed to draw and a future indicating when the GPU will gain access to that image
+                // suboptimal: the acquired image is still usable, but the swapchain should be recreated as the surface's properties no longer match the swapchain.
                 let (image_i, suboptimal, acquire_future) =
                     match swapchain::acquire_next_image(setup_info.swapchain.clone(), None) {
                         Ok(r) => r,
@@ -414,52 +480,38 @@ pub fn start_renderer(
                         }
                         Err(e) => panic!("Failed to acquire next image: {e}"),
                     };
-
                 if suboptimal {
                     recreate_swapchain = true;
                 }
 
-                if let Some(image_fence) = &fences[image_i as usize] {
-                    image_fence.wait(None).unwrap();
-                }
-
-                let previous_future = match fences[previous_fence_i as usize].clone() {
-                    // create a nowFuture
-                    None => {
-                        let mut now = sync::now(setup_info.device.clone());
-                        now.cleanup_finished();
-                        now.boxed()
-                    }
-                    Some(fence) => fence.boxed(),
-                };
-
-                let future = previous_future
-                    .join(acquire_future)
+                // Create future that is to be submitted to the GPU:
+                let execution = sync::now(setup_info.device.clone())
+                    .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                     .then_execute(
                         setup_info.queue.clone(),
                         command_buffers[image_i as usize].clone(),
-                    )
+                    ) // execute cmd buf which is selected based on image index
                     .unwrap()
                     .then_swapchain_present(
+                        // tell the swapchain that we finished drawing and the image is ready for display
                         setup_info.queue.clone(),
-                        SwapchainPresentInfo::swapchain_image_index(setup_info.swapchain.clone(), image_i),
+                        SwapchainPresentInfo::swapchain_image_index(
+                            setup_info.swapchain.clone(),
+                            image_i,
+                        ),
                     )
                     .then_signal_fence_and_flush();
 
-                fences[image_i as usize] = match future {
-                    Ok(value) => Some(Arc::new(value)),
+                match execution {
+                    Ok(future) => future.wait(None).unwrap(),
                     Err(FlushError::OutOfDate) => {
                         recreate_swapchain = true;
-                        None
                     }
                     Err(e) => {
                         println!("Failed to flush future: {e}");
-                        None
                     }
-                };
-
-                previous_fence_i = image_i;
+                }
             }
-            _ => (),
+            _ => {}
         });
 }

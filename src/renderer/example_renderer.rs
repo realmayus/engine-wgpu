@@ -1,6 +1,7 @@
 use crate::renderer::texture::create_texture;
 use crate::renderer::{init_renderer, start_renderer};
 use std::sync::Arc;
+use glam::{Mat4, Vec3};
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
@@ -20,6 +21,7 @@ use vulkano::sampler::{
 use vulkano::shader::ShaderModule;
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
+use crate::renderer::camera::Camera;
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
@@ -28,6 +30,12 @@ struct MyVertex {
     position: [f32; 2],
     #[format(R32G32B32_SFLOAT)]
     color: [f32; 3],
+}
+
+#[derive(BufferContents, Debug, Default)]
+#[repr(C)]
+pub struct ModelUniform {
+    model: [[f32; 4]; 4],
 }
 
 mod vs {
@@ -100,6 +108,21 @@ pub(crate) fn render() {
         vec![vertex1, vertex2, vertex3],
     )
     .expect("Couldn't create vertex buffer");
+    let view = Mat4::from_cols_array_2d(&[[1.0f32; 4]; 4]);
+    view.transform_vector3(Vec3::from((0.0f32, 0.0f32, -3.0f32)));
+    let model_uniform = ModelUniform {model: view.to_cols_array_2d()};
+    let model_buffer = Buffer::from_data(
+        &setup_info.memory_allocator,
+        BufferCreateInfo {
+            usage: BufferUsage::UNIFORM_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            usage: MemoryUsage::Upload,
+            ..Default::default()
+        },
+        model_uniform
+    ).unwrap();
 
     let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
         &setup_info.cmd_buf_allocator,
@@ -121,14 +144,12 @@ pub(crate) fn render() {
     )
     .unwrap();
 
-    // let cmd_buf = cmd_buf_builder.build().unwrap();
 
-    // let future = sync::now(setup_info.device.clone())
-    //     .then_execute(setup_info.queue.clone(), cmd_buf)
-    //     .unwrap()
-    //     .then_signal_fence_and_flush()
-    //     .unwrap();
-    // future.wait(None).unwrap();
+
+
+    let camera = Camera::new_default(viewport.dimensions[0], viewport.dimensions[1], &setup_info.memory_allocator);
+
+
 
     start_renderer(
         setup_info,
@@ -138,7 +159,8 @@ pub(crate) fn render() {
         vs,
         fs,
         get_pipeline,
-        vec![WriteDescriptorSet::image_view_sampler(0, texture, sampler)],
+        vec![WriteDescriptorSet::image_view_sampler(0, texture, sampler), WriteDescriptorSet::buffer(1, camera.buffer.clone()), WriteDescriptorSet::buffer(2, model_buffer.clone())],
         cmd_buf_builder,
+        camera,
     );
 }
