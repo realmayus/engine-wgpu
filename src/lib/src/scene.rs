@@ -73,10 +73,10 @@ impl Debug for Material {
 }
 
 pub struct Mesh {
-    vertices: Vec<Vec3>,
-    indices: Vec<u32>,
-    normals: Vec<Vec3>,
-    material: Rc<Material>,
+    pub vertices: Vec<Vec3>,
+    pub indices: Vec<u32>,
+    pub normals: Vec<Vec3>,
+    pub material: Rc<Material>,
 }
 impl Mesh {
     pub fn from(
@@ -108,7 +108,7 @@ impl Debug for Mesh {
 }
 
 pub struct Model {
-    meshes: Vec<Mesh>,
+    pub meshes: Vec<Mesh>,
     name: Option<Box<str>>,
     children: Vec<Model>,
 }
@@ -137,8 +137,8 @@ impl Debug for Model {
 }
 
 pub struct Scene {
-    models: Vec<Model>,
-    name: Option<Box<str>>,
+    pub models: Vec<Model>,
+    pub name: Option<Box<str>>,
 }
 
 impl Scene {

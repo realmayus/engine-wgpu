@@ -42,6 +42,11 @@ use winit::window::WindowBuilder;
 
 pub mod camera;
 
+pub struct VertexBuffer {
+    pub subbuffer: Subbuffer<u8>,
+    pub vertex_count: u32,
+}
+
 pub struct RenderSetupInfo {
     pub device: Arc<Device>,
     surface: Arc<Surface>,
@@ -245,12 +250,10 @@ fn get_framebuffers(
 
 fn get_command_buffers(
     // We now have one command buffer for each framebuffer
-    device: &Arc<Device>,
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
-    vertex_buffer: &Subbuffer<[u8]>,
-    vertex_count: u32,
+    vertex_buffers: &Vec<VertexBuffer>,
     cmd_buf_allocator: &StandardCommandBufferAllocator,
     descriptor_sets: Arc<PersistentDescriptorSet>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
@@ -279,12 +282,16 @@ fn get_command_buffers(
                     pipeline.layout().clone(),
                     0,
                     descriptor_sets.clone(),
-                )
-                .bind_vertex_buffers(0, vertex_buffer.clone())
-                .draw(vertex_count, 1, 0, 0)
-                .unwrap()
-                .end_render_pass()
-                .unwrap();
+                );
+
+            for vertex_buffer in vertex_buffers {
+                builder
+                    .bind_vertex_buffers(0, [vertex_buffer.subbuffer.clone()])
+                    .draw(vertex_buffer.vertex_count, 1, 0, 0)
+                    .unwrap();
+            }
+
+            builder.end_render_pass().unwrap();
 
             Arc::new(builder.build().unwrap())
         })
@@ -294,8 +301,7 @@ fn get_command_buffers(
 pub fn start_renderer(
     mut setup_info: RenderSetupInfo,
     mut viewport: Viewport,
-    vertex_buffer: Subbuffer<[u8]>,
-    vertex_count: u32,
+    vertex_buffers: Vec<VertexBuffer>,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     get_pipeline: fn(
@@ -342,12 +348,10 @@ pub fn start_renderer(
     .unwrap();
 
     let mut command_buffers = get_command_buffers(
-        &setup_info.device.clone(),
         &setup_info.queue,
         &pipeline,
         &framebuffers,
-        &vertex_buffer,
-        vertex_count,
+        &vertex_buffers,
         &setup_info.cmd_buf_allocator,
         set.clone(),
     );
@@ -480,12 +484,10 @@ pub fn start_renderer(
                             render_pass.clone(),
                         );
                         command_buffers = get_command_buffers(
-                            &setup_info.device.clone(),
                             &setup_info.queue,
                             &new_pipeline,
                             &new_framebuffers,
-                            &vertex_buffer,
-                            vertex_count,
+                            &vertex_buffers,
                             &setup_info.cmd_buf_allocator,
                             set.clone(),
                         );

@@ -1,10 +1,11 @@
 use glam::{Mat4, Vec3};
 use renderer::camera::Camera;
-use renderer::{init_renderer, start_renderer};
+use renderer::{init_renderer, start_renderer, VertexBuffer};
 use std::sync::Arc;
 use systems::io::gltf_loader::load_gltf;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
+use vulkano::command_buffer::ResourceInCommand::VertexBuffer;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::view::ImageView;
@@ -23,6 +24,7 @@ use vulkano::sampler::{
 use vulkano::shader::ShaderModule;
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
+use lib::scene::Scene;
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
@@ -123,12 +125,22 @@ pub fn render(gltf_paths: Vec<&str>) {
     )
     .unwrap();
 
-    for gltf_path in gltf_paths {
+    let scenes: Vec<Scene> = gltf_paths.iter().map(|gltf_path| {
         let (scenes, textures, materials) = load_gltf(
             gltf_path,
             &setup_info.memory_allocator,
             &mut cmd_buf_builder,
         );
+        scenes
+    }).flatten().collect();
+
+    let vertex_buffers: Vec<VertexBuffer> = vec![];
+    for scene in scenes {
+        for model in scene.models {
+            for mesh in model.meshes {
+                mesh.vertices
+            }
+        }
     }
 
     let sampler = Sampler::new(
@@ -151,8 +163,7 @@ pub fn render(gltf_paths: Vec<&str>) {
     start_renderer(
         setup_info,
         viewport,
-        vertex_buffer.into_bytes(),
-        8,
+        ,
         vs,
         fs,
         get_pipeline,
