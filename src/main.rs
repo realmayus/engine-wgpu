@@ -1,13 +1,10 @@
-mod playground;
+// mod renderer;
 mod renderer;
+mod util;
 
 fn main() {
-    // playground::buffer_copy::buffer_copy();
-    // playground::compute::compute();
-    // playground::image::image();
-    // playground::graphics::graphics();
-    // playground::window::window_playground();
+    // renderer::example_renderer::render();
+    let scenes = util::gltf::load_gltf("assets/models/DamagedHelmet.gltf");
 
-    renderer::example_renderer::render();
-    // renderer::example::render();
+    println!("Scenes: {:?}", scenes);
 }

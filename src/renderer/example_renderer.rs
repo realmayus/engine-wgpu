@@ -1,13 +1,15 @@
+use crate::renderer::camera::Camera;
 use crate::renderer::texture::create_texture;
 use crate::renderer::{init_renderer, start_renderer};
-use std::sync::Arc;
 use glam::{Mat4, Vec3};
+use std::sync::Arc;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::view::ImageView;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage};
+use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::{InputAssemblyState, PrimitiveTopology};
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexDefinition};
 use vulkano::pipeline::graphics::viewport;
@@ -21,13 +23,12 @@ use vulkano::sampler::{
 use vulkano::shader::ShaderModule;
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
-use crate::renderer::camera::Camera;
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
 struct MyVertex {
-    #[format(R32G32_SFLOAT)]
-    position: [f32; 2],
+    #[format(R32G32B32_SFLOAT)]
+    position: [f32; 3],
     #[format(R32G32B32_SFLOAT)]
     color: [f32; 3],
 }
@@ -62,9 +63,10 @@ fn get_pipeline(
     GraphicsPipeline::start()
         .vertex_input_state(MyVertex::per_vertex()) // describes layout of vertex input
         .vertex_shader(vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-        .input_assembly_state(InputAssemblyState::new().topology(PrimitiveTopology::TriangleStrip)) //Indicate type of primitives (default is list of triangles)
+        .input_assembly_state(InputAssemblyState::new().topology(PrimitiveTopology::TriangleList)) //Indicate type of primitives (default is list of triangles)
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
         .fragment_shader(fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
+        .depth_stencil_state(DepthStencilState::simple_depth_test())
         .render_pass(Subpass::from(render_pass, 0).unwrap()) // This pipeline object concerns the first pass of the render pass
         .build(device)
         .unwrap()
@@ -82,19 +84,6 @@ pub(crate) fn render() {
     let vs = vs::load(setup_info.device.clone()).expect("failed to create shader module");
     let fs = fs::load(setup_info.device.clone()).expect("failed to create shader module");
 
-    let vertex1 = MyVertex {
-        position: [-0.5, -0.5],
-        color: [1.0, 0.0, 0.0],
-    };
-    let vertex2 = MyVertex {
-        position: [0.0, 0.5],
-        color: [0.0, 1.0, 0.0],
-    };
-    let vertex3 = MyVertex {
-        position: [0.5, -0.25],
-        color: [0.0, 0.0, 1.0],
-    };
-
     let vertex_buffer = Buffer::from_iter(
         &setup_info.memory_allocator,
         BufferCreateInfo {
@@ -105,12 +94,14 @@ pub(crate) fn render() {
             usage: MemoryUsage::Upload,
             ..Default::default()
         },
-        vec![vertex1, vertex2, vertex3],
+        vec![],
     )
     .expect("Couldn't create vertex buffer");
     let view = Mat4::from_cols_array_2d(&[[1.0f32; 4]; 4]);
-    view.transform_vector3(Vec3::from((0.0f32, 0.0f32, -3.0f32)));
-    let model_uniform = ModelUniform {model: view.to_cols_array_2d()};
+    view.transform_vector3(Vec3::from((0.0f32, 0.0f32, 0.0f32)));
+    let model_uniform = ModelUniform {
+        model: view.to_cols_array_2d(),
+    };
     let model_buffer = Buffer::from_data(
         &setup_info.memory_allocator,
         BufferCreateInfo {
@@ -121,8 +112,9 @@ pub(crate) fn render() {
             usage: MemoryUsage::Upload,
             ..Default::default()
         },
-        model_uniform
-    ).unwrap();
+        model_uniform,
+    )
+    .unwrap();
 
     let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
         &setup_info.cmd_buf_allocator,
@@ -144,22 +136,25 @@ pub(crate) fn render() {
     )
     .unwrap();
 
-
-
-
-    let camera = Camera::new_default(viewport.dimensions[0], viewport.dimensions[1], &setup_info.memory_allocator);
-
-
+    let camera = Camera::new_default(
+        viewport.dimensions[0],
+        viewport.dimensions[1],
+        &setup_info.memory_allocator,
+    );
 
     start_renderer(
         setup_info,
         viewport,
         vertex_buffer.into_bytes(),
-        3,
+        8,
         vs,
         fs,
         get_pipeline,
-        vec![WriteDescriptorSet::image_view_sampler(0, texture, sampler), WriteDescriptorSet::buffer(1, camera.buffer.clone()), WriteDescriptorSet::buffer(2, model_buffer.clone())],
+        vec![
+            WriteDescriptorSet::image_view_sampler(0, texture, sampler),
+            WriteDescriptorSet::buffer(1, camera.buffer.clone()),
+            WriteDescriptorSet::buffer(2, model_buffer.clone()),
+        ],
         cmd_buf_builder,
         camera,
     );

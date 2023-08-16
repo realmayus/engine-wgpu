@@ -18,7 +18,7 @@ use vulkano::device::{
 };
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageUsage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
@@ -211,10 +211,16 @@ fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<Rende
                 format: swapchain.image_format(), // set the format the same as the swapchain
                 samples: 1,
             },
+            depth: {
+                load: Clear,
+                store: DontCare,
+                format: Format::D16_UNORM,
+                samples: 1,
+            }
         },
         pass: {
             color: [color],
-            depth_stencil: {},
+            depth_stencil: {depth},
         },
     )
     .unwrap()
@@ -223,6 +229,7 @@ fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<Rende
 fn get_framebuffers(
     images: &[Arc<SwapchainImage>],
     render_pass: &Arc<RenderPass>,
+    depth_buffer: Arc<ImageView<AttachmentImage>>,
 ) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
@@ -231,7 +238,7 @@ fn get_framebuffers(
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments: vec![view, depth_buffer.clone()],
                     ..Default::default()
                 },
             )
@@ -264,7 +271,7 @@ fn get_command_buffers(
             builder
                 .begin_render_pass(
                     RenderPassBeginInfo {
-                        clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
+                        clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                     },
                     SubpassContents::Inline,
@@ -309,7 +316,17 @@ pub fn start_renderer(
     let render_pass = get_render_pass(setup_info.device.clone(), &setup_info.swapchain);
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(setup_info.device.clone());
 
-    let framebuffers = get_framebuffers(&setup_info.images, &render_pass);
+    let depth_buffer = ImageView::new_default(
+        AttachmentImage::transient(
+            &setup_info.memory_allocator,
+            [viewport.dimensions[0] as u32, viewport.dimensions[1] as u32],
+            Format::D16_UNORM,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let framebuffers = get_framebuffers(&setup_info.images, &render_pass, depth_buffer);
 
     let pipeline = get_pipeline(
         vs.clone(),
@@ -443,7 +460,17 @@ pub fn start_renderer(
                             Err(e) => panic!("failed to recreate swapchain: {e}"),
                         };
                     setup_info.swapchain = new_swapchain;
-                    let new_framebuffers = get_framebuffers(&new_images, &render_pass);
+                    let depth_buffer = ImageView::new_default(
+                        AttachmentImage::transient(
+                            &setup_info.memory_allocator,
+                            new_dimensions.into(),
+                            Format::D16_UNORM,
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                    let new_framebuffers =
+                        get_framebuffers(&new_images, &render_pass, depth_buffer.clone());
 
                     if window_resized {
                         window_resized = false;
@@ -483,7 +510,8 @@ pub fn start_renderer(
                 if suboptimal {
                     recreate_swapchain = true;
                 }
-
+                acquire_future.wait(None).unwrap();
+                camera.update_view();
                 // Create future that is to be submitted to the GPU:
                 let execution = sync::now(setup_info.device.clone())
                     .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available

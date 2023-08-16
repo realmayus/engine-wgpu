@@ -3,7 +3,6 @@ use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Sub
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
-
 #[derive(BufferContents, Debug, Default, Copy, Clone)]
 #[repr(C)]
 pub struct CameraUniform {
@@ -32,8 +31,27 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new_default(width: f32, height: f32, memory_allocator: &StandardMemoryAllocator) -> Self {
-        let data = CameraUniform::new();
+    pub fn new_default(
+        width: f32,
+        height: f32,
+        memory_allocator: &StandardMemoryAllocator,
+    ) -> Self {
+        let eye = (0.3, 0.3, 1.0).into();
+        let target = (0.0, 0.0, 0.0).into();
+        let up = (0.0, -1.0, 0.0).into();
+        let aspect = width / height;
+        let fovy = std::f32::consts::FRAC_PI_2.to_radians();
+        let znear = 0.1;
+        let zfar = 100.0;
+
+        let mut data = CameraUniform::new();
+        let proj = Mat4::perspective_rh_gl(fovy, aspect, znear, zfar);
+        let view = Mat4::look_at_rh(eye, target, up);
+        println!("View proj: {:?}", proj * view);
+        data.view_proj = (proj * view).to_cols_array_2d();
+        // data.view_proj[1][1] *= -1.0;
+        data.view_position = (Vec4::from((eye, 1.0))).into();
+
         let camera_buffer = Buffer::from_data(
             memory_allocator,
             BufferCreateInfo {
@@ -46,26 +64,24 @@ impl Camera {
             },
             data,
         )
-            .expect("Couldn't create camera buffer");
+        .expect("Couldn't create camera buffer");
 
-        let mut camera = Camera {
-            eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: (0.0, 1.0, 0.0).into(),
-            aspect: width / height,
-            fovy: std::f32::consts::PI/2f32,
-            znear: 0.1,
-            zfar: 200.0,
+        Camera {
+            eye,
+            target,
+            up,
+            aspect,
+            fovy,
+            znear,
+            zfar,
             buffer: camera_buffer,
             buffer_data: data,
-        };
-        camera.update_view();
-        camera
+        }
     }
 
     pub(crate) fn build_projection(&self) -> Mat4 {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let proj = Mat4::perspective_rh(self.fovy, self.aspect, self.znear, self.zfar);
+        let proj = Mat4::perspective_rh_gl(self.fovy, self.aspect, self.znear, self.zfar);
         return proj * view;
     }
     fn update_aspect(&mut self, width: f32, height: f32) {
@@ -75,7 +91,8 @@ impl Camera {
     pub fn update_view(&self) {
         let new_proj = self.build_projection();
         let mut mapping = self.buffer.write().unwrap();
-        mapping.view_proj = new_proj.to_cols_array_2d();
+        mapping.view_proj = (new_proj).to_cols_array_2d();
+        // mapping.view_proj[1][1] *= -1.0;
         mapping.view_position = (Vec4::from((self.eye, 1.0))).into();
     }
 }
