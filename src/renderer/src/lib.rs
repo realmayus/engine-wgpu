@@ -1,6 +1,6 @@
-use image::error::UnsupportedErrorKind::Format;
 use std::sync::Arc;
 
+use crate::camera::Camera;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -28,10 +28,9 @@ use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
-    AcquireError, CompositeAlpha, PresentInfo, Surface, SurfaceCapabilities, Swapchain,
-    SwapchainCreateInfo, SwapchainCreationError, SwapchainPresentInfo,
+    AcquireError, CompositeAlpha, Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo,
+    SwapchainCreationError, SwapchainPresentInfo,
 };
-use vulkano::sync::future::FenceSignalFuture;
 use vulkano::sync::{FlushError, GpuFuture};
 use vulkano::{swapchain, sync, VulkanLibrary};
 use vulkano_win::VkSurfaceBuild;
@@ -41,10 +40,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
 
-use crate::renderer::camera::Camera;
-
 mod camera;
-pub(crate) mod example_renderer;
+pub mod example_renderer;
 pub mod scene;
 pub(crate) mod texture;
 

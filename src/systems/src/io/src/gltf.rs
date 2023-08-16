@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Index;
 use std::rc::Rc;
 
+use crate::gltf;
 use glam::{Vec2, Vec3};
 use gltf::buffer::Data;
 use gltf::Node;
@@ -10,7 +11,6 @@ use vulkano::memory::allocator::StandardMemoryAllocator;
 
 use crate::renderer::scene::{Material, Mesh, Model, Scene, Texture};
 use crate::renderer::texture::create_texture;
-use crate::util::map_gltf_format_to_vulkano;
 
 pub fn load_gltf(
     path: &str,

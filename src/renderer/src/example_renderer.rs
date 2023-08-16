@@ -1,9 +1,8 @@
-use crate::renderer::camera::Camera;
-use crate::renderer::texture::create_texture;
-use crate::renderer::{init_renderer, start_renderer};
-use crate::util::gltf::load_gltf;
+use crate::camera::Camera;
+use crate::{init_renderer, start_renderer};
 use glam::{Mat4, Vec3};
 use std::sync::Arc;
+use systems::io::gltf::load_gltf;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
@@ -73,7 +72,7 @@ fn get_pipeline(
         .unwrap()
 }
 
-pub(crate) fn render(gltf_paths: Vec<&str>) {
+pub fn render(gltf_paths: Vec<&str>) {
     let setup_info = init_renderer();
 
     let mut viewport = Viewport {

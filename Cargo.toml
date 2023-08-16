@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gltf = "1.2"
+renderer = { path = "src/renderer" }
+systems = { path = "src/systems" }
+lib = { path = "src/lib" }
 
 #[profile.dev]
 #opt-level = 1
@@ -14,3 +16,13 @@ gltf = "1.2"
 [[bin]]
 name = "engine-bin"
 path = "src/main.rs"
+
+[workspace]
+members = [
+    "src/renderer",
+    "src/systems",
+    "src/lib"
+]
+
+[workspace.dependencies]
+gltf = "1.2"

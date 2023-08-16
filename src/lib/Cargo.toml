@@ -1,15 +1,10 @@
 [package]
-name = "renderer"
+name = "lib"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkano = "0.33.0"
-vulkano-shaders = "0.33.0"
-vulkano-win = "0.33.0"
-winit = "0.28.3"
-image = "0.24"
 glam = "0.24.1"
-systems = { path = "../systems" }
+vulkano = "0.33.0"

@@ -1,7 +1,7 @@
 /target
 /src/renderer/target/
-/src/systems/io/target/
-/src/systems/particle/target/
-/src/systems/physics/target/*
-/src/systems/sound/target/
+/src/systems/src/io/target/
+/src/systems/src/particle/target/
+/src/systems/src/physics/target/*
+/src/systems/src/sound/target/
 .idea

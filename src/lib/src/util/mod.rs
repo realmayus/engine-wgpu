@@ -1,5 +1,5 @@
 use ::gltf as gltf_crate;
-pub(crate) mod gltf;
+
 mod shader_types;
 
 pub fn map_gltf_format_to_vulkano(format: gltf_crate::image::Format) -> vulkano::format::Format {
