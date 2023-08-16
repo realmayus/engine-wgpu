@@ -1,16 +1,14 @@
 [package]
-name = "engine"
+name = "renderer"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gltf = "1.2"
-
-#[profile.dev]
-#opt-level = 1
-
-[[bin]]
-name = "engine-bin"
-path = "src/main.rs"
+vulkano = "0.33.0"
+vulkano-shaders = "0.33.0"
+vulkano-win = "0.33.0"
+winit = "0.28.3"
+image = "0.24"
+glam = "0.24.1"

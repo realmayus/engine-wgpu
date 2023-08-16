@@ -1,6 +1,7 @@
 use crate::renderer::camera::Camera;
 use crate::renderer::texture::create_texture;
 use crate::renderer::{init_renderer, start_renderer};
+use crate::util::gltf::load_gltf;
 use glam::{Mat4, Vec3};
 use std::sync::Arc;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
@@ -72,7 +73,7 @@ fn get_pipeline(
         .unwrap()
 }
 
-pub(crate) fn render() {
+pub(crate) fn render(gltf_paths: Vec<&str>) {
     let setup_info = init_renderer();
 
     let mut viewport = Viewport {
@@ -123,7 +124,13 @@ pub(crate) fn render() {
     )
     .unwrap();
 
-    let texture = create_texture(&setup_info.memory_allocator, &mut cmd_buf_builder);
+    for gltf_path in gltf_paths {
+        let (scenes, textures, materials) = load_gltf(
+            gltf_path,
+            &setup_info.memory_allocator,
+            &mut cmd_buf_builder,
+        );
+    }
 
     let sampler = Sampler::new(
         setup_info.device.clone(),

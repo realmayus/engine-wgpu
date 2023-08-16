@@ -6,7 +6,7 @@ use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CopyBufferToImageInfo, PrimaryAutoCommandBuffer,
 };
 use vulkano::device::Device;
-use vulkano::format::Format;
+use vulkano::format;
 use vulkano::image::sys::Image;
 use vulkano::image::view::{ImageView, ImageViewCreateInfo};
 use vulkano::image::{
@@ -16,23 +16,23 @@ use vulkano::image::{
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 pub fn create_texture(
-    img: DynamicImage,
+    pixels: Vec<u8>,
+    format: format::Format,
+    width: u32,
+    height: u32,
     allocator: &StandardMemoryAllocator,
     mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<ImageView<ImmutableImage>> {
-    let width = img.width();
-    let height = img.height();
-
     let image = ImmutableImage::from_iter(
         allocator,
-        img.to_rgba8().into_raw(),
+        pixels,
         ImageDimensions::Dim2d {
             width,
             height,
             array_layers: 1, // images can be arrays of layers
         },
         MipmapsCount::One,
-        Format::R8G8B8A8_SRGB,
+        format::Format::R8G8B8A8_SRGB,
         &mut cmd_buf_builder,
     )
     .expect("Couldn't create image");

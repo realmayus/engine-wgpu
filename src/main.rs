@@ -1,10 +1,5 @@
-// mod renderer;
-mod renderer;
-mod util;
 
+use
 fn main() {
-    // renderer::example_renderer::render();
-    let scenes = util::gltf::load_gltf("assets/models/DamagedHelmet.gltf");
-
-    println!("Scenes: {:?}", scenes);
+    renderer::example_renderer::render(vec!["assets/models/DamagedHelmet.gltf"]);
 }
