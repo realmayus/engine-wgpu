@@ -40,22 +40,19 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
 
-mod camera;
-pub mod example_renderer;
-pub mod scene;
-pub(crate) mod texture;
+pub mod camera;
 
 pub struct RenderSetupInfo {
-    device: Arc<Device>,
+    pub device: Arc<Device>,
     surface: Arc<Surface>,
     caps: SurfaceCapabilities,
     image_format: Format,
     event_loop: EventLoop<()>,
     dimensions: PhysicalSize<u32>,
     composite_alpha: CompositeAlpha,
-    window: Arc<Window>,
-    memory_allocator: StandardMemoryAllocator,
-    queue: Arc<Queue>,
+    pub window: Arc<Window>,
+    pub memory_allocator: StandardMemoryAllocator,
+    pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
     pub images: Vec<Arc<SwapchainImage>>,
     pub cmd_buf_allocator: StandardCommandBufferAllocator,

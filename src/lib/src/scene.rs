@@ -58,15 +58,15 @@ impl Debug for Material {
         write!(
             f,
             "{{MATERIAL: name: {}, base_texture: {}, base_color: {:?}, metallic_roughness_texture: {}, metallic_roughness_factors: {:?}, normal_texture: {}, occlusion_texture: {}, occlusion_strength: {}, emissive_texture: {}, emissive_factors: {:?}}}",
-            self.name.unwrap_or_default(),
-            self.base_texture.map(|t| t.id as i32).unwrap_or(-1),  // there really shouldn't be any int overflow :p
+            self.name.clone().unwrap_or_default(),
+            self.base_texture.clone().map(|t| t.id as i32).unwrap_or(-1),  // there really shouldn't be any int overflow :p
             self.base_color,
-            self.metallic_roughness_texture.map(|t| t.id as i32).unwrap_or(-1),
+            self.metallic_roughness_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
             self.metallic_roughness_factors,
-            self.normal_texture.map(|t| t.id as i32).unwrap_or(-1),
-            self.occlusion_texture.map(|t| t.id as i32).unwrap_or(-1),
+            self.normal_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
+            self.occlusion_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
             self.occlusion_strength,
-            self.emissive_texture.map(|t| t.id as i32).unwrap_or(-1),
+            self.emissive_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
             self.emissive_factors,
         )
     }
@@ -102,7 +102,7 @@ impl Debug for Mesh {
             self.vertices.len(),
             self.normals.len(),
             self.indices.len(),
-            self.material.name.unwrap_or_default()
+            self.material.name.clone().unwrap_or_default()
         )
     }
 }

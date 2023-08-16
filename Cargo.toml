@@ -9,6 +9,9 @@ edition = "2021"
 renderer = { path = "src/renderer" }
 systems = { path = "src/systems" }
 lib = { path = "src/lib" }
+glam = "0.24.1"
+vulkano = "0.33.0"
+vulkano-shaders = "0.33.0"
 
 #[profile.dev]
 #opt-level = 1
@@ -23,6 +26,3 @@ members = [
     "src/systems",
     "src/lib"
 ]
-
-[workspace.dependencies]
-gltf = "1.2"

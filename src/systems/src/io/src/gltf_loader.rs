@@ -1,16 +1,16 @@
-use std::collections::HashMap;
-use std::ops::Index;
-use std::rc::Rc;
-
-use crate::gltf;
 use glam::{Vec2, Vec3};
 use gltf::buffer::Data;
 use gltf::Node;
+use lib::scene::{Material, Mesh, Model, Scene, Texture};
+use lib::util::map_gltf_format_to_vulkano;
+use lib::util::texture::create_texture;
+use std::collections::HashMap;
+use std::ops::Index;
+use std::rc::Rc;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
-use crate::renderer::scene::{Material, Mesh, Model, Scene, Texture};
-use crate::renderer::texture::create_texture;
+// TODO make independent of vulkano lib
 
 pub fn load_gltf(
     path: &str,
@@ -74,16 +74,30 @@ pub fn load_gltf(
                 normal_texture: gltfMat
                     .normal_texture()
                     .map(|t| t.texture().index())
-                    .map(|id| *textures.get(&id).expect("Couldn't find normal texture")),
+                    .map(|id| {
+                        textures
+                            .get(&id)
+                            .expect("Couldn't find normal texture")
+                            .clone()
+                    }),
                 occlusion_texture: gltfMat
                     .occlusion_texture()
                     .map(|t| t.texture().index())
-                    .map(|id| *textures.get(&id).expect("Couldn't find occlusion texture")),
+                    .map(|id| {
+                        textures
+                            .get(&id)
+                            .expect("Couldn't find occlusion texture")
+                            .clone()
+                    }),
                 occlusion_strength: 1.0, // TODO: Impl: try to read strength from glTF
-                emissive_texture: gltfMat
-                    .emissive_texture()
-                    .map(|t| t.texture().index())
-                    .map(|id| *textures.get(&id).expect("Couldn't find emissive texture")),
+                emissive_texture: gltfMat.emissive_texture().map(|t| t.texture().index()).map(
+                    |id| {
+                        textures
+                            .get(&id)
+                            .expect("Couldn't find emissive texture")
+                            .clone()
+                    },
+                ),
                 emissive_factors: gltfMat.emissive_factor().into(),
             };
             materials.insert(index, Rc::from(mat));

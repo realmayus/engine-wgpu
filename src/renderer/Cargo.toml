@@ -7,9 +7,7 @@ edition = "2021"
 
 [dependencies]
 vulkano = "0.33.0"
-vulkano-shaders = "0.33.0"
 vulkano-win = "0.33.0"
 winit = "0.28.3"
-image = "0.24"
 glam = "0.24.1"
 systems = { path = "../systems" }

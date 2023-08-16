@@ -1,8 +1,8 @@
-use crate::camera::Camera;
-use crate::{init_renderer, start_renderer};
 use glam::{Mat4, Vec3};
+use renderer::camera::Camera;
+use renderer::{init_renderer, start_renderer};
 use std::sync::Arc;
-use systems::io::gltf::load_gltf;
+use systems::io::gltf_loader::load_gltf;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};

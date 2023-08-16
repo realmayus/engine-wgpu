@@ -1,19 +1,12 @@
-use image::{DynamicImage, GenericImageView};
-use std::fmt::format;
 use std::sync::Arc;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CopyBufferToImageInfo, PrimaryAutoCommandBuffer,
-};
-use vulkano::device::Device;
+
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format;
-use vulkano::image::sys::Image;
-use vulkano::image::view::{ImageView, ImageViewCreateInfo};
-use vulkano::image::{
-    ImageCreateFlags, ImageDimensions, ImageSubresourceRange, ImageUsage, ImageViewType,
-    ImmutableImage, MipmapsCount, StorageImage,
-};
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::image::view::ImageView;
+use vulkano::image::{ImageDimensions, ImmutableImage, MipmapsCount};
+use vulkano::memory::allocator::StandardMemoryAllocator;
+
+use image::{DynamicImage, GenericImageView};
 
 pub fn create_texture(
     pixels: Vec<u8>,
