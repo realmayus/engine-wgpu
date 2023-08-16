@@ -13,6 +13,7 @@ winit = "0.28.3"
 image = "0.24"
 glam = "0.24.1"
 gltf = "1.2"
+base64 = "0.21.2"
 
 #[profile.dev]
 #opt-level = 1

@@ -1,4 +1,4 @@
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 use std::fmt::format;
 use std::sync::Arc;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
@@ -16,10 +16,10 @@ use vulkano::image::{
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 pub fn create_texture(
+    img: DynamicImage,
     allocator: &StandardMemoryAllocator,
     mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<ImageView<ImmutableImage>> {
-    let img = image::open("assets/textures/statue.jpg").expect("Couldn't load image");
     let width = img.width();
     let height = img.height();
 

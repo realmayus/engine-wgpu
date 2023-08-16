@@ -103,6 +103,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
+name = "base64"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "604178f6c5c21f02dc555784810edfb88d34ac2c73b2eae109655649ee73ce3d"
+
+[[package]]
 name = "bit_field"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -355,6 +361,7 @@ checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "base64 0.21.2",
  "glam",
  "gltf",
  "image",
@@ -480,7 +487,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4fe8d5192923fbd783c15e74627de8e27c97e1e3dec22bf54515a407249febf"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "byteorder",
  "gltf-json",
  "image",

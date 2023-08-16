@@ -1,29 +1,42 @@
 use glam::{Vec2, Vec3, Vec4};
 use std::fmt::{Debug, Formatter};
+use std::rc::Rc;
+use std::sync::Arc;
+use vulkano::image::view::ImageView;
+use vulkano::image::ImmutableImage;
 
 pub struct Texture {
     id: u32,
+    name: Option<Box<str>>,
+    view: Arc<ImageView<ImmutableImage>>,
 }
-impl Debug for Texture {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{TEXTURE: id: {}}}", self.id)
+
+impl Texture {
+    pub fn from(view: Arc<ImageView<ImmutableImage>>, name: Option<Box<str>>) -> Self {
+        Self { view, name, id: 0 }
     }
 }
 
-pub struct Material<'a> {
-    name: Option<Box<str>>,
-    base_texture: Option<&'a Texture>,
-    base_color: Vec4, // this scales the RGBA components of the base_texture if defined; otherwise defines the color
-    metallic_roughness_texture: Option<&'a Texture>,
-    metallic_roughness_factors: Vec2, // this scales the metallic & roughness components of the metallic_roughness_texture if defined; otherwise defines the reflection characteristics
-    normal_texture: Option<&'a Texture>,
-    occlusion_texture: Option<&'a Texture>,
-    occlusion_strength: f32,
-    emissive_texture: Option<&'a Texture>,
-    emissive_factors: Vec3,
+impl Debug for Texture {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{TEXTURE: name: {:?}, id: {}}}", self.name, self.id)
+    }
 }
 
-impl<'a> Default for Material<'a> {
+pub struct Material {
+    pub name: Option<Box<str>>,
+    pub base_texture: Option<Rc<Texture>>,
+    pub base_color: Vec4, // this scales the RGBA components of the base_texture if defined; otherwise defines the color
+    pub metallic_roughness_texture: Option<Rc<Texture>>,
+    pub metallic_roughness_factors: Vec2, // this scales the metallic & roughness components of the metallic_roughness_texture if defined; otherwise defines the reflection characteristics
+    pub normal_texture: Option<Rc<Texture>>,
+    pub occlusion_texture: Option<Rc<Texture>>,
+    pub occlusion_strength: f32,
+    pub emissive_texture: Option<Rc<Texture>>,
+    pub emissive_factors: Vec3,
+}
+
+impl Default for Material {
     fn default() -> Self {
         Self {
             name: Some(Box::from("Default material")),
@@ -40,7 +53,7 @@ impl<'a> Default for Material<'a> {
     }
 }
 
-impl<'a> Debug for Material<'a> {
+impl Debug for Material {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -59,24 +72,29 @@ impl<'a> Debug for Material<'a> {
     }
 }
 
-pub struct Mesh<'a> {
+pub struct Mesh {
     vertices: Vec<Vec3>,
     indices: Vec<u32>,
     normals: Vec<Vec3>,
-    material: &'a Material<'a>,
+    material: Rc<Material>,
 }
-impl<'a> Mesh<'a> {
-    pub fn from(vertices: Vec<Vec3>, indices: Vec<u32>, normals: Vec<Vec3>) -> Self {
+impl Mesh {
+    pub fn from(
+        vertices: Vec<Vec3>,
+        indices: Vec<u32>,
+        normals: Vec<Vec3>,
+        material: Option<Rc<Material>>,
+    ) -> Self {
         Self {
             vertices,
             indices,
             normals,
-            material: &Default::default(),
+            material: material.unwrap_or_default(),
         }
     }
 }
 
-impl<'a> Debug for Mesh<'a> {
+impl Debug for Mesh {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -89,12 +107,21 @@ impl<'a> Debug for Mesh<'a> {
     }
 }
 
-pub struct Model<'a> {
-    meshes: Vec<Mesh<'a>>,
+pub struct Model {
+    meshes: Vec<Mesh>,
     name: Option<Box<str>>,
-    children: Vec<Model<'a>>,
+    children: Vec<Model>,
 }
-impl<'a> Debug for Model<'a> {
+impl Model {
+    pub fn from(meshes: Vec<Mesh>, name: Option<Box<str>>, children: Vec<Model>) -> Self {
+        Self {
+            meshes,
+            name,
+            children,
+        }
+    }
+}
+impl Debug for Model {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -109,17 +136,18 @@ impl<'a> Debug for Model<'a> {
     }
 }
 
-pub struct Scene<'a> {
-    models: Vec<Model<'a>>,
+pub struct Scene {
+    models: Vec<Model>,
     name: Option<Box<str>>,
 }
 
-impl<'a> Scene<'a> {
+impl Scene {
     pub fn from(models: Vec<Model>, name: Option<Box<str>>) -> Self {
         Self { models, name }
     }
 }
-impl<'a> Debug for Scene<'a> {
+
+impl Debug for Scene {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

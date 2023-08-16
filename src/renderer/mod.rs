@@ -44,7 +44,8 @@ use crate::renderer::camera::Camera;
 
 mod camera;
 pub(crate) mod example_renderer;
-mod texture;
+pub mod scene;
+pub(crate) mod texture;
 
 pub struct RenderSetupInfo {
     device: Arc<Device>,
