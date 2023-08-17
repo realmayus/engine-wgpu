@@ -19,7 +19,7 @@ Vulkan game engine
 - [ ] reflections (both skybox and reflections require cubemaps)
 - [ ] Billboarding
 - [ ] Tessellation
-- [ ] egui
+- [x] egui [17.08.23]
 - [ ] text rendering
 - [ ] transparency
 - [ ] cascaded shadow mapping
