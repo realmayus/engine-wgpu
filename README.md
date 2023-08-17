@@ -3,6 +3,7 @@ Vulkan game engine
 
 ## Roadmap
 ### Renderer
+- [x] egui [17.08.23]
 - [ ] point lights
 - [ ] gamma correction
 - [ ] Instancing
@@ -19,7 +20,6 @@ Vulkan game engine
 - [ ] reflections (both skybox and reflections require cubemaps)
 - [ ] Billboarding
 - [ ] Tessellation
-- [x] egui [17.08.23]
 - [ ] text rendering
 - [ ] transparency
 - [ ] cascaded shadow mapping
