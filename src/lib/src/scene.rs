@@ -6,14 +6,14 @@ use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
 
 pub struct Texture {
-    id: u32,
-    name: Option<Box<str>>,
+    pub id: u32,
+    pub name: Option<Box<str>>,
     view: Arc<ImageView<ImmutableImage>>,
 }
 
 impl Texture {
-    pub fn from(view: Arc<ImageView<ImmutableImage>>, name: Option<Box<str>>) -> Self {
-        Self { view, name, id: 0 }
+    pub fn from(view: Arc<ImageView<ImmutableImage>>, name: Option<Box<str>>, id: u32) -> Self {
+        Self { view, name, id }
     }
 }
 
@@ -109,8 +109,8 @@ impl Debug for Mesh {
 
 pub struct Model {
     pub meshes: Vec<Mesh>,
-    name: Option<Box<str>>,
-    children: Vec<Model>,
+    pub name: Option<Box<str>>,
+    pub children: Vec<Model>,
 }
 impl Model {
     pub fn from(meshes: Vec<Mesh>, name: Option<Box<str>>, children: Vec<Model>) -> Self {

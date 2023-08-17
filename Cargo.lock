@@ -479,6 +479,7 @@ checksum = "b8ecd80612937e0267909d5351770fe150004e24dab93954f69ca62eecd3f77e"
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "egui_winit_vulkano",
  "glam",
  "image",
  "lib",

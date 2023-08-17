@@ -228,7 +228,11 @@ pub fn load_gltf(
             allocator,
             cmd_buf_builder,
         );
-        let texture = Texture::from(vk_texture, gltfTexture.name().map(Box::from));
+        let texture = Texture::from(
+            vk_texture,
+            gltfTexture.name().map(Box::from),
+            gltfTexture.index() as u32,
+        );
         textures.insert(gltfTexture.index(), Rc::from(texture));
     }
     for gltfMat in gltf.materials() {

@@ -1,14 +1,16 @@
+use egui_winit_vulkano::egui::{vec2, PaintCallback, Rgba, Sense, Ui};
+use egui_winit_vulkano::{egui, CallbackFn, Gui};
 use glam::{Mat4, Vec3};
 use image::DynamicImage;
-use lib::scene::{Material, Scene, Texture};
+use lib::scene::{Material, Model, Scene, Texture};
 use lib::util::texture::create_texture;
 use renderer::camera::Camera;
-use renderer::{init_renderer, start_renderer, VertexBuffer};
+use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, VertexBuffer};
 use std::rc::Rc;
 use std::sync::Arc;
 use systems::io::gltf_loader::load_gltf;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyImageInfo};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::format;
@@ -78,6 +80,99 @@ fn get_pipeline(
         .render_pass(Subpass::from(render_pass, 0).unwrap()) // This pipeline object concerns the first pass of the render pass
         .build(device)
         .unwrap()
+}
+
+fn draw_model_collapsing(ui: &mut Ui, model: &Model) {
+    ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
+        ui.label("Meshes:");
+        for mesh in model.meshes.as_slice() {
+            ui.collapsing("Mesh", |ui| {
+                ui.label(format!(
+                    "# of vert/norm/in: {}/{}/{}",
+                    mesh.vertices.len(),
+                    mesh.normals.len(),
+                    mesh.indices.len()
+                ));
+                ui.label(
+                    "Material: ".to_owned()
+                        + &*String::from(mesh.material.name.clone().unwrap_or_default()),
+                );
+                if ui.button("Go to material").clicked() {
+                    println!("TBA, {:?}", mesh.material);
+                }
+            });
+        }
+        ui.separator();
+        ui.label("Children:");
+        for child in model.children.as_slice() {
+            draw_model_collapsing(ui, child);
+        }
+    });
+}
+
+fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: Rc<GlobalState>) {
+    let ctx = gui.context();
+    egui::Window::new("Scene").show(&ctx, |ui| {
+        ui.label("Loaded models:");
+        for scene in &state.scenes {
+            ui.collapsing(String::from(scene.name.clone().unwrap_or_default()), |ui| {
+                ui.label(format!("# of models: {}", scene.models.len()));
+                for model in &scene.models {
+                    draw_model_collapsing(ui, model);
+                }
+            });
+        }
+    });
+
+    egui::Window::new("Camera").show(&ctx, |ui| {
+        ui.label(format!("Eye: {}", &render_state.camera.eye));
+        ui.label(format!("Target: {}", &render_state.camera.target));
+        ui.label(format!("Up: {}", &render_state.camera.up));
+        ui.add(egui::Slider::new(&mut render_state.camera.speed, 0.03..=0.3).text("Speed"));
+        ui.add(egui::Slider::new(&mut render_state.camera.fovy, 0.0..=180.0).text("Field of view"));
+        if ui.button("Reset").clicked() {
+            render_state.camera.reset();
+        }
+    });
+
+    egui::Window::new("Materials").show(&ctx, |ui| {
+        for mat in state.materials.as_slice() {
+            ui.collapsing(String::from(mat.name.clone().unwrap_or_default()), |ui| {
+                ui.label(format!("Base color factors: {}", mat.base_color));
+                ui.label(format!(
+                    "Metallic roughness factors: {}",
+                    mat.metallic_roughness_factors
+                ));
+                ui.label(format!("Emissive factors: {}", mat.emissive_factors));
+                ui.label(format!("Occlusion strength: {}", mat.occlusion_strength));
+                ui.separator();
+                ui.label(format!("Base color texture: {:?}", mat.base_texture));
+                ui.label(format!("Normal texture: {:?}", mat.normal_texture));
+                ui.label(format!(
+                    "Metallic roughness texture: {:?}",
+                    mat.metallic_roughness_texture
+                ));
+                ui.label(format!("Emissive texture: {:?}", mat.emissive_texture));
+                ui.label(format!("Occlusion texture: {:?}", mat.occlusion_texture));
+            });
+        }
+    });
+
+    egui::Window::new("Textures").show(&ctx, |ui| {
+        for tex in state.textures.as_slice() {
+            ui.label(format!("Id: {}", tex.id));
+            ui.label(format!(
+                "Name: {}",
+                String::from(tex.name.clone().unwrap_or_default())
+            ));
+        }
+    });
+}
+
+struct GlobalState {
+    scenes: Vec<Scene>,
+    materials: Vec<Rc<Material>>,
+    textures: Vec<Rc<Texture>>,
 }
 
 pub fn render(gltf_paths: Vec<&str>) {
@@ -152,11 +247,11 @@ pub fn render(gltf_paths: Vec<&str>) {
     let mut normal_buffers: Vec<VertexBuffer> = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
 
-    for scene in scenes {
+    for scene in scenes.as_slice() {
         println!("{:?}", scene);
-        for model in scene.models {
+        for model in scene.models.as_slice() {
             println!("{:?}", model);
-            for mesh in model.meshes {
+            for mesh in model.meshes.as_slice() {
                 println!("{:?}", mesh);
                 let vert_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
                     &setup_info.memory_allocator,
@@ -204,7 +299,7 @@ pub fn render(gltf_paths: Vec<&str>) {
                         usage: MemoryUsage::Upload,
                         ..Default::default()
                     },
-                    mesh.indices,
+                    mesh.indices.clone(),
                 )
                 .expect("Couldn't allocate index buffer");
                 index_buffers.push(index_buf);
@@ -242,22 +337,31 @@ pub fn render(gltf_paths: Vec<&str>) {
         &setup_info.memory_allocator,
         &mut cmd_buf_builder,
     );
-
+    let mut global_state = Rc::new(GlobalState {
+        scenes,
+        materials,
+        textures,
+    });
     start_renderer(
-        setup_info,
-        viewport,
-        vertex_buffers,
-        normal_buffers,
-        index_buffers,
-        vs,
-        fs,
-        get_pipeline,
-        vec![
-            // WriteDescriptorSet::image_view_sampler(3, tex, sampler),
-            WriteDescriptorSet::buffer(1, camera.buffer.clone()),
-            WriteDescriptorSet::buffer(2, model_buffer.clone()),
-        ],
-        cmd_buf_builder,
-        camera,
+        RenderState {
+            init_state: setup_info,
+            viewport,
+            vertex_buffers,
+            normal_buffers,
+            index_buffers,
+            vs,
+            fs,
+            get_pipeline,
+            write_descriptor_sets: vec![
+                // WriteDescriptorSet::image_view_sampler(3, tex, sampler),
+                WriteDescriptorSet::buffer(1, camera.buffer.clone()),
+                WriteDescriptorSet::buffer(2, model_buffer.clone()),
+            ],
+            cmd_buf_builder,
+            camera,
+        },
+        move |gui, partial_render_state| {
+            render_gui(gui, partial_render_state, global_state.clone())
+        },
     );
 }

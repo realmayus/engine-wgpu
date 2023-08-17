@@ -20,13 +20,14 @@ impl CameraUniform {
 
 pub struct Camera {
     pub eye: Vec3,
-    pub(crate) target: Vec3,
-    pub(crate) up: Vec3,
+    pub target: Vec3,
+    pub up: Vec3,
     aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
+    pub fovy: f32,
+    pub znear: f32,
+    pub zfar: f32,
     pub buffer: Subbuffer<CameraUniform>,
+    pub speed: f32,
     pub(crate) buffer_data: CameraUniform,
 }
 
@@ -40,7 +41,7 @@ impl Camera {
         let target = (0.0, 0.0, 0.0).into();
         let up = (0.0, -1.0, 0.0).into();
         let aspect = width / height;
-        let fovy = std::f32::consts::FRAC_PI_2.to_radians();
+        let fovy = std::f32::consts::FRAC_PI_2;
         let znear = 0.1;
         let zfar = 100.0;
 
@@ -76,12 +77,24 @@ impl Camera {
             zfar,
             buffer: camera_buffer,
             buffer_data: data,
+            speed: 0.5,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.eye = (0.3, 0.3, 1.0).into();
+        self.target = (0.0, 0.0, 0.0).into();
+        self.up = (0.0, -1.0, 0.0).into();
+        self.fovy = std::f32::consts::FRAC_PI_2.to_radians();
+        self.znear = 0.1;
+        self.zfar = 100.0;
+        self.speed = 0.5;
     }
 
     pub(crate) fn build_projection(&self) -> Mat4 {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let proj = Mat4::perspective_rh_gl(self.fovy, self.aspect, self.znear, self.zfar);
+        let proj =
+            Mat4::perspective_rh_gl(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
         return proj * view * scale;
     }
@@ -94,5 +107,36 @@ impl Camera {
         mapping.view_proj = (new_proj).to_cols_array_2d();
         // mapping.view_proj[1][1] *= -1.0;
         mapping.view_position = (Vec4::from((self.eye, 1.0))).into();
+    }
+
+    pub fn recv_input(
+        &mut self,
+        is_up_pressed: bool,
+        is_down_pressed: bool,
+        is_right_pressed: bool,
+        is_left_pressed: bool,
+    ) {
+        let forward = self.target - self.eye;
+        let forward_norm = forward.normalize();
+        let forward_mag = forward.length();
+
+        if is_up_pressed && forward_mag > self.speed {
+            self.eye += forward_norm * self.speed;
+        }
+        if is_down_pressed {
+            self.eye -= forward_norm * self.speed;
+        }
+
+        let right = forward_norm.cross(self.up);
+
+        let forward = self.target - self.eye;
+        let forward_mag = forward.length();
+
+        if is_right_pressed {
+            self.eye = self.target - (forward - right * self.speed).normalize() * forward_mag;
+        }
+        if is_left_pressed {
+            self.eye = self.target - (forward + right * self.speed).normalize() * forward_mag;
+        }
     }
 }

@@ -1,6 +1,7 @@
 use egui_winit_vulkano::egui;
 use egui_winit_vulkano::egui::{ScrollArea, TextEdit, TextStyle};
 use egui_winit_vulkano::{Gui, GuiConfig};
+use std::fmt::Display;
 use std::sync::Arc;
 
 use crate::camera::Camera;
@@ -50,7 +51,7 @@ pub struct VertexBuffer {
     pub vertex_count: u32,
 }
 
-pub struct RenderSetupInfo {
+pub struct RenderInitState {
     pub device: Arc<Device>,
     surface: Arc<Surface>,
     caps: SurfaceCapabilities,
@@ -95,7 +96,7 @@ pub fn select_physical_device(
         .expect("no device available")
 }
 
-pub fn init_renderer() -> RenderSetupInfo {
+pub fn init_renderer() -> RenderInitState {
     let library = VulkanLibrary::new().expect("No local Vulkan library");
     let required_extensions = vulkano_win::required_extensions(&library);
     let instance = Instance::new(
@@ -188,7 +189,7 @@ pub fn init_renderer() -> RenderSetupInfo {
 
     let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
 
-    RenderSetupInfo {
+    RenderInitState {
         device,
         surface,
         caps,
@@ -320,35 +321,48 @@ fn get_command_buffers(
         .collect()
 }
 
-pub fn start_renderer(
-    mut setup_info: RenderSetupInfo,
-    mut viewport: Viewport,
-    vertex_buffers: Vec<VertexBuffer>,
-    normal_buffers: Vec<VertexBuffer>,
-    index_buffers: Vec<Subbuffer<[u32]>>,
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
-    get_pipeline: fn(
+pub struct RenderState {
+    pub init_state: RenderInitState,
+    pub viewport: Viewport,
+    pub vertex_buffers: Vec<VertexBuffer>,
+    pub normal_buffers: Vec<VertexBuffer>,
+    pub index_buffers: Vec<Subbuffer<[u32]>>,
+    pub vs: Arc<ShaderModule>,
+    pub fs: Arc<ShaderModule>,
+    pub get_pipeline: fn(
         vs: Arc<ShaderModule>,
         fs: Arc<ShaderModule>,
         device: Arc<Device>,
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Arc<GraphicsPipeline>,
-    write_descriptor_sets: Vec<WriteDescriptorSet>,
-    cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    mut camera: Camera,
+    pub write_descriptor_sets: Vec<WriteDescriptorSet>,
+    pub cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    pub camera: Camera,
+}
+
+pub struct PartialRenderState<'a> {
+    pub camera: &'a mut Camera,
+}
+
+pub fn start_renderer(
+    mut state: RenderState,
+    gui_callback: impl Fn(&mut Gui, PartialRenderState) + 'static,
 ) {
-    let render_pass = get_render_pass(setup_info.device.clone(), &setup_info.swapchain);
-    let descriptor_set_allocator = StandardDescriptorSetAllocator::new(setup_info.device.clone());
+    let render_pass = get_render_pass(state.init_state.device.clone(), &state.init_state.swapchain);
+    let descriptor_set_allocator =
+        StandardDescriptorSetAllocator::new(state.init_state.device.clone());
     println!(
         "Viewport dimensions: x={} y={}",
-        viewport.dimensions[0] as u32, viewport.dimensions[1] as u32
+        state.viewport.dimensions[0] as u32, state.viewport.dimensions[1] as u32
     );
     let depth_buffer = ImageView::new_default(
         AttachmentImage::transient(
-            &setup_info.memory_allocator,
-            [viewport.dimensions[0] as u32, viewport.dimensions[1] as u32],
+            &state.init_state.memory_allocator,
+            [
+                state.viewport.dimensions[0] as u32,
+                state.viewport.dimensions[1] as u32,
+            ],
             Format::D16_UNORM,
         )
         .unwrap(),
@@ -356,13 +370,13 @@ pub fn start_renderer(
     .unwrap();
 
     let (framebuffers, mut image_views) =
-        get_framebuffers(&setup_info.images, &render_pass, depth_buffer);
+        get_framebuffers(&state.init_state.images, &render_pass, depth_buffer);
 
-    let pipeline = get_pipeline(
-        vs.clone(),
-        fs.clone(),
-        setup_info.device.clone(),
-        viewport.clone(),
+    let pipeline = (state.get_pipeline)(
+        state.vs.clone(),
+        state.fs.clone(),
+        state.init_state.device.clone(),
+        state.viewport.clone(),
         render_pass.clone(),
     );
 
@@ -371,37 +385,37 @@ pub fn start_renderer(
     let set = PersistentDescriptorSet::new(
         &descriptor_set_allocator,
         layout.clone(),
-        write_descriptor_sets,
+        state.write_descriptor_sets,
     )
     .unwrap();
 
     let mut command_buffers = get_command_buffers(
-        &setup_info.queue,
+        &state.init_state.queue,
         &pipeline,
         &framebuffers,
-        &vertex_buffers,
-        &normal_buffers,
-        &index_buffers,
-        &setup_info.cmd_buf_allocator,
+        &state.vertex_buffers,
+        &state.normal_buffers,
+        &state.index_buffers,
+        &state.init_state.cmd_buf_allocator,
         set.clone(),
     );
 
     let mut window_resized = false;
     let mut recreate_swapchain = false;
 
-    let cmd_buf = cmd_buf_builder.build().unwrap();
+    let cmd_buf = state.cmd_buf_builder.build().unwrap();
 
-    let future = sync::now(setup_info.device.clone())
-        .then_execute(setup_info.queue.clone(), cmd_buf)
+    let future = sync::now(state.init_state.device.clone())
+        .then_execute(state.init_state.queue.clone(), cmd_buf)
         .unwrap()
         .then_signal_fence_and_flush()
         .unwrap();
     future.wait(None).unwrap();
 
     let mut gui = Gui::new(
-        &setup_info.event_loop,
-        setup_info.surface,
-        setup_info.queue.clone(),
+        &state.init_state.event_loop,
+        state.init_state.surface,
+        state.init_state.queue.clone(),
         GuiConfig {
             is_overlay: true,
             ..Default::default()
@@ -413,242 +427,206 @@ pub fn start_renderer(
     let mut is_up_pressed = false;
     let mut is_down_pressed = false;
     let mut gui_catch = false;
-    let camera_speed = 0.05;
+    let event_loop = state.init_state.event_loop;
     // blocks main thread forever and calls closure whenever the event loop receives an event
-    setup_info
-        .event_loop
-        .run(move |event, _, control_flow| match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                *control_flow = ControlFlow::Exit;
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            } => {
-                window_resized = true;
-            }
-            Event::WindowEvent {
-                event:
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state,
-                                virtual_keycode: Some(keycode),
-                                ..
-                            },
-                        ..
-                    },
-                ..
-            } if !gui_catch && keycode != VirtualKeyCode::Escape => {
-                let is_pressed = state == ElementState::Pressed;
-                match keycode {
-                    VirtualKeyCode::W | VirtualKeyCode::Up => {
-                        is_up_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::A | VirtualKeyCode::Left => {
-                        is_left_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::S | VirtualKeyCode::Down => {
-                        is_down_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::D | VirtualKeyCode::Right => {
-                        is_right_pressed = is_pressed;
-                    }
-                    _ => {}
+
+    event_loop.run(move |event, _, control_flow| match event {
+        Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } => {
+            *control_flow = ControlFlow::Exit;
+        }
+        Event::WindowEvent {
+            event: WindowEvent::Resized(_),
+            ..
+        } => {
+            window_resized = true;
+        }
+        Event::WindowEvent {
+            event:
+                WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state,
+                            virtual_keycode: Some(keycode),
+                            ..
+                        },
+                    ..
+                },
+            ..
+        } if !gui_catch && keycode != VirtualKeyCode::Escape => {
+            let is_pressed = state == ElementState::Pressed;
+            match keycode {
+                VirtualKeyCode::W | VirtualKeyCode::Up => {
+                    is_up_pressed = is_pressed;
                 }
+                VirtualKeyCode::A | VirtualKeyCode::Left => {
+                    is_left_pressed = is_pressed;
+                }
+                VirtualKeyCode::S | VirtualKeyCode::Down => {
+                    is_down_pressed = is_pressed;
+                }
+                VirtualKeyCode::D | VirtualKeyCode::Right => {
+                    is_right_pressed = is_pressed;
+                }
+                _ => {}
             }
-            Event::WindowEvent {
-                event:
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state,
-                                virtual_keycode: Some(keycode),
-                                ..
-                            },
-                        ..
-                    },
-                ..
-            } if keycode == VirtualKeyCode::Escape => {
-                if state == ElementState::Released {
-                    gui_catch = !gui_catch;
-                    if gui_catch {
-                        setup_info.window.set_title("Engine Playground");
-                    } else {
-                        setup_info
-                            .window
-                            .set_title("Engine Playground - Press ESC to release controls");
-                    }
-                    println!(
-                        "Gui catch is now: {}",
-                        if gui_catch { "enabled" } else { "disabled" }
-                    );
+        }
+        Event::WindowEvent {
+            event:
+                WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: key_state,
+                            virtual_keycode: Some(keycode),
+                            ..
+                        },
+                    ..
+                },
+            ..
+        } if keycode == VirtualKeyCode::Escape => {
+            if key_state == ElementState::Released {
+                gui_catch = !gui_catch;
+                if gui_catch {
+                    state.init_state.window.set_title("Engine Playground");
+                } else {
+                    state
+                        .init_state
+                        .window
+                        .set_title("Engine Playground - Press ESC to release controls");
                 }
+                println!(
+                    "Gui catch is now: {}",
+                    if gui_catch { "enabled" } else { "disabled" }
+                );
             }
-            Event::WindowEvent { event, .. } => {
-                gui.update(&event);
-            }
-            Event::MainEventsCleared => {
-                let forward = camera.target - camera.eye;
-                let forward_norm = forward.normalize();
-                let forward_mag = forward.length();
+        }
+        Event::WindowEvent { event, .. } => {
+            gui.update(&event);
+        }
+        Event::MainEventsCleared => {
+            state.camera.recv_input(
+                is_up_pressed,
+                is_down_pressed,
+                is_left_pressed,
+                is_right_pressed,
+            );
+        }
+        Event::RedrawEventsCleared => {
+            // TODO: Optimization: Implement Frames in Flight
+            if window_resized || recreate_swapchain {
+                recreate_swapchain = false;
 
-                if is_up_pressed && forward_mag > camera_speed {
-                    camera.eye += forward_norm * camera_speed;
-                }
-                if is_down_pressed {
-                    camera.eye -= forward_norm * camera_speed;
-                }
+                let new_dimensions = state.init_state.window.inner_size();
 
-                let right = forward_norm.cross(camera.up);
-
-                let forward = camera.target - camera.eye;
-                let forward_mag = forward.length();
-
-                if is_right_pressed {
-                    camera.eye =
-                        camera.target - (forward - right * camera_speed).normalize() * forward_mag;
-                }
-                if is_left_pressed {
-                    camera.eye =
-                        camera.target - (forward + right * camera_speed).normalize() * forward_mag;
-                }
-            }
-            Event::RedrawRequested(..) => {
-                println!("Constructing GUI...");
-                gui.immediate_ui(|gui| {
-                    let ctx = gui.context();
-                    egui::CentralPanel::default().show(&ctx, |ui| {
-                        ui.vertical_centered(|ui| {
-                            ui.add(egui::widgets::Label::new("Hi there!"));
-                            ui.label(egui::RichText::new("Hello world").size(32.0));
-                        });
-                        ui.separator();
-                        ui.columns(2, |columns| {
-                            ScrollArea::vertical().id_source("source").show(
-                                &mut columns[0],
-                                |ui| {
-                                    ui.add(
-                                        TextEdit::multiline(&mut "code").font(TextStyle::Monospace),
-                                    );
-                                },
-                            );
-                            ScrollArea::vertical().id_source("source").show(
-                                &mut columns[1],
-                                |ui| {
-                                    ui.add(
-                                        TextEdit::multiline(&mut "code").font(TextStyle::Monospace),
-                                    );
-                                },
-                            );
-                        });
-                    });
-                });
-            }
-            Event::RedrawEventsCleared => {
-                // TODO: Optimization: Implement Frames in Flight
-                if window_resized || recreate_swapchain {
-                    recreate_swapchain = false;
-
-                    let new_dimensions = setup_info.window.inner_size();
-
-                    let (new_swapchain, new_images) =
-                        match setup_info.swapchain.recreate(SwapchainCreateInfo {
-                            image_extent: new_dimensions.into(),
-                            ..setup_info.swapchain.create_info()
-                        }) {
-                            Ok(r) => r,
-                            Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                            Err(e) => panic!("failed to recreate swapchain: {e}"),
-                        };
-                    setup_info.swapchain = new_swapchain;
-                    let depth_buffer = ImageView::new_default(
-                        AttachmentImage::transient(
-                            &setup_info.memory_allocator,
-                            new_dimensions.into(),
-                            Format::D16_UNORM,
-                        )
-                        .unwrap(),
-                    )
-                    .unwrap();
-                    let (new_framebuffers, new_image_views) =
-                        get_framebuffers(&new_images, &render_pass, depth_buffer.clone());
-                    image_views = new_image_views;
-                    if window_resized {
-                        window_resized = false;
-
-                        viewport.dimensions = new_dimensions.into();
-                        let new_pipeline = get_pipeline(
-                            vs.clone(),
-                            fs.clone(),
-                            setup_info.device.clone(),
-                            viewport.clone(),
-                            render_pass.clone(),
-                        );
-                        command_buffers = get_command_buffers(
-                            &setup_info.queue,
-                            &new_pipeline,
-                            &new_framebuffers,
-                            &vertex_buffers,
-                            &normal_buffers,
-                            &index_buffers,
-                            &setup_info.cmd_buf_allocator,
-                            set.clone(),
-                        );
-                        camera.update_aspect(viewport.dimensions[0], viewport.dimensions[1]);
-                    }
-                }
-
-                // acquire_next_image gives us the image index on which we are allowed to draw and a future indicating when the GPU will gain access to that image
-                // suboptimal: the acquired image is still usable, but the swapchain should be recreated as the surface's properties no longer match the swapchain.
-                let (image_i, suboptimal, acquire_future) =
-                    match swapchain::acquire_next_image(setup_info.swapchain.clone(), None) {
+                let (new_swapchain, new_images) =
+                    match state.init_state.swapchain.recreate(SwapchainCreateInfo {
+                        image_extent: new_dimensions.into(),
+                        ..state.init_state.swapchain.create_info()
+                    }) {
                         Ok(r) => r,
-                        Err(AcquireError::OutOfDate) => {
-                            recreate_swapchain = true;
-                            return;
-                        }
-                        Err(e) => panic!("Failed to acquire next image: {e}"),
+                        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
+                        Err(e) => panic!("failed to recreate swapchain: {e}"),
                     };
-                if suboptimal {
+                state.init_state.swapchain = new_swapchain;
+                let depth_buffer = ImageView::new_default(
+                    AttachmentImage::transient(
+                        &state.init_state.memory_allocator,
+                        new_dimensions.into(),
+                        Format::D16_UNORM,
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                let (new_framebuffers, new_image_views) =
+                    get_framebuffers(&new_images, &render_pass, depth_buffer.clone());
+                image_views = new_image_views;
+                if window_resized {
+                    window_resized = false;
+
+                    state.viewport.dimensions = new_dimensions.into();
+                    let new_pipeline = (state.get_pipeline)(
+                        state.vs.clone(),
+                        state.fs.clone(),
+                        state.init_state.device.clone(),
+                        state.viewport.clone(),
+                        render_pass.clone(),
+                    );
+                    command_buffers = get_command_buffers(
+                        &state.init_state.queue,
+                        &new_pipeline,
+                        &new_framebuffers,
+                        &state.vertex_buffers,
+                        &state.normal_buffers,
+                        &state.index_buffers,
+                        &state.init_state.cmd_buf_allocator,
+                        set.clone(),
+                    );
+                    state
+                        .camera
+                        .update_aspect(state.viewport.dimensions[0], state.viewport.dimensions[1]);
+                }
+            }
+
+            gui.immediate_ui(|gui| {
+                gui_callback(
+                    gui,
+                    PartialRenderState {
+                        camera: &mut state.camera,
+                    },
+                )
+            });
+
+            // acquire_next_image gives us the image index on which we are allowed to draw and a future indicating when the GPU will gain access to that image
+            // suboptimal: the acquired image is still usable, but the swapchain should be recreated as the surface's properties no longer match the swapchain.
+            let (image_i, suboptimal, acquire_future) =
+                match swapchain::acquire_next_image(state.init_state.swapchain.clone(), None) {
+                    Ok(r) => r,
+                    Err(AcquireError::OutOfDate) => {
+                        recreate_swapchain = true;
+                        return;
+                    }
+                    Err(e) => panic!("Failed to acquire next image: {e}"),
+                };
+            if suboptimal {
+                recreate_swapchain = true;
+            }
+            acquire_future.wait(None).unwrap();
+            state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
+
+            let main_drawings = sync::now(state.init_state.device.clone())
+                .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
+                .then_execute(
+                    state.init_state.queue.clone(),
+                    command_buffers[image_i as usize].clone(),
+                ) // execute cmd buf which is selected based on image index
+                .unwrap();
+
+            let after_egui =
+                gui.draw_on_image(main_drawings, image_views[image_i as usize].clone());
+
+            let present = after_egui
+                .then_swapchain_present(
+                    // tell the swapchain that we finished drawing and the image is ready for display
+                    state.init_state.queue.clone(),
+                    SwapchainPresentInfo::swapchain_image_index(
+                        state.init_state.swapchain.clone(),
+                        image_i,
+                    ),
+                )
+                .then_signal_fence_and_flush();
+
+            match present {
+                Ok(future) => future.wait(None).unwrap(),
+                Err(FlushError::OutOfDate) => {
                     recreate_swapchain = true;
                 }
-                acquire_future.wait(None).unwrap();
-
-                let after =
-                    gui.draw_on_image(acquire_future, image_views[image_i as usize].clone());
-                camera.update_view(); // TODO optimization: only update camera uniform if dirty
-                                      // Create future that is to be submitted to the GPU:
-                let execution = sync::now(setup_info.device.clone())
-                    .join(after) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
-                    .then_execute(
-                        setup_info.queue.clone(),
-                        command_buffers[image_i as usize].clone(),
-                    ) // execute cmd buf which is selected based on image index
-                    .unwrap()
-                    .then_swapchain_present(
-                        // tell the swapchain that we finished drawing and the image is ready for display
-                        setup_info.queue.clone(),
-                        SwapchainPresentInfo::swapchain_image_index(
-                            setup_info.swapchain.clone(),
-                            image_i,
-                        ),
-                    )
-                    .then_signal_fence_and_flush();
-
-                match execution {
-                    Ok(future) => future.wait(None).unwrap(),
-                    Err(FlushError::OutOfDate) => {
-                        recreate_swapchain = true;
-                    }
-                    Err(e) => {
-                        println!("Failed to flush future: {e}");
-                    }
+                Err(e) => {
+                    println!("Failed to flush future: {e}");
                 }
             }
-            _ => {}
-        });
+        }
+        _ => {}
+    });
 }
