@@ -1,3 +1,6 @@
+use egui_winit_vulkano::egui;
+use egui_winit_vulkano::egui::{ScrollArea, TextEdit, TextStyle};
+use egui_winit_vulkano::{Gui, GuiConfig};
 use std::sync::Arc;
 
 use crate::camera::Camera;
@@ -19,7 +22,7 @@ use vulkano::device::{
 };
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
@@ -115,7 +118,7 @@ pub fn init_renderer() -> RenderSetupInfo {
         .downcast::<Window>()
         .unwrap();
 
-    window.set_title("Engine Playground");
+    window.set_title("Engine Playground - Press ESC to release controls");
 
     let device_extensions = DeviceExtensions {
         khr_swapchain: true,
@@ -231,21 +234,25 @@ fn get_framebuffers(
     images: &[Arc<SwapchainImage>],
     render_pass: &Arc<RenderPass>,
     depth_buffer: Arc<ImageView<AttachmentImage>>,
-) -> Vec<Arc<Framebuffer>> {
+) -> (Vec<Arc<Framebuffer>>, Vec<Arc<ImageView<SwapchainImage>>>) {
     images
         .iter()
         .map(|image| {
             let view = ImageView::new_default(image.clone()).unwrap();
-            Framebuffer::new(
-                render_pass.clone(),
-                FramebufferCreateInfo {
-                    attachments: vec![view, depth_buffer.clone()],
-                    ..Default::default()
-                },
+            (
+                Framebuffer::new(
+                    render_pass.clone(),
+                    FramebufferCreateInfo {
+                        attachments: vec![view.clone(), depth_buffer.clone()],
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+                view.clone(),
             )
-            .unwrap()
         })
-        .collect::<Vec<_>>()
+        .into_iter()
+        .unzip()
 }
 
 fn get_command_buffers(
@@ -348,7 +355,8 @@ pub fn start_renderer(
     )
     .unwrap();
 
-    let framebuffers = get_framebuffers(&setup_info.images, &render_pass, depth_buffer);
+    let (framebuffers, mut image_views) =
+        get_framebuffers(&setup_info.images, &render_pass, depth_buffer);
 
     let pipeline = get_pipeline(
         vs.clone(),
@@ -390,10 +398,21 @@ pub fn start_renderer(
         .unwrap();
     future.wait(None).unwrap();
 
+    let mut gui = Gui::new(
+        &setup_info.event_loop,
+        setup_info.surface,
+        setup_info.queue.clone(),
+        GuiConfig {
+            is_overlay: true,
+            ..Default::default()
+        },
+    );
+
     let mut is_left_pressed = false;
     let mut is_right_pressed = false;
     let mut is_up_pressed = false;
     let mut is_down_pressed = false;
+    let mut gui_catch = false;
     let camera_speed = 0.05;
     // blocks main thread forever and calls closure whenever the event loop receives an event
     setup_info
@@ -423,7 +442,7 @@ pub fn start_renderer(
                         ..
                     },
                 ..
-            } => {
+            } if !gui_catch && keycode != VirtualKeyCode::Escape => {
                 let is_pressed = state == ElementState::Pressed;
                 match keycode {
                     VirtualKeyCode::W | VirtualKeyCode::Up => {
@@ -440,6 +459,37 @@ pub fn start_renderer(
                     }
                     _ => {}
                 }
+            }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state,
+                                virtual_keycode: Some(keycode),
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } if keycode == VirtualKeyCode::Escape => {
+                if state == ElementState::Released {
+                    gui_catch = !gui_catch;
+                    if gui_catch {
+                        setup_info.window.set_title("Engine Playground");
+                    } else {
+                        setup_info
+                            .window
+                            .set_title("Engine Playground - Press ESC to release controls");
+                    }
+                    println!(
+                        "Gui catch is now: {}",
+                        if gui_catch { "enabled" } else { "disabled" }
+                    );
+                }
+            }
+            Event::WindowEvent { event, .. } => {
+                gui.update(&event);
             }
             Event::MainEventsCleared => {
                 let forward = camera.target - camera.eye;
@@ -467,6 +517,37 @@ pub fn start_renderer(
                         camera.target - (forward + right * camera_speed).normalize() * forward_mag;
                 }
             }
+            Event::RedrawRequested(..) => {
+                println!("Constructing GUI...");
+                gui.immediate_ui(|gui| {
+                    let ctx = gui.context();
+                    egui::CentralPanel::default().show(&ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.add(egui::widgets::Label::new("Hi there!"));
+                            ui.label(egui::RichText::new("Hello world").size(32.0));
+                        });
+                        ui.separator();
+                        ui.columns(2, |columns| {
+                            ScrollArea::vertical().id_source("source").show(
+                                &mut columns[0],
+                                |ui| {
+                                    ui.add(
+                                        TextEdit::multiline(&mut "code").font(TextStyle::Monospace),
+                                    );
+                                },
+                            );
+                            ScrollArea::vertical().id_source("source").show(
+                                &mut columns[1],
+                                |ui| {
+                                    ui.add(
+                                        TextEdit::multiline(&mut "code").font(TextStyle::Monospace),
+                                    );
+                                },
+                            );
+                        });
+                    });
+                });
+            }
             Event::RedrawEventsCleared => {
                 // TODO: Optimization: Implement Frames in Flight
                 if window_resized || recreate_swapchain {
@@ -493,9 +574,9 @@ pub fn start_renderer(
                         .unwrap(),
                     )
                     .unwrap();
-                    let new_framebuffers =
+                    let (new_framebuffers, new_image_views) =
                         get_framebuffers(&new_images, &render_pass, depth_buffer.clone());
-
+                    image_views = new_image_views;
                     if window_resized {
                         window_resized = false;
 
@@ -517,6 +598,7 @@ pub fn start_renderer(
                             &setup_info.cmd_buf_allocator,
                             set.clone(),
                         );
+                        camera.update_aspect(viewport.dimensions[0], viewport.dimensions[1]);
                     }
                 }
 
@@ -535,10 +617,13 @@ pub fn start_renderer(
                     recreate_swapchain = true;
                 }
                 acquire_future.wait(None).unwrap();
+
+                let after =
+                    gui.draw_on_image(acquire_future, image_views[image_i as usize].clone());
                 camera.update_view(); // TODO optimization: only update camera uniform if dirty
                                       // Create future that is to be submitted to the GPU:
                 let execution = sync::now(setup_info.device.clone())
-                    .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
+                    .join(after) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                     .then_execute(
                         setup_info.queue.clone(),
                         command_buffers[image_i as usize].clone(),

@@ -27,3 +27,19 @@ Vulkan game engine
 - [ ] good bloom
 - [ ] deferred shading
 - [ ] area lights
+- [ ] Image-based lighting
+- [ ] HDR, Tone Mapping
+- [ ] mip maps
+### ECS
+- [ ] Implement
+### Physics
+- [ ] Implement Rigid Body physics
+### Sound
+- [ ] Implement basic sound system
+### Particles
+- [ ] Implement basic particle system
+### UI
+- [ ] Asset drag & drop
+
+### I/O
+- [ ] multi-threaded asset loading
