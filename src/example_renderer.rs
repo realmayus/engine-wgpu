@@ -1,14 +1,17 @@
 use glam::{Mat4, Vec3};
+use image::DynamicImage;
+use lib::scene::{Material, Scene, Texture};
+use lib::util::texture::create_texture;
 use renderer::camera::Camera;
 use renderer::{init_renderer, start_renderer, VertexBuffer};
+use std::rc::Rc;
 use std::sync::Arc;
 use systems::io::gltf_loader::load_gltf;
-use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
+use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
-use vulkano::command_buffer::ResourceInCommand::VertexBuffer;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
-use vulkano::image::view::ImageView;
+use vulkano::format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage};
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::{InputAssemblyState, PrimitiveTopology};
@@ -22,17 +25,20 @@ use vulkano::sampler::{
     SamplerReductionMode,
 };
 use vulkano::shader::ShaderModule;
-use vulkano::sync;
 use vulkano::sync::GpuFuture;
-use lib::scene::Scene;
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
 struct MyVertex {
     #[format(R32G32B32_SFLOAT)]
     position: [f32; 3],
+}
+
+#[derive(BufferContents, Vertex)]
+#[repr(C)]
+struct MyNormal {
     #[format(R32G32B32_SFLOAT)]
-    color: [f32; 3],
+    normal: [f32; 3],
 }
 
 #[derive(BufferContents, Debug, Default)]
@@ -63,9 +69,9 @@ fn get_pipeline(
     render_pass: Arc<RenderPass>,
 ) -> Arc<GraphicsPipeline> {
     GraphicsPipeline::start()
-        .vertex_input_state(MyVertex::per_vertex()) // describes layout of vertex input
+        .vertex_input_state([MyVertex::per_vertex(), MyNormal::per_vertex()]) // describes layout of vertex input
         .vertex_shader(vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-        .input_assembly_state(InputAssemblyState::new().topology(PrimitiveTopology::TriangleList)) //Indicate type of primitives (default is list of triangles)
+        .input_assembly_state(InputAssemblyState::new()) //Indicate type of primitives (default is list of triangles)
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
         .fragment_shader(fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
         .depth_stencil_state(DepthStencilState::simple_depth_test())
@@ -86,19 +92,19 @@ pub fn render(gltf_paths: Vec<&str>) {
     let vs = vs::load(setup_info.device.clone()).expect("failed to create shader module");
     let fs = fs::load(setup_info.device.clone()).expect("failed to create shader module");
 
-    let vertex_buffer = Buffer::from_iter(
-        &setup_info.memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        vec![],
-    )
-    .expect("Couldn't create vertex buffer");
+    // let vertex_buffer = Buffer::from_iter(
+    //     &setup_info.memory_allocator,
+    //     BufferCreateInfo {
+    //         usage: BufferUsage::VERTEX_BUFFER,
+    //         ..Default::default()
+    //     },
+    //     AllocationCreateInfo {
+    //         usage: MemoryUsage::Upload,
+    //         ..Default::default()
+    //     },
+    //     vec![],
+    // )
+    // .expect("Couldn't create vertex buffer");
     let view = Mat4::from_cols_array_2d(&[[1.0f32; 4]; 4]);
     view.transform_vector3(Vec3::from((0.0f32, 0.0f32, 0.0f32)));
     let model_uniform = ModelUniform {
@@ -125,20 +131,83 @@ pub fn render(gltf_paths: Vec<&str>) {
     )
     .unwrap();
 
-    let scenes: Vec<Scene> = gltf_paths.iter().map(|gltf_path| {
-        let (scenes, textures, materials) = load_gltf(
+    let mut scenes: Vec<Scene> = vec![];
+    let mut textures: Vec<Rc<Texture>> = vec![];
+    let mut materials: Vec<Rc<Material>> = vec![];
+
+    for gltf_path in gltf_paths {
+        let (mut gltf_scenes, gltf_textures, gltf_materials) = load_gltf(
             gltf_path,
             &setup_info.memory_allocator,
             &mut cmd_buf_builder,
         );
-        scenes
-    }).flatten().collect();
+        scenes.append(&mut gltf_scenes);
+        let texture_values: Vec<Rc<Texture>> = gltf_textures.into_values().collect();
+        textures.append(&mut texture_values.clone()); //TODO investigate if this is too performance-heavy?
+        let material_values: Vec<Rc<Material>> = gltf_materials.into_values().collect();
+        materials.append(&mut material_values.clone());
+    }
 
-    let vertex_buffers: Vec<VertexBuffer> = vec![];
+    let mut vertex_buffers: Vec<VertexBuffer> = vec![];
+    let mut normal_buffers: Vec<VertexBuffer> = vec![];
+    let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
+
     for scene in scenes {
+        println!("{:?}", scene);
         for model in scene.models {
+            println!("{:?}", model);
             for mesh in model.meshes {
-                mesh.vertices
+                println!("{:?}", mesh);
+                let vert_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
+                    &setup_info.memory_allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::VERTEX_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    mesh.vertices.iter().map(|v| v.to_array()),
+                )
+                .expect("Couldn't allocate vertex buffer");
+                vertex_buffers.push(VertexBuffer {
+                    subbuffer: vert_buf.into_bytes(),
+                    vertex_count: mesh.vertices.len() as u32,
+                });
+
+                let normal_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
+                    &setup_info.memory_allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::VERTEX_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    mesh.vertices.iter().map(|v| v.to_array()),
+                )
+                .expect("Couldn't allocate normal buffer");
+                normal_buffers.push(VertexBuffer {
+                    subbuffer: normal_buf.into_bytes(),
+                    vertex_count: mesh.vertices.len() as u32,
+                });
+
+                let index_buf = Buffer::from_iter(
+                    &setup_info.memory_allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::INDEX_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    mesh.indices,
+                )
+                .expect("Couldn't allocate index buffer");
+                index_buffers.push(index_buf);
             }
         }
     }
@@ -146,8 +215,8 @@ pub fn render(gltf_paths: Vec<&str>) {
     let sampler = Sampler::new(
         setup_info.device.clone(),
         SamplerCreateInfo {
-            mag_filter: Filter::Linear,
-            min_filter: Filter::Linear,
+            mag_filter: Filter::Nearest,
+            min_filter: Filter::Nearest,
             address_mode: [SamplerAddressMode::Repeat; 3],
             ..Default::default()
         },
@@ -160,15 +229,31 @@ pub fn render(gltf_paths: Vec<&str>) {
         &setup_info.memory_allocator,
     );
 
+    let img = image::open("assets/textures/no_texture.png")
+        .expect("Couldn't load default texture")
+        .to_rgba8();
+    let width = img.width();
+    let height = img.height();
+    let tex = create_texture(
+        DynamicImage::from(img).into_bytes(),
+        format::Format::R8G8B8A8_UNORM,
+        width,
+        height,
+        &setup_info.memory_allocator,
+        &mut cmd_buf_builder,
+    );
+
     start_renderer(
         setup_info,
         viewport,
-        ,
+        vertex_buffers,
+        normal_buffers,
+        index_buffers,
         vs,
         fs,
         get_pipeline,
         vec![
-            WriteDescriptorSet::image_view_sampler(0, texture, sampler),
+            // WriteDescriptorSet::image_view_sampler(3, tex, sampler),
             WriteDescriptorSet::buffer(1, camera.buffer.clone()),
             WriteDescriptorSet::buffer(2, model_buffer.clone()),
         ],

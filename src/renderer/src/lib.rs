@@ -43,7 +43,7 @@ use winit::window::WindowBuilder;
 pub mod camera;
 
 pub struct VertexBuffer {
-    pub subbuffer: Subbuffer<u8>,
+    pub subbuffer: Subbuffer<[u8]>,
     pub vertex_count: u32,
 }
 
@@ -254,6 +254,8 @@ fn get_command_buffers(
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
     vertex_buffers: &Vec<VertexBuffer>,
+    normal_buffers: &Vec<VertexBuffer>,
+    index_buffers: &Vec<Subbuffer<[u32]>>,
     cmd_buf_allocator: &StandardCommandBufferAllocator,
     descriptor_sets: Arc<PersistentDescriptorSet>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
@@ -284,10 +286,23 @@ fn get_command_buffers(
                     descriptor_sets.clone(),
                 );
 
-            for vertex_buffer in vertex_buffers {
+            assert_eq!(vertex_buffers.len(), normal_buffers.len()); // TODO optimization: remove asserts
+            assert_eq!(vertex_buffers.len(), index_buffers.len());
+            for i in 0..vertex_buffers.len() {
+                assert_eq!(
+                    vertex_buffers[i].vertex_count,
+                    normal_buffers[i].vertex_count
+                );
                 builder
-                    .bind_vertex_buffers(0, [vertex_buffer.subbuffer.clone()])
-                    .draw(vertex_buffer.vertex_count, 1, 0, 0)
+                    .bind_vertex_buffers(
+                        0,
+                        (
+                            vertex_buffers[i].subbuffer.clone(),
+                            normal_buffers[i].subbuffer.clone(),
+                        ),
+                    )
+                    .bind_index_buffer(index_buffers[i].clone())
+                    .draw_indexed(index_buffers[i].len() as u32, 1, 0, 0, 0)
                     .unwrap();
             }
 
@@ -302,6 +317,8 @@ pub fn start_renderer(
     mut setup_info: RenderSetupInfo,
     mut viewport: Viewport,
     vertex_buffers: Vec<VertexBuffer>,
+    normal_buffers: Vec<VertexBuffer>,
+    index_buffers: Vec<Subbuffer<[u32]>>,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     get_pipeline: fn(
@@ -317,7 +334,10 @@ pub fn start_renderer(
 ) {
     let render_pass = get_render_pass(setup_info.device.clone(), &setup_info.swapchain);
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(setup_info.device.clone());
-
+    println!(
+        "Viewport dimensions: x={} y={}",
+        viewport.dimensions[0] as u32, viewport.dimensions[1] as u32
+    );
     let depth_buffer = ImageView::new_default(
         AttachmentImage::transient(
             &setup_info.memory_allocator,
@@ -352,6 +372,8 @@ pub fn start_renderer(
         &pipeline,
         &framebuffers,
         &vertex_buffers,
+        &normal_buffers,
+        &index_buffers,
         &setup_info.cmd_buf_allocator,
         set.clone(),
     );
@@ -372,7 +394,7 @@ pub fn start_renderer(
     let mut is_right_pressed = false;
     let mut is_up_pressed = false;
     let mut is_down_pressed = false;
-
+    let camera_speed = 0.05;
     // blocks main thread forever and calls closure whenever the event loop receives an event
     setup_info
         .event_loop
@@ -424,11 +446,11 @@ pub fn start_renderer(
                 let forward_norm = forward.normalize();
                 let forward_mag = forward.length();
 
-                if is_up_pressed && forward_mag > 5.0 {
-                    camera.eye += forward_norm * 5.0;
+                if is_up_pressed && forward_mag > camera_speed {
+                    camera.eye += forward_norm * camera_speed;
                 }
                 if is_down_pressed {
-                    camera.eye -= forward_norm * 5.0;
+                    camera.eye -= forward_norm * camera_speed;
                 }
 
                 let right = forward_norm.cross(camera.up);
@@ -437,10 +459,12 @@ pub fn start_renderer(
                 let forward_mag = forward.length();
 
                 if is_right_pressed {
-                    camera.eye = camera.target - (forward - right * 5.0).normalize() * forward_mag;
+                    camera.eye =
+                        camera.target - (forward - right * camera_speed).normalize() * forward_mag;
                 }
                 if is_left_pressed {
-                    camera.eye = camera.target - (forward + right * 5.0).normalize() * forward_mag;
+                    camera.eye =
+                        camera.target - (forward + right * camera_speed).normalize() * forward_mag;
                 }
             }
             Event::RedrawEventsCleared => {
@@ -488,6 +512,8 @@ pub fn start_renderer(
                             &new_pipeline,
                             &new_framebuffers,
                             &vertex_buffers,
+                            &normal_buffers,
+                            &index_buffers,
                             &setup_info.cmd_buf_allocator,
                             set.clone(),
                         );
@@ -509,8 +535,8 @@ pub fn start_renderer(
                     recreate_swapchain = true;
                 }
                 acquire_future.wait(None).unwrap();
-                camera.update_view();
-                // Create future that is to be submitted to the GPU:
+                camera.update_view(); // TODO optimization: only update camera uniform if dirty
+                                      // Create future that is to be submitted to the GPU:
                 let execution = sync::now(setup_info.device.clone())
                     .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                     .then_execute(

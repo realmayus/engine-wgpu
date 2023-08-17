@@ -82,7 +82,8 @@ impl Camera {
     pub(crate) fn build_projection(&self) -> Mat4 {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
         let proj = Mat4::perspective_rh_gl(self.fovy, self.aspect, self.znear, self.zfar);
-        return proj * view;
+        let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
+        return proj * view * scale;
     }
     fn update_aspect(&mut self, width: f32, height: f32) {
         self.aspect = width / height;

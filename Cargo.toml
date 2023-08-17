@@ -12,6 +12,7 @@ lib = { path = "src/lib" }
 glam = "0.24.1"
 vulkano = "0.33.0"
 vulkano-shaders = "0.33.0"
+image = "0.24"
 
 #[profile.dev]
 #opt-level = 1
