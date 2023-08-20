@@ -1,10 +1,7 @@
-use egui_winit_vulkano::egui;
-use egui_winit_vulkano::egui::{ScrollArea, TextEdit, TextStyle};
-use egui_winit_vulkano::{Gui, GuiConfig};
 use std::fmt::Display;
 use std::sync::Arc;
 
-use crate::camera::Camera;
+use egui_winit_vulkano::{Gui, GuiConfig};
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -43,6 +40,8 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
+
+use crate::camera::Camera;
 
 pub mod camera;
 
@@ -376,10 +375,13 @@ pub struct RenderState {
     ) -> Arc<GraphicsPipeline>,
     pub write_descriptor_sets_0: Vec<WriteDescriptorSet>,
     pub write_descriptor_sets_1: Vec<WriteDescriptorSet>,
+    pub descriptor_len_1: usize,
+    pub write_descriptor_sets_2: Vec<WriteDescriptorSet>,
+    pub descriptor_len_2: usize,
+    pub write_descriptor_sets_3: Vec<WriteDescriptorSet>,
+    pub descriptor_len_3: usize,
     pub cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     pub camera: Camera,
-    pub write_descriptor_sets_2: Vec<WriteDescriptorSet>,
-    pub write_descriptor_sets_3: Vec<WriteDescriptorSet>,
 }
 
 pub struct PartialRenderState<'a> {
@@ -388,7 +390,7 @@ pub struct PartialRenderState<'a> {
 
 pub fn start_renderer(
     mut state: RenderState,
-    gui_callback: impl Fn(&mut Gui, PartialRenderState) + 'static,
+    mut gui_callback: impl FnMut(&mut Gui, PartialRenderState) + 'static,
 ) {
     let render_pass = get_render_pass(state.init_state.device.clone(), &state.init_state.swapchain);
     println!(
@@ -433,7 +435,7 @@ pub fn start_renderer(
     let set_1 = PersistentDescriptorSet::new_variable(
         &state.init_state.descriptor_set_allocator,
         layout.clone(),
-        6, //TODO this somehow is an upper bound as well?
+        state.descriptor_len_1 as u32, //TODO this somehow is an upper bound as well?
         state.write_descriptor_sets_1,
     )
     .unwrap();
@@ -443,7 +445,7 @@ pub fn start_renderer(
     let set_2 = PersistentDescriptorSet::new_variable(
         &state.init_state.descriptor_set_allocator,
         layout.clone(),
-        2,
+        state.descriptor_len_2 as u32,
         state.write_descriptor_sets_2,
     )
     .unwrap();
@@ -453,7 +455,7 @@ pub fn start_renderer(
     let set_3 = PersistentDescriptorSet::new_variable(
         &state.init_state.descriptor_set_allocator,
         layout.clone(),
-        1,
+        state.descriptor_len_3 as u32,
         state.write_descriptor_sets_3,
     )
     .unwrap();
