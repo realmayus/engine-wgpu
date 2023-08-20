@@ -1,38 +1,22 @@
+use std::rc::Rc;
+use crate::scene::{Material, Mesh, Model};
 use vulkano::buffer::BufferContents;
-use vulkano::pipeline::graphics::vertex_input::Vertex;
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-struct VertexPosition {
-    #[format(R32G32B32_SFLOAT)]
-    position: [f32; 3],
-}
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-struct VertexNormal {
-    #[format(R32G32B32_SFLOAT)]
-    normal: [f32; 3],
-}
 
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
-pub struct MaterialUniform {
+pub struct MaterialInfo {
     pub base_color: [f32; 4],
     pub base_texture: u32, // index of texture
 }
 
-#[derive(BufferContents, Debug, Default)]
-#[repr(C)]
-pub struct MeshRenderSettingsUniform {
-    pub uv: [f32; 2],
+impl From<Rc<Material>> for MaterialInfo {
+    fn from(value: Rc<Material>) -> Self {
+        MaterialInfo {
+            base_color: value.base_color.to_array(),
+            base_texture: value.base_texture.as_ref().map(|t| t.id).unwrap_or(0),
+        }
+    }
 }
-
-// #[derive(BufferContents, Debug, Default)]
-// #[repr(C)]
-// pub struct MeshRenderSettings {
-//     pub materials: Vec<f32>,
-// }
 
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
@@ -42,11 +26,21 @@ pub struct DrawCallInfo {
     pub model_transform: [[f32; 4]; 4],
 }
 impl DrawCallInfo {
-    pub fn from(material: u32, model_transform: [[f32; 4]; 4]) -> Self {
+    pub fn from_data(material: u32, model_transform: [[f32; 4]; 4]) -> Self {
         Self {
             material,
             _align: [0; 3],
             model_transform,
+        }
+    }
+}
+
+impl From<&Mesh> for DrawCallInfo {
+    fn from(value: &Mesh) -> Self {
+        DrawCallInfo {
+            material: value.material.id,
+            _align: [0; 3],
+            model_transform: value.global_transform.to_cols_array_2d(),
         }
     }
 }

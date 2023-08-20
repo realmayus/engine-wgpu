@@ -1,12 +1,12 @@
-use crate::util::shader_types::{MaterialUniform, MeshRenderSettingsUniform};
-use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
-use vulkano::buffer::Subbuffer;
+
+use crate::util::shader_types::MaterialInfo;
+use crate::Dirtyable;
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
-use vulkano::pipeline::GraphicsPipeline;
 
 pub struct Texture {
     pub id: u32,
@@ -18,10 +18,6 @@ impl Texture {
     pub fn from(view: Arc<ImageView<ImmutableImage>>, name: Option<Box<str>>, id: u32) -> Self {
         Self { view, name, id }
     }
-
-    pub fn set_id(&mut self, id: u32) {
-        self.id = id;
-    }
 }
 
 impl Debug for Texture {
@@ -31,6 +27,7 @@ impl Debug for Texture {
 }
 
 pub struct Material {
+    pub dirty: bool,
     pub id: u32,
     pub name: Option<Box<str>>,
     pub base_texture: Option<Rc<Texture>>,
@@ -48,6 +45,7 @@ pub struct Material {
 impl Material {
     pub fn from_default(base_texture: Option<Rc<Texture>>) -> Self {
         Self {
+            dirty: false,
             id: 0,
             name: Some(Box::from("Default material")),
             base_texture,
@@ -60,6 +58,16 @@ impl Material {
             emissive_texture: None,
             emissive_factors: Vec3::from((1.0, 1.0, 1.0)),
         }
+    }
+}
+
+impl Dirtyable for Material {
+    fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty
     }
 }
 
@@ -83,6 +91,7 @@ impl Debug for Material {
 }
 
 pub struct Mesh {
+    dirty: bool,
     pub vertices: Vec<Vec3>,
     pub indices: Vec<u32>,
     pub normals: Vec<Vec3>,
@@ -100,6 +109,7 @@ impl Mesh {
         global_transform: Mat4,
     ) -> Self {
         Self {
+            dirty: false,
             vertices,
             indices,
             normals,
@@ -109,7 +119,15 @@ impl Mesh {
         }
     }
 }
+impl Dirtyable for Mesh {
+    fn dirty(&self) -> bool {
+        self.dirty
+    }
 
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty
+    }
+}
 impl Debug for Mesh {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -125,6 +143,7 @@ impl Debug for Mesh {
 }
 
 pub struct Model {
+    dirty: bool,
     pub meshes: Vec<Mesh>,
     pub name: Option<Box<str>>,
     pub children: Vec<Model>,
@@ -138,13 +157,36 @@ impl Model {
         local_transform: Mat4,
     ) -> Self {
         Self {
+            dirty: false,
             meshes,
             name,
             children,
             local_transform,
         }
     }
+
+    /**
+    Call this after changing the local_transform of a model, it updates the computed global_transforms of all meshes
+    */
+    pub fn update_transforms(&mut self, parent: Mat4) {
+        for mesh in self.meshes.as_mut_slice() {
+            mesh.global_transform = self.local_transform * parent;
+        }
+        for child in self.children.as_mut_slice() {
+            child.update_transforms(self.local_transform);
+        }
+    }
 }
+impl Dirtyable for Model {
+    fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty
+    }
+}
+
 impl Debug for Model {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(

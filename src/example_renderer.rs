@@ -28,7 +28,7 @@ use vulkano::shader::ShaderModule;
 use vulkano::sync::GpuFuture;
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::util::shader_types::{DrawCallInfo, MaterialUniform};
+use lib::util::shader_types::{DrawCallInfo, MaterialInfo};
 use lib::util::texture::create_texture;
 use renderer::camera::Camera;
 use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, VertexBuffer};
@@ -97,30 +97,43 @@ fn get_pipeline(
         .with_auto_layout(device.clone(), |x| {
             let binding = x[1].bindings.get_mut(&0).unwrap();
             binding.variable_descriptor_count = true;
-            // binding.descriptor_type = DescriptorType::; //TODO is this correct?
-            binding.descriptor_count = 32; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
+            binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
             let binding = x[2].bindings.get_mut(&0).unwrap();
             binding.variable_descriptor_count = true;
-            // binding.descriptor_type = DescriptorType::; //TODO is this correct?
-            binding.descriptor_count = 32; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
-
-            // binding.descriptor_type = DescriptorType::StorageBufferDynamic;
-            // binding.variable_descriptor_count = true;
+            binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
             let binding = x[3].bindings.get_mut(&0).unwrap(); // drawCallInfo
-                                                              // binding.descriptor_type = DescriptorType::StorageBufferDynamic;
             binding.variable_descriptor_count = true;
-            // binding.descriptor_type = DescriptorType::; //TODO is this correct?
-            binding.descriptor_count = 32; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
-
-            // binding.variable_descriptor_count = true;
+            binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
         })
         .unwrap()
 }
 
-fn draw_model_collapsing(ui: &mut Ui, model: &Model) {
+fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4) {
     ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
+        ui.label("Translation:");
+        if ui
+            .add(egui::Slider::new(&mut model.local_transform.w_axis.x, 1.0..=10.0).text("X"))
+            .changed()
+        {
+            model.update_transforms(parent_transform);
+        }
+
+        if ui
+            .add(egui::Slider::new(&mut model.local_transform.w_axis.y, 1.0..=10.0).text("Y"))
+            .changed()
+        {
+            model.update_transforms(parent_transform);
+        }
+
+        if ui
+            .add(egui::Slider::new(&mut model.local_transform.w_axis.z, 1.0..=10.0).text("Z"))
+            .changed()
+        {
+            model.update_transforms(parent_transform);
+        }
+
         ui.label("Meshes:");
         for mesh in model.meshes.as_slice() {
             ui.collapsing("Mesh", |ui| {
@@ -141,21 +154,21 @@ fn draw_model_collapsing(ui: &mut Ui, model: &Model) {
         }
         ui.separator();
         ui.label("Children:");
-        for child in model.children.as_slice() {
-            draw_model_collapsing(ui, child);
+        for child in model.children.as_mut_slice() {
+            draw_model_collapsing(ui, child, parent_transform * model.local_transform);
         }
     });
 }
 
-fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: Rc<GlobalState>) {
+fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
         ui.label("Loaded models:");
-        for scene in &state.scenes {
+        for mut scene in state.scenes.as_mut_slice() {
             ui.collapsing(String::from(scene.name.clone().unwrap_or_default()), |ui| {
                 ui.label(format!("# of models: {}", scene.models.len()));
-                for model in &scene.models {
-                    draw_model_collapsing(ui, model);
+                for model in scene.models.as_mut_slice() {
+                    draw_model_collapsing(ui, model, Mat4::default());
                 }
             });
         }
@@ -295,7 +308,7 @@ fn create_buffers(
         },
         mesh.uvs.iter().map(|v| v.to_array()),
     )
-    .expect("Couldn't allocate normal buffer");
+    .expect("Couldn't allocate UV buffer");
 
     let index_buf = Buffer::from_iter(
         memory_allocator,
@@ -320,7 +333,7 @@ struct GlobalState {
     textures: Vec<Rc<Texture>>,
 }
 
-pub fn render(gltf_paths: Vec<&str>) {
+pub fn start(gltf_paths: Vec<&str>) {
     let preview_models = vec![
         "assets/models/cube.glb",
         "assets/models/sphere.glb",
@@ -407,6 +420,11 @@ pub fn render(gltf_paths: Vec<&str>) {
 
         materials.append(&mut material_values.clone());
     }
+    let mut material_info: Vec<MaterialInfo> = vec![];
+
+    for mat in materials.as_slice() {
+        material_info.push(MaterialInfo::from(mat.clone()));
+    }
 
     let mut vertex_buffers: Vec<VertexBuffer> = vec![];
     let mut normal_buffers: Vec<VertexBuffer> = vec![];
@@ -435,19 +453,9 @@ pub fn render(gltf_paths: Vec<&str>) {
                     vertex_count: mesh.uvs.len() as u32,
                 });
                 index_buffers.push(index_buf);
-                draw_call_info.push(DrawCallInfo::from(
-                    mesh.material.id,
-                    mesh.global_transform.to_cols_array_2d(),
-                ));
+                draw_call_info.push(DrawCallInfo::from(mesh));
             }
         }
-    }
-    let mut material_info: Vec<MaterialUniform> = vec![];
-    for mat in materials.as_slice() {
-        material_info.push(MaterialUniform {
-            base_color: mat.base_color.to_array(),
-            base_texture: mat.base_texture.clone().map(|t| t.id).unwrap_or(0), // default texture if no texture bound TODO empty texture??
-        })
     }
 
     let camera = Camera::new_default(
@@ -456,11 +464,11 @@ pub fn render(gltf_paths: Vec<&str>) {
         &setup_info.memory_allocator,
     );
 
-    let mut global_state = Rc::new(GlobalState {
+    let mut global_state = GlobalState {
         scenes,
         materials,
         textures,
-    });
+    };
     let device = setup_info.device.clone();
     let texs = global_state.textures.iter().map(|t| {
         (
@@ -526,14 +534,17 @@ pub fn render(gltf_paths: Vec<&str>) {
                 // Level 0: Scene-global uniforms
                 WriteDescriptorSet::buffer(0, camera.buffer.clone()),
             ],
+            descriptor_len_1: texs.len(),
             write_descriptor_sets_1: vec![
                 // Level 1: Pipeline-specific uniforms
                 WriteDescriptorSet::image_view_sampler_array(0, 0, texs),
             ],
+            descriptor_len_2: material_info_buf.len(),
             write_descriptor_sets_2: vec![
                 // Level 2: Pipeline-specific uniforms
                 WriteDescriptorSet::buffer_array(0, 0, material_info_buf),
             ],
+            descriptor_len_3: draw_calls_uniform.len(),
             write_descriptor_sets_3: vec![
                 // Level 3: Model-specific uniforms
                 WriteDescriptorSet::buffer_array(0, 0, draw_calls_uniform),
@@ -541,8 +552,6 @@ pub fn render(gltf_paths: Vec<&str>) {
             cmd_buf_builder,
             camera,
         },
-        move |gui, partial_render_state| {
-            render_gui(gui, partial_render_state, global_state.clone())
-        },
+        move |gui, partial_render_state| render_gui(gui, partial_render_state, &mut global_state),
     );
 }

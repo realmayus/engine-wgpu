@@ -1,28 +1,24 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::ops::Index;
+use std::path::Path;
+use std::rc::Rc;
+use std::{fs, io};
+
 use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
 use gltf::{Error, Node};
-use image::ImageFormat::{Jpeg, Png};
-use image::{guess_format, DynamicImage};
-use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::util::map_gltf_format_to_vulkano;
-use lib::util::shader_types::{MaterialUniform, MeshRenderSettingsUniform};
-use lib::util::texture::create_texture;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::ops::Index;
-use std::path::Path;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::{fs, io};
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use image::DynamicImage;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
-use vulkano::memory::MemoryAllocateInfo;
-use vulkano::sync::Sharing;
+use vulkano::memory::allocator::StandardMemoryAllocator;
+
+use lib::scene::{Material, Mesh, Model, Scene, Texture};
+use lib::util::texture::create_texture;
+
 // TODO make independent of vulkano lib
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
@@ -243,6 +239,7 @@ pub fn load_gltf(
     for gltfMat in gltf.materials() {
         if let Some(index) = gltfMat.index() {
             let mat = Material {
+                dirty: false,
                 id: *mat_i,
                 name: gltfMat.name().map(Box::from),
                 base_texture: gltfMat
