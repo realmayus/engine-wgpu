@@ -19,7 +19,7 @@ use vulkano::descriptor_set::{
 };
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
-    Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+    Device, DeviceCreateInfo, DeviceExtensions, Features, Queue, QueueCreateInfo, QueueFlags,
 };
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
@@ -60,11 +60,12 @@ pub struct RenderInitState {
     dimensions: PhysicalSize<u32>,
     composite_alpha: CompositeAlpha,
     pub window: Arc<Window>,
-    pub memory_allocator: StandardMemoryAllocator,
+    pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
     pub images: Vec<Arc<SwapchainImage>>,
     pub cmd_buf_allocator: StandardCommandBufferAllocator,
+    pub descriptor_set_allocator: StandardDescriptorSetAllocator,
 }
 
 pub fn select_physical_device(
@@ -123,6 +124,7 @@ pub fn init_renderer() -> RenderInitState {
 
     let device_extensions = DeviceExtensions {
         khr_swapchain: true,
+        ext_descriptor_indexing: true, // required for textures
         ..DeviceExtensions::empty()
     };
 
@@ -143,6 +145,16 @@ pub fn init_renderer() -> RenderInitState {
                 ..Default::default()
             }],
             enabled_extensions: device_extensions, // new
+            enabled_features: Features {
+                descriptor_indexing: true,
+                descriptor_binding_variable_descriptor_count: true,
+                shader_sampled_image_array_non_uniform_indexing: true,
+                shader_uniform_buffer_array_non_uniform_indexing: true,
+                shader_storage_buffer_array_dynamic_indexing: true,
+                shader_storage_buffer_array_non_uniform_indexing: true,
+                runtime_descriptor_array: true,
+                ..Features::empty()
+            },
             ..Default::default()
         },
     )
@@ -188,6 +200,7 @@ pub fn init_renderer() -> RenderInitState {
     );
 
     let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
+    let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
 
     RenderInitState {
         device,
@@ -198,11 +211,12 @@ pub fn init_renderer() -> RenderInitState {
         dimensions,
         composite_alpha,
         window,
-        memory_allocator,
+        memory_allocator: Arc::new(memory_allocator),
         queue,
         swapchain,
         images,
         cmd_buf_allocator,
+        descriptor_set_allocator,
     }
 }
 
@@ -263,9 +277,13 @@ fn get_command_buffers(
     framebuffers: &Vec<Arc<Framebuffer>>,
     vertex_buffers: &Vec<VertexBuffer>,
     normal_buffers: &Vec<VertexBuffer>,
+    uv_buffers: &Vec<VertexBuffer>,
     index_buffers: &Vec<Subbuffer<[u32]>>,
     cmd_buf_allocator: &StandardCommandBufferAllocator,
-    descriptor_sets: Arc<PersistentDescriptorSet>,
+    descriptor_sets_0: Arc<PersistentDescriptorSet>,
+    descriptor_sets_1: Arc<PersistentDescriptorSet>,
+    descriptor_sets_2: Arc<PersistentDescriptorSet>,
+    descriptor_sets_3: Arc<PersistentDescriptorSet>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -291,7 +309,25 @@ fn get_command_buffers(
                     PipelineBindPoint::Graphics,
                     pipeline.layout().clone(),
                     0,
-                    descriptor_sets.clone(),
+                    descriptor_sets_0.clone(),
+                )
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    1,
+                    descriptor_sets_1.clone(),
+                )
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    2,
+                    descriptor_sets_2.clone(),
+                )
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    3,
+                    descriptor_sets_3.clone(),
                 );
 
             assert_eq!(vertex_buffers.len(), normal_buffers.len()); // TODO optimization: remove asserts
@@ -307,10 +343,11 @@ fn get_command_buffers(
                         (
                             vertex_buffers[i].subbuffer.clone(),
                             normal_buffers[i].subbuffer.clone(),
+                            uv_buffers[i].subbuffer.clone(),
                         ),
                     )
                     .bind_index_buffer(index_buffers[i].clone())
-                    .draw_indexed(index_buffers[i].len() as u32, 1, 0, 0, 0)
+                    .draw_indexed(index_buffers[i].len() as u32, 1, 0, 0, i as u32)
                     .unwrap();
             }
 
@@ -326,6 +363,7 @@ pub struct RenderState {
     pub viewport: Viewport,
     pub vertex_buffers: Vec<VertexBuffer>,
     pub normal_buffers: Vec<VertexBuffer>,
+    pub uv_buffers: Vec<VertexBuffer>,
     pub index_buffers: Vec<Subbuffer<[u32]>>,
     pub vs: Arc<ShaderModule>,
     pub fs: Arc<ShaderModule>,
@@ -336,9 +374,12 @@ pub struct RenderState {
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Arc<GraphicsPipeline>,
-    pub write_descriptor_sets: Vec<WriteDescriptorSet>,
+    pub write_descriptor_sets_0: Vec<WriteDescriptorSet>,
+    pub write_descriptor_sets_1: Vec<WriteDescriptorSet>,
     pub cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     pub camera: Camera,
+    pub write_descriptor_sets_2: Vec<WriteDescriptorSet>,
+    pub write_descriptor_sets_3: Vec<WriteDescriptorSet>,
 }
 
 pub struct PartialRenderState<'a> {
@@ -350,8 +391,6 @@ pub fn start_renderer(
     gui_callback: impl Fn(&mut Gui, PartialRenderState) + 'static,
 ) {
     let render_pass = get_render_pass(state.init_state.device.clone(), &state.init_state.swapchain);
-    let descriptor_set_allocator =
-        StandardDescriptorSetAllocator::new(state.init_state.device.clone());
     println!(
         "Viewport dimensions: x={} y={}",
         state.viewport.dimensions[0] as u32, state.viewport.dimensions[1] as u32
@@ -382,10 +421,40 @@ pub fn start_renderer(
 
     let layout = pipeline.layout().set_layouts().get(0).unwrap();
 
-    let set = PersistentDescriptorSet::new(
-        &descriptor_set_allocator,
+    let set_0 = PersistentDescriptorSet::new(
+        &state.init_state.descriptor_set_allocator,
         layout.clone(),
-        state.write_descriptor_sets,
+        state.write_descriptor_sets_0,
+    )
+    .unwrap();
+
+    let layout = pipeline.layout().set_layouts().get(1).unwrap();
+
+    let set_1 = PersistentDescriptorSet::new_variable(
+        &state.init_state.descriptor_set_allocator,
+        layout.clone(),
+        6, //TODO this somehow is an upper bound as well?
+        state.write_descriptor_sets_1,
+    )
+    .unwrap();
+
+    let layout = pipeline.layout().set_layouts().get(2).unwrap();
+
+    let set_2 = PersistentDescriptorSet::new_variable(
+        &state.init_state.descriptor_set_allocator,
+        layout.clone(),
+        2,
+        state.write_descriptor_sets_2,
+    )
+    .unwrap();
+
+    let layout = pipeline.layout().set_layouts().get(3).unwrap();
+
+    let set_3 = PersistentDescriptorSet::new_variable(
+        &state.init_state.descriptor_set_allocator,
+        layout.clone(),
+        1,
+        state.write_descriptor_sets_3,
     )
     .unwrap();
 
@@ -395,9 +464,13 @@ pub fn start_renderer(
         &framebuffers,
         &state.vertex_buffers,
         &state.normal_buffers,
+        &state.uv_buffers,
         &state.index_buffers,
         &state.init_state.cmd_buf_allocator,
-        set.clone(),
+        set_0.clone(),
+        set_1.clone(),
+        set_2.clone(),
+        set_3.clone(),
     );
 
     let mut window_resized = false;
@@ -559,9 +632,13 @@ pub fn start_renderer(
                         &new_framebuffers,
                         &state.vertex_buffers,
                         &state.normal_buffers,
+                        &state.uv_buffers,
                         &state.index_buffers,
                         &state.init_state.cmd_buf_allocator,
-                        set.clone(),
+                        set_0.clone(),
+                        set_1.clone(),
+                        set_2.clone(),
+                        set_3.clone(),
                     );
                     state
                         .camera

@@ -6,13 +6,13 @@ use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemo
 #[derive(BufferContents, Debug, Default, Copy, Clone)]
 #[repr(C)]
 pub struct CameraUniform {
-    pub view_proj: [[f32; 4]; 4],
+    pub proj_view: [[f32; 4]; 4],
     pub view_position: [f32; 4],
 }
 impl CameraUniform {
     fn new() -> Self {
         Self {
-            view_proj: Mat4::default().to_cols_array_2d(),
+            proj_view: Mat4::default().to_cols_array_2d(),
             view_position: [0.0; 4],
         }
     }
@@ -48,9 +48,10 @@ impl Camera {
         let mut data = CameraUniform::new();
         let proj = Mat4::perspective_rh_gl(fovy, aspect, znear, zfar);
         let view = Mat4::look_at_rh(eye, target, up);
-        println!("View proj: {:?}", proj * view);
-        data.view_proj = (proj * view).to_cols_array_2d();
-        // data.view_proj[1][1] *= -1.0;
+        let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
+
+        println!("View proj: {:?}", proj * view * scale);
+        data.proj_view = (proj * view * scale).to_cols_array_2d();
         data.view_position = (Vec4::from((eye, 1.0))).into();
 
         let camera_buffer = Buffer::from_data(
@@ -104,7 +105,7 @@ impl Camera {
     pub fn update_view(&self) {
         let new_proj = self.build_projection();
         let mut mapping = self.buffer.write().unwrap();
-        mapping.view_proj = (new_proj).to_cols_array_2d();
+        mapping.proj_view = (new_proj).to_cols_array_2d();
         // mapping.view_proj[1][1] *= -1.0;
         mapping.view_position = (Vec4::from((self.eye, 1.0))).into();
     }

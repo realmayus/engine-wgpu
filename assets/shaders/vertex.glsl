@@ -1,23 +1,28 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : enable
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
+layout(location = 2) in vec2 uv;
+
 layout(location = 0) out vec2 tex_coords;
 layout(location = 1) out vec3 normal_frag;
+layout(location = 2) flat out uint index;
 
-layout(set = 0, binding = 1) buffer CameraUniform {
-    mat4 view_proj;
+layout(set = 0, binding = 0) buffer CameraUniform {
+    mat4 proj_view;
     vec4 view_position;
 } camera;
-layout(set = 0, binding = 2) uniform ModelUniform {
-    mat4 model;
-} model;
 
-mat4 test;
+layout(set = 3, binding = 0) buffer DrawCallInfo {
+    uint tex_id;
+    mat4 model_transform;
+} dci[];
+
 
 void main() {
-    test = model.model * camera.view_proj;
-    gl_Position = camera.view_proj * vec4(position, 1.0) ;
-    tex_coords = position.xy + vec2(0.5);
+    gl_Position = camera.proj_view * dci[gl_InstanceIndex].model_transform * vec4(position, 1.0) ;
+    tex_coords = uv;
     normal_frag = normal;
+    index = gl_InstanceIndex;
 }

@@ -1,19 +1,26 @@
-use glam::{Vec2, Vec3, Vec4};
+use crate::util::shader_types::{MaterialUniform, MeshRenderSettingsUniform};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
+use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
+use vulkano::pipeline::GraphicsPipeline;
 
 pub struct Texture {
     pub id: u32,
     pub name: Option<Box<str>>,
-    view: Arc<ImageView<ImmutableImage>>,
+    pub view: Arc<ImageView<ImmutableImage>>,
 }
 
 impl Texture {
     pub fn from(view: Arc<ImageView<ImmutableImage>>, name: Option<Box<str>>, id: u32) -> Self {
         Self { view, name, id }
+    }
+
+    pub fn set_id(&mut self, id: u32) {
+        self.id = id;
     }
 }
 
@@ -24,6 +31,7 @@ impl Debug for Texture {
 }
 
 pub struct Material {
+    pub id: u32,
     pub name: Option<Box<str>>,
     pub base_texture: Option<Rc<Texture>>,
     pub base_color: Vec4, // this scales the RGBA components of the base_texture if defined; otherwise defines the color
@@ -34,13 +42,15 @@ pub struct Material {
     pub occlusion_strength: f32,
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
+    // pub pipeline: Arc<GraphicsPipeline>,
 }
 
-impl Default for Material {
-    fn default() -> Self {
+impl Material {
+    pub fn from_default(base_texture: Option<Rc<Texture>>) -> Self {
         Self {
+            id: 0,
             name: Some(Box::from("Default material")),
-            base_texture: None,
+            base_texture,
             base_color: Vec4::from((1.0, 0.957, 0.859, 1.0)),
             metallic_roughness_texture: None,
             metallic_roughness_factors: Vec2::from((0.5, 0.5)),
@@ -77,19 +87,25 @@ pub struct Mesh {
     pub indices: Vec<u32>,
     pub normals: Vec<Vec3>,
     pub material: Rc<Material>,
+    pub uvs: Vec<Vec2>,
+    pub global_transform: Mat4, // computed as product of the parent models' local transforms
 }
 impl Mesh {
     pub fn from(
         vertices: Vec<Vec3>,
         indices: Vec<u32>,
         normals: Vec<Vec3>,
-        material: Option<Rc<Material>>,
+        material: Rc<Material>,
+        uvs: Vec<Vec2>,
+        global_transform: Mat4,
     ) -> Self {
         Self {
             vertices,
             indices,
             normals,
-            material: material.unwrap_or_default(),
+            material,
+            uvs,
+            global_transform,
         }
     }
 }
@@ -98,11 +114,12 @@ impl Debug for Mesh {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{MESH: # of vertices: {}, # of normals: {}, # of indices: {}, material: {}}}",
+            "{{MESH: # of vertices: {}, # of normals: {}, # of indices: {}, material: {}, global transform: {}}}",
             self.vertices.len(),
             self.normals.len(),
             self.indices.len(),
-            self.material.name.clone().unwrap_or_default()
+            self.material.name.clone().unwrap_or_default(),
+            self.global_transform,
         )
     }
 }
@@ -111,13 +128,20 @@ pub struct Model {
     pub meshes: Vec<Mesh>,
     pub name: Option<Box<str>>,
     pub children: Vec<Model>,
+    pub local_transform: Mat4,
 }
 impl Model {
-    pub fn from(meshes: Vec<Mesh>, name: Option<Box<str>>, children: Vec<Model>) -> Self {
+    pub fn from(
+        meshes: Vec<Mesh>,
+        name: Option<Box<str>>,
+        children: Vec<Model>,
+        local_transform: Mat4,
+    ) -> Self {
         Self {
             meshes,
             name,
             children,
+            local_transform,
         }
     }
 }
@@ -125,9 +149,10 @@ impl Debug for Model {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{MODEL: Name: {:?}, # of meshes: {}, children: [{}]}}",
+            "{{MODEL: Name: {:?}, # of meshes: {}, local transform: {}, children: [{}]}}",
             self.name,
             self.meshes.len(),
+            self.local_transform,
             self.children
                 .iter()
                 .map(|c| format!("\n - {:?}", c))

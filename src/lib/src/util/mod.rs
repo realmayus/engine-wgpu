@@ -1,6 +1,6 @@
 use gltf;
 
-mod shader_types;
+pub mod shader_types;
 pub mod texture;
 
 pub fn map_gltf_format_to_vulkano(format: gltf::image::Format) -> vulkano::format::Format {

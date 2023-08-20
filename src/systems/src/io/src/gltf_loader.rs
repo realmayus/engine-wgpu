@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use glam::{Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
@@ -8,16 +8,21 @@ use image::ImageFormat::{Jpeg, Png};
 use image::{guess_format, DynamicImage};
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
 use lib::util::map_gltf_format_to_vulkano;
+use lib::util::shader_types::{MaterialUniform, MeshRenderSettingsUniform};
 use lib::util::texture::create_texture;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Index;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::{fs, io};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
-use vulkano::memory::allocator::StandardMemoryAllocator;
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::memory::MemoryAllocateInfo;
+use vulkano::sync::Sharing;
 // TODO make independent of vulkano lib
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
@@ -196,6 +201,9 @@ pub fn load_gltf(
     path: &str,
     allocator: &StandardMemoryAllocator,
     mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    default_material: Rc<Material>,
+    tex_i: &mut u32,
+    mat_i: &mut u32,
 ) -> (
     Vec<Scene>,
     HashMap<usize, Rc<Texture>>,
@@ -228,16 +236,14 @@ pub fn load_gltf(
             allocator,
             cmd_buf_builder,
         );
-        let texture = Texture::from(
-            vk_texture,
-            gltfTexture.name().map(Box::from),
-            gltfTexture.index() as u32,
-        );
+        let texture = Texture::from(vk_texture, gltfTexture.name().map(Box::from), *tex_i);
+        *tex_i += 1;
         textures.insert(gltfTexture.index(), Rc::from(texture));
     }
     for gltfMat in gltf.materials() {
         if let Some(index) = gltfMat.index() {
             let mat = Material {
+                id: *mat_i,
                 name: gltfMat.name().map(Box::from),
                 base_texture: gltfMat
                     .pbr_metallic_roughness()
@@ -293,6 +299,7 @@ pub fn load_gltf(
                 ),
                 emissive_factors: gltfMat.emissive_factor().into(),
             };
+            *mat_i += 1;
             materials.insert(index, Rc::from(mat));
         }
     }
@@ -300,21 +307,49 @@ pub fn load_gltf(
     for scene in gltf.scenes() {
         println!("Scene has {:?} nodes", scene.nodes().len());
 
-        let children = scene
+        let models = scene
             .nodes()
-            .map(|n| load_node(&n, &buffers, &materials))
+            .map(|n| {
+                load_node(
+                    &n,
+                    &buffers,
+                    &materials,
+                    allocator,
+                    default_material.clone(),
+                    Mat4::default(),
+                )
+            })
             .collect();
-        scenes.push(Scene::from(children, scene.name().map(Box::from)));
+        scenes.push(Scene::from(models, scene.name().map(Box::from)));
     }
 
     (scenes, textures, materials)
 }
 
-fn load_node(node: &Node, buffers: &Vec<Data>, materials: &HashMap<usize, Rc<Material>>) -> Model {
+fn load_node(
+    node: &Node,
+    buffers: &Vec<Data>,
+    materials: &HashMap<usize, Rc<Material>>,
+    allocator: &StandardMemoryAllocator,
+    default_material: Rc<Material>,
+    parent_transform: Mat4,
+) -> Model {
     let mut children: Vec<Model> = vec![];
+    let local_transform = Mat4::from_cols_array_2d(&node.transform().matrix());
     for child in node.children() {
-        children.push(load_node(&child, buffers, materials));
+        println!("Iterating over children...");
+        children.push(load_node(
+            &child,
+            buffers,
+            materials,
+            allocator,
+            default_material.clone(),
+            parent_transform * local_transform,
+        ));
     }
+    let mut global_transform = parent_transform * local_transform;
+    global_transform.y_axis *= -1.0;
+
     let mut meshes: Vec<Mesh> = vec![];
     match node.mesh() {
         Some(x) => {
@@ -322,8 +357,11 @@ fn load_node(node: &Node, buffers: &Vec<Data>, materials: &HashMap<usize, Rc<Mat
                 let mut positions: Vec<Vec3> = vec![];
                 let mut indices: Vec<u32> = vec![];
                 let mut normals: Vec<Vec3> = vec![];
-
+                let mut uvs: Vec<Vec2> = vec![];
                 let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(iter) = reader.read_tex_coords(0) {
+                    uvs = iter.into_f32().map(|arr| Vec2::from(arr)).collect();
+                }
                 if let Some(iter) = reader.read_positions() {
                     positions = iter.map(|p| Vec3::from(p)).collect();
                 }
@@ -333,15 +371,27 @@ fn load_node(node: &Node, buffers: &Vec<Data>, materials: &HashMap<usize, Rc<Mat
                 if let Some(iter) = reader.read_normals() {
                     normals = iter.map(|n| Vec3::from(n)).collect();
                 }
+
                 let mat = gltf_primitive
                     .material()
                     .index()
                     .map(|i| materials.get(&i).expect("Couldn't find material").clone());
-
-                meshes.push(Mesh::from(positions, indices, normals, mat));
+                meshes.push(Mesh::from(
+                    positions,
+                    indices,
+                    normals,
+                    mat.unwrap_or(default_material.clone()),
+                    uvs,
+                    global_transform,
+                ));
             }
         }
         _ => {}
     }
-    Model::from(meshes, node.name().map(Box::from), children)
+    Model::from(
+        meshes,
+        node.name().map(Box::from),
+        children,
+        local_transform,
+    )
 }
