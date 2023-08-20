@@ -209,7 +209,7 @@ pub fn load_gltf(
     HashMap<usize, Rc<Texture>>,
     HashMap<usize, Rc<Material>>,
 ) {
-    let (gltf, buffers, _) = gltf::import(path).unwrap(); // todo skip loading of images on gltf lib side
+    let (gltf, buffers, _) = gltf::import(path).unwrap(); // TODO skip loading of images on gltf lib side
 
     println!("GLTF has {:?} scenes", gltf.scenes().len());
 
@@ -321,6 +321,12 @@ pub fn load_gltf(
             })
             .collect();
         scenes.push(Scene::from(models, scene.name().map(Box::from)));
+    }
+
+    println!("extensions???");
+    for extension in gltf.extensions_used() {
+        println!("Scene has {} lights", 1);
+        println!("extension: {:?}", extension);
     }
 
     (scenes, textures, materials)
