@@ -7,6 +7,7 @@ use vulkano::buffer::BufferContents;
 pub struct MaterialInfo {
     pub base_color: [f32; 4],
     pub base_texture: u32, // index of texture
+    _align: [u32; 3],
 }
 
 impl From<Rc<Material>> for MaterialInfo {
@@ -14,6 +15,7 @@ impl From<Rc<Material>> for MaterialInfo {
         MaterialInfo {
             base_color: value.base_color.to_array(),
             base_texture: value.base_texture.as_ref().map(|t| t.id).unwrap_or(0),
+            _align: [0; 3],
         }
     }
 }

@@ -43,4 +43,4 @@ Vulkan game engine
 - [ ] Asset drag & drop
 
 ### I/O
-- [ ] multi-threaded asset loading
+- [ ] multithreaded asset loading

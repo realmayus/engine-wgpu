@@ -507,7 +507,7 @@ pub fn start(gltf_paths: Vec<&str>) {
             },
             mat,
         )
-        .expect("Couldn't allocate buffer for draw call info")
+        .expect("Couldn't allocate buffer for material info")
     });
 
     println!("# of materialUniforms: {}", material_info_buf.len());

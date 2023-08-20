@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::{fs, io};
 
 use base64::{engine::general_purpose, Engine as _};
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
@@ -16,7 +16,7 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer
 use vulkano::format::Format;
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
-use lib::scene::{Material, Mesh, Model, Scene, Texture};
+use lib::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
 use lib::util::texture::create_texture;
 
 // TODO make independent of vulkano lib
@@ -320,12 +320,6 @@ pub fn load_gltf(
         scenes.push(Scene::from(models, scene.name().map(Box::from)));
     }
 
-    println!("extensions???");
-    for extension in gltf.extensions_used() {
-        println!("Scene has {} lights", 1);
-        println!("extension: {:?}", extension);
-    }
-
     (scenes, textures, materials)
 }
 
@@ -391,10 +385,24 @@ fn load_node(
         }
         _ => {}
     }
+
+    let light = if let Some(light) = node.light() {
+        Some(PointLight {
+            global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
+            index: light.index(),
+            color: Vec4::from((light.color()[0], light.color()[1], light.color()[2], 1.0)),
+            intensity: light.intensity(),
+            range: light.range(),
+        })
+    } else {
+        None
+    };
+
     Model::from(
         meshes,
         node.name().map(Box::from),
         children,
         local_transform,
+        light,
     )
 }

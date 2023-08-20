@@ -142,12 +142,21 @@ impl Debug for Mesh {
     }
 }
 
+pub struct PointLight {
+    pub global_transform: Mat4,
+    pub index: usize,
+    pub color: Vec4,
+    pub intensity: f32,
+    pub range: Option<f32>,
+}
+
 pub struct Model {
     dirty: bool,
     pub meshes: Vec<Mesh>,
     pub name: Option<Box<str>>,
     pub children: Vec<Model>,
     pub local_transform: Mat4,
+    pub light: Option<PointLight>,
 }
 impl Model {
     pub fn from(
@@ -155,6 +164,7 @@ impl Model {
         name: Option<Box<str>>,
         children: Vec<Model>,
         local_transform: Mat4,
+        light: Option<PointLight>,
     ) -> Self {
         Self {
             dirty: false,
@@ -162,6 +172,7 @@ impl Model {
             name,
             children,
             local_transform,
+            light,
         }
     }
 

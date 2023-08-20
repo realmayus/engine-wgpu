@@ -8,18 +8,28 @@ layout(location = 0) out vec4 f_color;
 
 layout(set = 1, binding = 0) uniform sampler2D[] texs;
 
-layout(set = 2, binding = 0) buffer MaterialUniform {
+struct MUStruct {
     vec4 base_color;
     uint base_texture;
+};
+
+layout(set = 2, binding = 0) buffer MaterialUniform {
+    MUStruct mat;
 } materials[];
 
-layout(set = 3, binding = 0) buffer DrawCallInfo {
+struct DCIStruct {
     uint mat_id;
     mat4 model_transform;
-} draw_call_infos[];
+};
+
+layout(set = 3, binding = 0) buffer DrawCallInfo {
+    DCIStruct draw_call_infos[];
+};
 
 void main() {
-    uint mat_id = draw_call_infos[index].mat_id;
-    uint base_texture = materials[mat_id].base_texture;
+    DCIStruct dci = draw_call_infos[index];
+    uint mat_id = dci.mat_id;
+    MUStruct material = materials[mat_id].mat;
+    uint base_texture = material.base_texture;
     f_color = texture(nonuniformEXT(texs[base_texture]), tex_coords);
 }
