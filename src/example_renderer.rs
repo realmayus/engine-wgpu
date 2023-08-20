@@ -477,13 +477,6 @@ pub fn start(gltf_paths: Vec<&str>) {
         )
     });
 
-    let min_dynamic_align = device
-        .physical_device()
-        .properties()
-        .min_uniform_buffer_offset_alignment
-        .as_devicesize() as usize;
-
-    println!("Minimum uniform buffer offset alignment: {min_dynamic_align}");
     let allocator = setup_info.memory_allocator.clone();
     let draw_calls_uniform = draw_call_info.into_iter().map(|dci| {
         Buffer::from_data(
