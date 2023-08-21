@@ -74,7 +74,7 @@ pub struct RenderInitState {
     pub render_pass: Arc<RenderPass>,
 }
 
-pub fn select_physical_device(
+fn select_physical_device(
     instance: &Arc<Instance>,
     surface: &Arc<Surface>,
     device_extensions: &DeviceExtensions,
@@ -289,7 +289,7 @@ pub struct PartialRenderState<'a> {
     pub camera: &'a mut Camera,
 }
 
-pub fn start_renderer<'a>(
+pub fn start_renderer(
     mut state: RenderState,
     mut pipeline_provider: impl PipelineProvider + 'static,
     mut callable: impl StateCallable + 'static,
