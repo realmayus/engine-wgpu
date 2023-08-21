@@ -289,7 +289,7 @@ pub struct PartialRenderState<'a> {
     pub camera: &'a mut Camera,
 }
 
-pub fn start_renderer<'a>(
+pub fn start_renderer(
     mut state: RenderState,
     mut pipeline_provider: impl PipelineProvider + 'static,
     mut callable: impl StateCallable + 'static,
