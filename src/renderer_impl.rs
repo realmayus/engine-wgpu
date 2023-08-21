@@ -8,6 +8,7 @@ use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
 use image::DynamicImage;
 use itertools::Itertools;
+use log::info;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -69,8 +70,8 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
                                 mesh.material.borrow().name.clone().unwrap_or_default(),
                             ),
                     );
-                    if ui.button("Go to material").clicked() {
-                        println!("TBA, {:?}", mesh.material);
+                    if ui.button("Log material").clicked() {
+                        info!("{:?}", mesh.material);
                     }
                 })
             });

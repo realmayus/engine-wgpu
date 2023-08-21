@@ -1,3 +1,4 @@
+use log::debug;
 use std::sync::Arc;
 
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
@@ -5,8 +6,6 @@ use vulkano::format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{ImageDimensions, ImmutableImage, MipmapsCount};
 use vulkano::memory::allocator::StandardMemoryAllocator;
-
-
 
 pub fn create_texture(
     pixels: Vec<u8>,
@@ -16,7 +15,7 @@ pub fn create_texture(
     allocator: &StandardMemoryAllocator,
     mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<ImageView<ImmutableImage>> {
-    println!("Format: {:?}", format);
+    debug!("Creating texture with format: {:?}", format);
     let image = ImmutableImage::from_iter(
         allocator,
         pixels,

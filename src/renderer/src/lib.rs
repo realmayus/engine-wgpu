@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
+use log::{debug, error, info};
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -136,7 +137,7 @@ pub fn init_renderer() -> RenderInitState {
     let (physical_device, queue_family_index) =
         select_physical_device(&instance, &surface, &device_extensions);
 
-    println!(
+    info!(
         "Using device: {} (type: {:?})",
         physical_device.properties().device_name,
         physical_device.properties().device_type,
@@ -171,7 +172,7 @@ pub fn init_renderer() -> RenderInitState {
         .surface_capabilities(&surface, Default::default())
         .expect("failed to get surface capabilities");
 
-    println!(
+    info!(
         "Max swapchain images: {:?}, min: {:?}",
         caps.max_image_count, caps.min_image_count
     );
@@ -293,7 +294,7 @@ pub fn start_renderer<'a>(
     mut pipeline_provider: impl PipelineProvider + 'static,
     mut callable: impl StateCallable + 'static,
 ) {
-    println!(
+    info!(
         "Viewport dimensions: x={} y={}",
         state.viewport.dimensions[0] as u32, state.viewport.dimensions[1] as u32
     );
@@ -427,7 +428,7 @@ pub fn start_renderer<'a>(
                         .window
                         .set_title("Engine Playground - Press ESC to release controls");
                 }
-                println!(
+                debug!(
                     "Gui catch is now: {}",
                     if gui_catch { "enabled" } else { "disabled" }
                 );
@@ -548,7 +549,7 @@ pub fn start_renderer<'a>(
                     recreate_swapchain = true;
                 }
                 Err(e) => {
-                    println!("Failed to flush future: {e}");
+                    error!("Failed to flush future: {e}");
                 }
             }
         }

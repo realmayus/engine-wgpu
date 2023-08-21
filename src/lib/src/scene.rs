@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::shader_types::{MaterialInfo, MeshInfo};
 use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use log::debug;
 use rand::Rng;
 use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
@@ -79,7 +80,7 @@ impl Dirtyable for Material {
     }
 
     fn update(&mut self) {
-        println!("Updated material #{}", self.id);
+        debug!("Updated material #{}", self.id);
         self.set_dirty(false);
         let mut mapping = self.buffer.write().unwrap();
         mapping.base_texture = self.base_texture.as_ref().map(|t| t.id).unwrap_or(0);

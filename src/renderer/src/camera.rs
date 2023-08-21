@@ -1,5 +1,6 @@
 use glam::{Mat4, Vec3, Vec4};
 use lib::shader_types::CameraUniform;
+use log::debug;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
@@ -34,7 +35,7 @@ impl Camera {
         let view = Mat4::look_at_rh(eye, target, up);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
 
-        println!("View proj: {:?}", proj * view * scale);
+        debug!("Creating view proj: {:?}", proj * view * scale);
         data.proj_view = (proj * view * scale).to_cols_array_2d();
         data.view_position = (Vec4::from((eye, 1.0))).into();
 

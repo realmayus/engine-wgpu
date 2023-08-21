@@ -12,6 +12,7 @@ use gltf::image::Source;
 use gltf::image::Source::View;
 use gltf::{Error, Node};
 use image::DynamicImage;
+use log::info;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
@@ -207,7 +208,7 @@ pub fn load_gltf(
 ) {
     let (gltf, buffers, _) = gltf::import(path).unwrap(); // todo skip loading of images on gltf lib side
 
-    println!("GLTF has {:?} scenes", gltf.scenes().len());
+    info!("GLTF has {:?} scenes", gltf.scenes().len());
 
     let mut scenes: Vec<Scene> = vec![];
     let mut textures: HashMap<usize, Rc<Texture>> = HashMap::new();
@@ -319,7 +320,7 @@ pub fn load_gltf(
     }
 
     for scene in gltf.scenes() {
-        println!("Scene has {:?} nodes", scene.nodes().len());
+        info!("Scene has {:?} nodes", scene.nodes().len());
 
         let models = scene
             .nodes()
@@ -351,7 +352,6 @@ fn load_node(
     let mut children: Vec<Model> = vec![];
     let local_transform = Mat4::from_cols_array_2d(&node.transform().matrix());
     for child in node.children() {
-        println!("Iterating over children...");
         children.push(load_node(
             &child,
             buffers,

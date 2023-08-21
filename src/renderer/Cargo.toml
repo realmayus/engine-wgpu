@@ -14,3 +14,4 @@ egui_winit_vulkano = "0.24.0"
 vulkano-shaders = "0.33.0"
 systems = { path = "../systems" }
 lib = { path = "../lib" }
+log = "0.4.19"
