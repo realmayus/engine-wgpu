@@ -26,7 +26,19 @@ layout(set = 3, binding = 0) buffer MeshInfo {
     MeshStruct draw_call_infos[];
 };
 
+struct LIStruct {
+    mat4 transform;
+    uint light;
+    float intensity;
+};
+
+layout(set = 4, binding = 0) buffer LightInfo {
+    LIStruct light;
+} light_info[];
+
 void main() {
+    // do sth so it's not optimized into the void
+    LIStruct light = light_info[0].light;
     MeshStruct dci = draw_call_infos[index];
     uint mat_id = dci.mat_id;
     MUStruct material = materials[mat_id].mat;

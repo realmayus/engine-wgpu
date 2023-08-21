@@ -106,17 +106,18 @@ impl PBRPipeline {
                     vec![
                         // Level 3: Model-specific uniforms
                         WriteDescriptorSet::buffer_with_range_array(0, 0, mesh_info_buffers),
+                        // gives error: InvalidBinding { binding: 1 }
                         // WriteDescriptorSet::buffer_array(1,  m_len, light_buffer),
                     ],
                 )
             }),
-            // (
-            //     light_buffer.len() as u32,
-            //     vec![
-            //         // Level 3: Model-specific uniforms
-            //         WriteDescriptorSet::buffer_array(0, 0,light_buffer),
-            //     ],
-            // ),
+            (
+                light_buffer.len() as u32,
+                vec![
+                    // Level 3: Model-specific uniforms
+                    WriteDescriptorSet::buffer_array(0, 0,light_buffer),
+                ],
+            ),
         ];
 
         Self {
@@ -167,6 +168,11 @@ impl PipelineProvider for PBRPipeline {
 
                 // MeshInfo
                 let binding = x[3].bindings.get_mut(&0).unwrap();
+                binding.variable_descriptor_count = true;
+                binding.descriptor_count = 128;
+
+                // LightInfo
+                let binding = x[4].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
                 binding.descriptor_count = 128;
             })
