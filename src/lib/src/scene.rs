@@ -47,13 +47,13 @@ pub struct Material {
     pub occlusion_factor: f32,
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
-    // pub buffer: Subbuffer<MaterialInfo>,
+    pub buffer: Subbuffer<MaterialInfo>,
 }
 
 impl Material {
     pub fn from_default(
         base_texture: Option<Rc<Texture>>,
-        // buffer: Subbuffer<MaterialInfo>,
+        buffer: Subbuffer<MaterialInfo>,
     ) -> Self {
         Self {
             dirty: true,
@@ -68,7 +68,7 @@ impl Material {
             occlusion_factor: 0.0,
             emissive_texture: None,
             emissive_factors: Vec3::from((1.0, 1.0, 1.0)),
-            // buffer,
+            buffer,
         }
     }
 }
@@ -85,9 +85,21 @@ impl Dirtyable for Material {
     fn update(&mut self) {
         debug!("Updated material #{}", self.id);
         self.set_dirty(false);
-        // let mut mapping = self.buffer.write().unwrap();
-        // mapping.albedo_texture = self.albedo_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        // mapping.albedo = self.albedo.to_array();
+        let mut mapping = self.buffer.write().unwrap();
+
+        mapping.albedo_texture = self.albedo_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.albedo = self.albedo.to_array();
+        mapping.metal_roughness_texture = self
+            .metallic_roughness_texture
+            .as_ref()
+            .map(|t| t.id)
+            .unwrap_or(0);
+        mapping.metal_roughness_factors = self.metallic_roughness_factors.to_array();
+        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.occlusion_texture = self.occlusion_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.occlusion_factor = self.occlusion_factor;
+        mapping.emission_texture = self.emissive_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.emission_factors = self.emissive_factors.to_array();
     }
 }
 

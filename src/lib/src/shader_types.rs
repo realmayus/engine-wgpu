@@ -1,7 +1,7 @@
+use crate::scene::{Material, PointLight};
 use glam::Mat4;
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
-use crate::scene::{Material, PointLight};
 
 // Vertex buffers
 
@@ -64,43 +64,30 @@ pub struct MaterialInfo {
     pub emission_texture: u32,
     /// scales emission texture if defined, otherwise defines the emission color
     pub emission_factors: [f32; 3],
-
 }
 impl MaterialInfo {
     pub fn from_material(material: &Material) -> Self {
         Self {
             albedo_texture: material.albedo_texture.as_ref().unwrap().id,
             albedo: material.albedo.to_array(),
-            metal_roughness_texture: {
-                if let Some(ref tex) = material.metallic_roughness_texture {
-                    tex.id
-                } else {
-                    0
-                }
-            },
+            metal_roughness_texture: material
+                .metallic_roughness_texture
+                .as_ref()
+                .map(|t| t.id)
+                .unwrap_or(0),
             metal_roughness_factors: material.metallic_roughness_factors.to_array(),
-            normal_texture: {
-                if let Some(ref tex) = material.normal_texture {
-                    tex.id
-                } else {
-                    0
-                }
-            },
-            occlusion_texture: {
-                if let Some(ref tex) = material.occlusion_texture {
-                    tex.id
-                } else {
-                    0
-                }
-            },
+            normal_texture: material.normal_texture.as_ref().map(|t| t.id).unwrap_or(0),
+            occlusion_texture: material
+                .occlusion_texture
+                .as_ref()
+                .map(|t| t.id)
+                .unwrap_or(0),
             occlusion_factor: material.occlusion_factor,
-            emission_texture: {
-                if let Some(ref tex) = material.emissive_texture {
-                    tex.id
-                } else {
-                    0
-                }
-            },
+            emission_texture: material
+                .emissive_texture
+                .as_ref()
+                .map(|t| t.id)
+                .unwrap_or(0),
             emission_factors: material.emissive_factors.to_array(),
         }
     }

@@ -134,61 +134,61 @@ fn load_image(
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R8_UNORM,
+            Format::R8_UNORM,
         ),
         DynamicImage::ImageLumaA8(_) => (
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R8G8_UNORM,
+            Format::R8G8_UNORM,
         ),
         DynamicImage::ImageRgb8(_) => (
             DynamicImage::from(decoded_image.to_rgba8()).into_bytes(),
             decoded_image.width(),
             decoded_image.height(),
-            vulkano::format::Format::R8G8B8A8_SRGB,
+            Format::R8G8B8A8_SRGB,
         ),
         DynamicImage::ImageRgba8(_) => (
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R8G8B8A8_SRGB,
+            Format::R8G8B8A8_SRGB,
         ),
         DynamicImage::ImageLuma16(_) => (
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R16_UINT,
+            Format::R16_UINT,
         ),
         DynamicImage::ImageLumaA16(_) => (
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R16G16_UINT,
+            Format::R16G16_UINT,
         ),
         DynamicImage::ImageRgb16(_) => (
             DynamicImage::from(decoded_image.to_rgba16()).into_bytes(),
             width,
             height,
-            vulkano::format::Format::R16G16B16A16_UINT,
+            Format::R16G16B16A16_UINT,
         ),
         DynamicImage::ImageRgba16(_) => (
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R16G16B16A16_UINT,
+            Format::R16G16B16A16_UINT,
         ),
         DynamicImage::ImageRgb32F(_) => (
             DynamicImage::from(decoded_image.to_rgba32f()).into_bytes(),
             width,
             height,
-            vulkano::format::Format::R32G32B32A32_SFLOAT,
+            Format::R32G32B32A32_SFLOAT,
         ),
         DynamicImage::ImageRgba32F(_) => (
             decoded_image.into_bytes(),
             width,
             height,
-            vulkano::format::Format::R32G32B32A32_SFLOAT,
+            Format::R32G32B32A32_SFLOAT,
         ),
         _ => panic!("Unsupported input format."),
     }
@@ -298,22 +298,19 @@ pub fn load_gltf(
                             .clone()
                     }),
                 emissive_factors: gltf_mat.emissive_factor().into(),
-                // buffer: Buffer::from_data(
-                //     allocator,
-                //     BufferCreateInfo {
-                //         usage: BufferUsage::STORAGE_BUFFER,
-                //         ..Default::default()
-                //     },
-                //     AllocationCreateInfo {
-                //         usage: MemoryUsage::Upload,
-                //         ..Default::default()
-                //     },
-                //     MaterialInfo {
-                //         albedo: [1.0, 1.0, 1.0, 1.0],
-                //         albedo_texture: 0,
-                //     },
-                // )
-                // .expect("Couldn't allocate MaterialInfo uniform"),
+                buffer: Buffer::from_data(
+                    allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    MaterialInfo::default(),
+                )
+                .expect("Couldn't allocate MaterialInfo uniform"),
             };
             *mat_i += 1;
             materials.insert(index, Rc::new(RefCell::new(mat)));
