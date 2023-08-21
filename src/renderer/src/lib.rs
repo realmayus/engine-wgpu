@@ -74,7 +74,7 @@ pub struct RenderInitState {
     pub render_pass: Arc<RenderPass>,
 }
 
-pub fn select_physical_device(
+fn select_physical_device(
     instance: &Arc<Instance>,
     surface: &Arc<Surface>,
     device_extensions: &DeviceExtensions,

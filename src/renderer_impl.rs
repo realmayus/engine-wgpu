@@ -413,12 +413,8 @@ pub fn start(gltf_paths: Vec<&str>) {
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
     let mut mesh_info_bufs = vec![];
     for scene in scenes.as_slice() {
-        println!("{:?}", scene);
         for model in scene.models.as_slice() {
-            println!("{:?}", model);
-
             for mesh in model.meshes.as_slice() {
-                println!("{:?}", mesh);
                 let (vert_buf, normal_buf, uv_buf, index_buf) =
                     create_buffers(mesh, &setup_info.memory_allocator);
                 vertex_buffers.push(VertexBuffer {
@@ -450,6 +446,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         materials,
         textures,
     };
+
     let device = setup_info.device.clone();
     let render_pass = setup_info.render_pass.clone();
     let texs = global_state.textures.iter().map(|t| {
@@ -464,8 +461,6 @@ pub fn start(gltf_paths: Vec<&str>) {
         .as_slice()
         .into_iter()
         .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
-
-    println!("# of materialUniforms: {}", material_info_bufs.len());
 
     let pbr_pipeline = PBRPipeline::new(
         device.clone(),
