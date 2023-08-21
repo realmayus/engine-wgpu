@@ -237,6 +237,7 @@ pub fn load_gltf(
         *tex_i += 1;
         textures.insert(gltf_texture.index(), Rc::from(texture));
     }
+
     for gltf_mat in gltf.materials() {
         if let Some(index) = gltf_mat.index() {
             let mat = Material {
@@ -297,22 +298,22 @@ pub fn load_gltf(
                             .clone()
                     }),
                 emissive_factors: gltf_mat.emissive_factor().into(),
-                buffer: Buffer::from_data(
-                    allocator,
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        usage: MemoryUsage::Upload,
-                        ..Default::default()
-                    },
-                    MaterialInfo {
-                        base_color: [1.0, 1.0, 1.0, 1.0],
-                        base_texture: 0,
-                    },
-                )
-                .expect("Couldn't allocate MaterialInfo uniform"),
+                // buffer: Buffer::from_data(
+                //     allocator,
+                //     BufferCreateInfo {
+                //         usage: BufferUsage::STORAGE_BUFFER,
+                //         ..Default::default()
+                //     },
+                //     AllocationCreateInfo {
+                //         usage: MemoryUsage::Upload,
+                //         ..Default::default()
+                //     },
+                //     MaterialInfo {
+                //         albedo: [1.0, 1.0, 1.0, 1.0],
+                //         albedo_texture: 0,
+                //     },
+                // )
+                // .expect("Couldn't allocate MaterialInfo uniform"),
             };
             *mat_i += 1;
             materials.insert(index, Rc::new(RefCell::new(mat)));

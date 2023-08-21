@@ -9,8 +9,15 @@ layout(location = 0) out vec4 f_color;
 layout(set = 1, binding = 0) uniform sampler2D[] texs;
 
 struct MUStruct {
-    vec4 base_color;
     uint base_texture;
+    vec4 base_color;
+    uint metal_roughness_texture;
+    vec2 metal_roughness_factors;
+    uint normal_texture;
+    uint occlusion_texture;
+    float occlusion_factor;
+    uint emission_texture;
+    vec3 emission_factors;
 };
 
 layout(set = 2, binding = 0) buffer MaterialUniform {
@@ -39,9 +46,14 @@ layout(set = 4, binding = 0) buffer LightInfo {
 void main() {
     // do sth so it's not optimized into the void
     LIStruct light = light_info[0].light;
-    MeshStruct dci = draw_call_infos[index];
-    uint mat_id = dci.mat_id;
+
+    uint mat_id = draw_call_infos[index].mat_id;
     MUStruct material = materials[mat_id].mat;
+
     uint base_texture = material.base_texture;
-    f_color = texture(nonuniformEXT(texs[base_texture]), tex_coords);
+    uint met_rough_texture = material.metal_roughness_texture;
+
+    f_color = texture(nonuniformEXT(texs[base_texture]), tex_coords)
+            * texture(nonuniformEXT(texs[met_rough_texture]), tex_coords)
+    ;
 }

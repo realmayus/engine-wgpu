@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::vec::Vec;
@@ -13,7 +14,7 @@ use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
-use vulkano::format;
+use vulkano::{DeviceSize, format};
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::viewport::Viewport;
@@ -346,22 +347,22 @@ pub fn start(gltf_paths: Vec<&str>) {
         (
             Rc::new(RefCell::new(Material::from_default(
                 Some(texture.clone()),
-                Buffer::from_data(
-                    &setup_info.memory_allocator,
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        usage: MemoryUsage::Upload,
-                        ..Default::default()
-                    },
-                    MaterialInfo {
-                        base_color: [1.0, 1.0, 1.0, 1.0],
-                        base_texture: 0,
-                    },
-                )
-                .expect("Couldn't allocate MaterialInfo uniform"),
+                // Buffer::from_data(
+                //     &setup_info.memory_allocator,
+                //     BufferCreateInfo {
+                //         usage: BufferUsage::STORAGE_BUFFER,
+                //         ..Default::default()
+                //     },
+                //     AllocationCreateInfo {
+                //         usage: MemoryUsage::Upload,
+                //         ..Default::default()
+                //     },
+                //     MaterialInfo {
+                //         albedo: [1.0, 1.0, 1.0, 1.0],
+                //         albedo_texture: 0,
+                //     },
+                // )
+                // .expect("Couldn't allocate MaterialInfo uniform"),
             ))),
             texture.clone(),
         )
@@ -415,6 +416,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
     let mut mesh_info_bufs = vec![];
     let mut lights_buffer: Vec<PointLight> = vec![];
+
     for scene in scenes.as_slice() {
         println!("{:?}", scene);
         for model in scene.models.as_slice() {
@@ -466,11 +468,24 @@ pub fn start(gltf_paths: Vec<&str>) {
         )
     });
 
-    let material_info_bufs = global_state
-        .materials
-        .as_slice()
-        .into_iter()
-        .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); //TODO so many clones!
+    let material_info_bufs = global_state.materials.as_slice().into_iter().map(|mat| {
+        (
+            Buffer::from_data(
+                &setup_info.memory_allocator,
+                BufferCreateInfo {
+                    usage: BufferUsage::STORAGE_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    usage: MemoryUsage::Upload,
+                    ..Default::default()
+                },
+                MaterialInfo::from_material(mat.borrow().deref()),
+            )
+            .expect("Couldn't allocate MaterialInfo uniform"),
+            0..std::mem::size_of::<MaterialInfo>() as DeviceSize,
+        )
+    }); //TODO so many clones!
 
     println!("# of materialUniforms: {}", material_info_bufs.len());
 
@@ -487,7 +502,7 @@ pub fn start(gltf_paths: Vec<&str>) {
             },
             LightInfo::from_light(&light),
         )
-        .expect("Couldn't allocate MaterialInfo uniform")
+        .expect("Couldn't allocate LightInfo uniform")
     });
 
     let pbr_pipeline = PBRPipeline::new(

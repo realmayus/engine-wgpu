@@ -1,7 +1,7 @@
 use glam::Mat4;
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
-use crate::scene::PointLight;
+use crate::scene::{Material, PointLight};
 
 // Vertex buffers
 
@@ -46,8 +46,64 @@ impl CameraUniform {
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
 pub struct MaterialInfo {
-    pub base_color: [f32; 4],
-    pub base_texture: u32, // index of texture
+    /// index of the albedo texture, panics if None
+    pub albedo_texture: u32,
+    /// scales albedo texture if defined, otherwise defines color
+    pub albedo: [f32; 4],
+    /// index of the metal_roughness texture
+    pub metal_roughness_texture: u32,
+    /// scales metal_roughness texture if defined, otherwise defines reflection properties
+    pub metal_roughness_factors: [f32; 2],
+    /// index of the normal texture
+    pub normal_texture: u32,
+    /// index of the occlusion texture
+    pub occlusion_texture: u32,
+    /// scales occlusion texture if defined, otherwise defines constant occlusion value
+    pub occlusion_factor: f32,
+    /// index of the emission texture
+    pub emission_texture: u32,
+    /// scales emission texture if defined, otherwise defines the emission color
+    pub emission_factors: [f32; 3],
+
+}
+impl MaterialInfo {
+    pub fn from_material(material: &Material) -> Self {
+        Self {
+            albedo_texture: material.albedo_texture.as_ref().unwrap().id,
+            albedo: material.albedo.to_array(),
+            metal_roughness_texture: {
+                if let Some(ref tex) = material.metallic_roughness_texture {
+                    tex.id
+                } else {
+                    0
+                }
+            },
+            metal_roughness_factors: material.metallic_roughness_factors.to_array(),
+            normal_texture: {
+                if let Some(ref tex) = material.normal_texture {
+                    tex.id
+                } else {
+                    0
+                }
+            },
+            occlusion_texture: {
+                if let Some(ref tex) = material.occlusion_texture {
+                    tex.id
+                } else {
+                    0
+                }
+            },
+            occlusion_factor: material.occlusion_factor,
+            emission_texture: {
+                if let Some(ref tex) = material.emissive_texture {
+                    tex.id
+                } else {
+                    0
+                }
+            },
+            emission_factors: material.emissive_factors.to_array(),
+        }
+    }
 }
 
 #[derive(BufferContents, Debug, Default)]
@@ -70,16 +126,20 @@ impl MeshInfo {
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
 pub struct LightInfo {
-    pub transform: [[f32; 4]; 4],
-    pub light: u32,
-    pub intensity: f32,
+    transform: [[f32; 4]; 4],
+    light: u32,
+    intensity: f32,
+    range: f32,
+    color: [f32; 4],
 }
 impl LightInfo {
     pub fn from_light(light: &PointLight) -> Self {
         Self {
             transform: light.global_transform.to_cols_array_2d(),
             light: light.index as u32,
-            intensity: light.intensity
+            intensity: light.intensity,
+            range: light.range.unwrap_or(1.),
+            color: light.color.to_array(),
         }
     }
 }

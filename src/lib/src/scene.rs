@@ -47,13 +47,13 @@ pub struct Material {
     pub occlusion_factor: f32,
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
-    pub buffer: Subbuffer<MaterialInfo>,
+    // pub buffer: Subbuffer<MaterialInfo>,
 }
 
 impl Material {
     pub fn from_default(
         base_texture: Option<Rc<Texture>>,
-        buffer: Subbuffer<MaterialInfo>,
+        // buffer: Subbuffer<MaterialInfo>,
     ) -> Self {
         Self {
             dirty: true,
@@ -68,7 +68,7 @@ impl Material {
             occlusion_factor: 0.0,
             emissive_texture: None,
             emissive_factors: Vec3::from((1.0, 1.0, 1.0)),
-            buffer,
+            // buffer,
         }
     }
 }
@@ -85,9 +85,9 @@ impl Dirtyable for Material {
     fn update(&mut self) {
         debug!("Updated material #{}", self.id);
         self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.base_texture = self.albedo_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.base_color = self.albedo.to_array();
+        // let mut mapping = self.buffer.write().unwrap();
+        // mapping.albedo_texture = self.albedo_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        // mapping.albedo = self.albedo.to_array();
     }
 }
 
