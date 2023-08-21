@@ -11,7 +11,6 @@ systems = { path = "src/systems" }
 lib = { path = "src/lib" }
 glam = "0.24.1"
 vulkano = "0.33.0"
-vulkano-shaders = "0.33.0"
 image = "0.24"
 egui_winit_vulkano = "0.24.0"
 num-traits = "0.2"

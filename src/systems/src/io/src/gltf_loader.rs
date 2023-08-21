@@ -18,8 +18,8 @@ use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::util::shader_types::{MaterialInfo, MeshInfo};
-use lib::util::texture::create_texture;
+use lib::shader_types::{MaterialInfo, MeshInfo};
+use lib::texture::create_texture;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where

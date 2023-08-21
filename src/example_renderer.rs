@@ -8,109 +8,26 @@ use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
 use image::DynamicImage;
 use itertools::Itertools;
-use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
-use vulkano::descriptor_set::WriteDescriptorSet;
-use vulkano::device::Device;
 use vulkano::format;
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
-use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
-use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
-use vulkano::pipeline::graphics::vertex_input::Vertex;
-use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::GraphicsPipeline;
-use vulkano::render_pass::{RenderPass, Subpass};
+use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
-use vulkano::shader::ShaderModule;
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::util::shader_types::MaterialInfo;
-use lib::util::texture::create_texture;
+use lib::shader_types::MaterialInfo;
+use lib::texture::create_texture;
 use lib::Dirtyable;
 use renderer::camera::Camera;
+use renderer::pipelines::pbr_pipeline::PBRPipeline;
 use renderer::{
     init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable, VertexBuffer,
 };
 use systems::io::gltf_loader::load_gltf;
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-struct MyVertex {
-    #[format(R32G32B32_SFLOAT)]
-    position: [f32; 3],
-}
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-struct MyNormal {
-    #[format(R32G32B32_SFLOAT)]
-    normal: [f32; 3],
-}
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-struct MyUV {
-    #[format(R32G32_SFLOAT)]
-    uv: [f32; 2],
-}
-
-#[derive(BufferContents, Debug, Default)]
-#[repr(C)]
-pub struct ModelUniform {
-    model: [[f32; 4]; 4],
-}
-
-mod vs {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        path: "assets/shaders/vertex.glsl",
-    }
-}
-
-mod fs {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "assets/shaders/fragment.glsl",
-    }
-}
-
-fn get_pipeline(
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
-    device: Arc<Device>,
-    viewport: Viewport,
-    render_pass: Arc<RenderPass>,
-) -> Arc<GraphicsPipeline> {
-    GraphicsPipeline::start()
-        .vertex_input_state([
-            MyVertex::per_vertex(),
-            MyNormal::per_vertex(),
-            MyUV::per_vertex(),
-        ]) // describes layout of vertex input
-        .vertex_shader(vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-        .input_assembly_state(InputAssemblyState::new()) //Indicate type of primitives (default is list of triangles)
-        .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
-        .fragment_shader(fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
-        .depth_stencil_state(DepthStencilState::simple_depth_test())
-        .render_pass(Subpass::from(render_pass, 0).unwrap()) // This pipeline object concerns the first pass of the render pass
-        .with_auto_layout(device.clone(), |x| {
-            let binding = x[1].bindings.get_mut(&0).unwrap();
-            binding.variable_descriptor_count = true;
-            binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
-
-            let binding = x[2].bindings.get_mut(&0).unwrap();
-            binding.variable_descriptor_count = true;
-            binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
-
-            let binding = x[3].bindings.get_mut(&0).unwrap(); // drawCallInfo
-            binding.variable_descriptor_count = true;
-            binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
-        })
-        .unwrap()
-}
 
 fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4) {
     ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
@@ -401,9 +318,6 @@ pub fn start(gltf_paths: Vec<&str>) {
         depth_range: 0.0..1.0,
     };
 
-    let vs = vs::load(setup_info.device.clone()).expect("failed to create shader module");
-    let fs = fs::load(setup_info.device.clone()).expect("failed to create shader module");
-
     let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
         &setup_info.cmd_buf_allocator,
         setup_info.queue.queue_family_index(),
@@ -536,6 +450,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         textures,
     };
     let device = setup_info.device.clone();
+    let render_pass = setup_info.render_pass.clone();
     let texs = global_state.textures.iter().map(|t| {
         (
             t.view.clone() as Arc<dyn ImageViewAbstract>,
@@ -551,39 +466,28 @@ pub fn start(gltf_paths: Vec<&str>) {
 
     println!("# of materialUniforms: {}", material_info_bufs.len());
 
+    let pbr_pipeline = PBRPipeline::new(
+        device.clone(),
+        vertex_buffers,
+        normal_buffers,
+        uv_buffers,
+        index_buffers,
+        camera.buffer.clone(),
+        texs,
+        material_info_bufs,
+        mesh_info_bufs.into_iter(),
+        viewport.clone(),
+        render_pass,
+    );
+
     start_renderer(
         RenderState {
             init_state: setup_info,
             viewport,
-            vertex_buffers,
-            normal_buffers,
-            uv_buffers,
-            index_buffers,
-            vs,
-            fs,
-            get_pipeline,
-            write_descriptor_sets_0: vec![
-                // Level 0: Scene-global uniforms
-                WriteDescriptorSet::buffer(0, camera.buffer.clone()),
-            ],
-            descriptor_len_1: texs.len(),
-            write_descriptor_sets_1: vec![
-                // Level 1: Pipeline-specific uniforms
-                WriteDescriptorSet::image_view_sampler_array(0, 0, texs),
-            ],
-            descriptor_len_2: material_info_bufs.len(),
-            write_descriptor_sets_2: vec![
-                // Level 2: Pipeline-specific uniforms
-                WriteDescriptorSet::buffer_array(0, 0, material_info_bufs),
-            ],
-            descriptor_len_3: mesh_info_bufs.len(),
-            write_descriptor_sets_3: vec![
-                // Level 3: Model-specific uniforms
-                WriteDescriptorSet::buffer_array(0, 0, mesh_info_bufs),
-            ],
             cmd_buf_builder,
             camera,
         },
+        pbr_pipeline,
         global_state,
     );
 }

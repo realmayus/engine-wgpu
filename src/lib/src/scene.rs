@@ -3,13 +3,14 @@ use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::util::shader_types::{MaterialInfo, MeshInfo};
+use crate::shader_types::{MaterialInfo, MeshInfo};
 use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use rand::Rng;
 use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
+use vulkano::pipeline::GraphicsPipeline;
 
 pub struct Texture {
     pub id: u32,
@@ -43,7 +44,6 @@ pub struct Material {
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
     pub buffer: Subbuffer<MaterialInfo>,
-    // pub pipeline: Arc<GraphicsPipeline>,
 }
 
 impl Material {

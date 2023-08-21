@@ -1,21 +1,7 @@
 use glam::{Mat4, Vec3, Vec4};
+use lib::shader_types::CameraUniform;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
-
-#[derive(BufferContents, Debug, Default, Copy, Clone)]
-#[repr(C)]
-pub struct CameraUniform {
-    pub proj_view: [[f32; 4]; 4],
-    pub view_position: [f32; 4],
-}
-impl CameraUniform {
-    fn new() -> Self {
-        Self {
-            proj_view: Mat4::default().to_cols_array_2d(),
-            view_position: [0.0; 4],
-        }
-    }
-}
 
 pub struct Camera {
     pub eye: Vec3,

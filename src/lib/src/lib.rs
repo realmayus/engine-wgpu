@@ -1,4 +1,6 @@
 pub mod scene;
+pub mod shader_types;
+pub mod texture;
 pub mod util;
 
 pub trait Dirtyable {
