@@ -1,17 +1,18 @@
-use egui_winit_vulkano::egui::Ui;
-use egui_winit_vulkano::{egui, Gui};
-use glam::{Mat4, Vec3};
-use image::DynamicImage;
-use itertools::Itertools;
-use std::alloc::alloc;
-use std::iter::Map;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::vec::Vec;
+
+use egui_winit_vulkano::egui::Ui;
+use egui_winit_vulkano::{egui, Gui};
+use glam::Mat4;
+use image::DynamicImage;
+use itertools::Itertools;
+use rand::Rng;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
-use vulkano::descriptor_set::layout::DescriptorType;
 use vulkano::descriptor_set::WriteDescriptorSet;
 use vulkano::device::Device;
 use vulkano::format;
@@ -28,10 +29,13 @@ use vulkano::shader::ShaderModule;
 use vulkano::sync::GpuFuture;
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::util::shader_types::{DrawCallInfo, MaterialInfo};
+use lib::util::shader_types::MaterialInfo;
 use lib::util::texture::create_texture;
+use lib::Dirtyable;
 use renderer::camera::Camera;
-use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, VertexBuffer};
+use renderer::{
+    init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable, VertexBuffer,
+};
 use systems::io::gltf_loader::load_gltf;
 
 #[derive(BufferContents, Vertex)]
@@ -114,21 +118,21 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
     ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
         ui.label("Translation:");
         if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.x, 1.0..=10.0).text("X"))
+            .add(egui::Slider::new(&mut model.local_transform.w_axis.x, -10.0..=10.0).text("X"))
             .changed()
         {
             model.update_transforms(parent_transform);
         }
 
         if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.y, 1.0..=10.0).text("Y"))
+            .add(egui::Slider::new(&mut model.local_transform.w_axis.y, -10.0..=10.0).text("Y"))
             .changed()
         {
             model.update_transforms(parent_transform);
         }
 
         if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.z, 1.0..=10.0).text("Z"))
+            .add(egui::Slider::new(&mut model.local_transform.w_axis.z, -10.0..=10.0).text("Z"))
             .changed()
         {
             model.update_transforms(parent_transform);
@@ -136,20 +140,24 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
 
         ui.label("Meshes:");
         for mesh in model.meshes.as_slice() {
-            ui.collapsing("Mesh", |ui| {
-                ui.label(format!(
-                    "# of vert/norm/in: {}/{}/{}",
-                    mesh.vertices.len(),
-                    mesh.normals.len(),
-                    mesh.indices.len()
-                ));
-                ui.label(
-                    "Material: ".to_owned()
-                        + &*String::from(mesh.material.name.clone().unwrap_or_default()),
-                );
-                if ui.button("Go to material").clicked() {
-                    println!("TBA, {:?}", mesh.material);
-                }
+            ui.push_id(mesh.id, |ui| {
+                ui.collapsing("Mesh", |ui| {
+                    ui.label(format!(
+                        "# of vert/norm/in: {}/{}/{}",
+                        mesh.vertices.len(),
+                        mesh.normals.len(),
+                        mesh.indices.len()
+                    ));
+                    ui.label(
+                        "Material: ".to_owned()
+                            + &*String::from(
+                                mesh.material.borrow().name.clone().unwrap_or_default(),
+                            ),
+                    );
+                    if ui.button("Go to material").clicked() {
+                        println!("TBA, {:?}", mesh.material);
+                    }
+                })
             });
         }
         ui.separator();
@@ -160,16 +168,20 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
     });
 }
 
+fn update(state: &mut GlobalState) {}
+
 fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
         ui.label("Loaded models:");
-        for mut scene in state.scenes.as_mut_slice() {
-            ui.collapsing(String::from(scene.name.clone().unwrap_or_default()), |ui| {
-                ui.label(format!("# of models: {}", scene.models.len()));
-                for model in scene.models.as_mut_slice() {
-                    draw_model_collapsing(ui, model, Mat4::default());
-                }
+        for scene in state.scenes.as_mut_slice() {
+            ui.push_id(scene.id, |ui| {
+                ui.collapsing(String::from(scene.name.clone().unwrap_or_default()), |ui| {
+                    ui.label(format!("# of models: {}", scene.models.len()));
+                    for model in scene.models.as_mut_slice() {
+                        draw_model_collapsing(ui, model, Mat4::default());
+                    }
+                });
             });
         }
     });
@@ -187,23 +199,44 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
 
     egui::Window::new("Materials").show(&ctx, |ui| {
         for mat in state.materials.as_slice() {
-            ui.collapsing(String::from(mat.name.clone().unwrap_or_default()), |ui| {
-                ui.label(format!("Base color factors: {}", mat.base_color));
-                ui.label(format!(
-                    "Metallic roughness factors: {}",
-                    mat.metallic_roughness_factors
-                ));
-                ui.label(format!("Emissive factors: {}", mat.emissive_factors));
-                ui.label(format!("Occlusion strength: {}", mat.occlusion_strength));
-                ui.separator();
-                ui.label(format!("Base color texture: {:?}", mat.base_texture));
-                ui.label(format!("Normal texture: {:?}", mat.normal_texture));
-                ui.label(format!(
-                    "Metallic roughness texture: {:?}",
-                    mat.metallic_roughness_texture
-                ));
-                ui.label(format!("Emissive texture: {:?}", mat.emissive_texture));
-                ui.label(format!("Occlusion texture: {:?}", mat.occlusion_texture));
+            let (id, name) = { (mat.borrow().id, mat.borrow().name.clone()) };
+            ui.push_id(id, |ui| {
+                ui.collapsing(String::from(name.unwrap_or_default()), |ui| {
+                    if ui.button("Update").clicked() {
+                        mat.clone().borrow_mut().set_dirty(true);
+                    }
+                    ui.label(format!("Base color factors: {}", mat.borrow().base_color));
+                    ui.label(format!(
+                        "Metallic roughness factors: {}",
+                        mat.borrow().metallic_roughness_factors
+                    ));
+                    ui.label(format!(
+                        "Emissive factors: {}",
+                        mat.borrow().emissive_factors
+                    ));
+                    ui.label(format!(
+                        "Occlusion strength: {}",
+                        mat.borrow().occlusion_strength
+                    ));
+                    ui.separator();
+                    ui.label(format!(
+                        "Base color texture: {:?}",
+                        mat.borrow().base_texture
+                    ));
+                    ui.label(format!("Normal texture: {:?}", mat.borrow().normal_texture));
+                    ui.label(format!(
+                        "Metallic roughness texture: {:?}",
+                        mat.borrow().metallic_roughness_texture
+                    ));
+                    ui.label(format!(
+                        "Emissive texture: {:?}",
+                        mat.borrow().emissive_texture
+                    ));
+                    ui.label(format!(
+                        "Occlusion texture: {:?}",
+                        mat.borrow().occlusion_texture
+                    ));
+                });
             });
         }
     });
@@ -223,7 +256,7 @@ fn load_preview_meshes(
     preview_models: Vec<&str>,
     memory_allocator: &StandardMemoryAllocator,
     mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    default_material: Rc<Material>,
+    default_material: Rc<RefCell<Material>>,
 ) -> (Vec<VertexBuffer>, Vec<VertexBuffer>, Vec<Subbuffer<[u32]>>) {
     let mut preview_vertices: Vec<VertexBuffer> = vec![];
     let mut normal_buffers: Vec<VertexBuffer> = vec![];
@@ -329,8 +362,32 @@ fn create_buffers(
 
 struct GlobalState {
     scenes: Vec<Scene>,
-    materials: Vec<Rc<Material>>,
+    materials: Vec<Rc<RefCell<Material>>>,
     textures: Vec<Rc<Texture>>,
+}
+
+impl StateCallable for GlobalState {
+    fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState) {
+        render_gui(gui, render_state, self);
+    }
+
+    fn update(&mut self) {
+        for scene in self.scenes.as_mut_slice() {
+            for model in scene.models.as_mut_slice() {
+                for mesh in model.meshes.as_mut_slice() {
+                    if mesh.dirty() {
+                        mesh.update();
+                    }
+                }
+            }
+        }
+        for material in self.materials.as_slice() {
+            let dirty = { material.borrow().dirty() };
+            if dirty {
+                material.borrow_mut().update();
+            }
+        }
+    }
 }
 
 pub fn start(gltf_paths: Vec<&str>) {
@@ -376,7 +433,25 @@ pub fn start(gltf_paths: Vec<&str>) {
         let texture = Rc::new(Texture::from(tex, Some(Box::from("Default texture")), 0));
 
         (
-            Rc::new(Material::from_default(Some(texture.clone()))),
+            Rc::new(RefCell::new(Material::from_default(
+                Some(texture.clone()),
+                Buffer::from_data(
+                    &setup_info.memory_allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    MaterialInfo {
+                        base_color: [1.0, 1.0, 1.0, 1.0],
+                        base_texture: 0,
+                    },
+                )
+                .expect("Couldn't allocate MaterialInfo uniform"),
+            ))),
             texture.clone(),
         )
     };
@@ -392,7 +467,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     // Load scene
     let mut scenes: Vec<Scene> = vec![];
     let mut textures: Vec<Rc<Texture>> = vec![default_texture];
-    let mut materials: Vec<Rc<Material>> = vec![default_material.clone()];
+    let mut materials: Vec<Rc<RefCell<Material>>> = vec![default_material.clone()];
     let mut tex_i = 1; // 0 reserved for default tex, mat
     let mut mat_i = 1;
     for gltf_path in gltf_paths {
@@ -412,7 +487,7 @@ pub fn start(gltf_paths: Vec<&str>) {
             .collect_vec();
 
         textures.append(&mut texture_values.clone()); //TODO investigate if this is too performance-heavy?
-        let material_values: Vec<Rc<Material>> = gltf_materials
+        let material_values: Vec<Rc<RefCell<Material>>> = gltf_materials
             .into_iter()
             .sorted_by_key(|x| x.0)
             .map(|x| x.1)
@@ -420,17 +495,12 @@ pub fn start(gltf_paths: Vec<&str>) {
 
         materials.append(&mut material_values.clone());
     }
-    let mut material_info: Vec<MaterialInfo> = vec![];
-
-    for mat in materials.as_slice() {
-        material_info.push(MaterialInfo::from(mat.clone()));
-    }
 
     let mut vertex_buffers: Vec<VertexBuffer> = vec![];
     let mut normal_buffers: Vec<VertexBuffer> = vec![];
     let mut uv_buffers: Vec<VertexBuffer> = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
-    let mut draw_call_info: Vec<DrawCallInfo> = vec![];
+    let mut mesh_info_bufs = vec![];
     for scene in scenes.as_slice() {
         println!("{:?}", scene);
         for model in scene.models.as_slice() {
@@ -453,7 +523,7 @@ pub fn start(gltf_paths: Vec<&str>) {
                     vertex_count: mesh.uvs.len() as u32,
                 });
                 index_buffers.push(index_buf);
-                draw_call_info.push(DrawCallInfo::from(mesh));
+                mesh_info_bufs.push(mesh.buffer.clone());
             }
         }
     }
@@ -477,40 +547,13 @@ pub fn start(gltf_paths: Vec<&str>) {
         )
     });
 
-    let allocator = setup_info.memory_allocator.clone();
-    let draw_calls_uniform = draw_call_info.into_iter().map(|dci| {
-        Buffer::from_data(
-            &allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
-                ..Default::default()
-            },
-            dci,
-        )
-        .expect("Couldn't allocate buffer for draw call info")
-    });
+    let material_info_bufs = global_state
+        .materials
+        .as_slice()
+        .into_iter()
+        .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
 
-    let material_info_buf = material_info.into_iter().map(|mat| {
-        Buffer::from_data(
-            &allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
-                ..Default::default()
-            },
-            mat,
-        )
-        .expect("Couldn't allocate buffer for draw call info")
-    });
-
-    println!("# of materialUniforms: {}", material_info_buf.len());
+    println!("# of materialUniforms: {}", material_info_bufs.len());
 
     start_renderer(
         RenderState {
@@ -532,19 +575,19 @@ pub fn start(gltf_paths: Vec<&str>) {
                 // Level 1: Pipeline-specific uniforms
                 WriteDescriptorSet::image_view_sampler_array(0, 0, texs),
             ],
-            descriptor_len_2: material_info_buf.len(),
+            descriptor_len_2: material_info_bufs.len(),
             write_descriptor_sets_2: vec![
                 // Level 2: Pipeline-specific uniforms
-                WriteDescriptorSet::buffer_array(0, 0, material_info_buf),
+                WriteDescriptorSet::buffer_array(0, 0, material_info_bufs),
             ],
-            descriptor_len_3: draw_calls_uniform.len(),
+            descriptor_len_3: mesh_info_bufs.len(),
             write_descriptor_sets_3: vec![
                 // Level 3: Model-specific uniforms
-                WriteDescriptorSet::buffer_array(0, 0, draw_calls_uniform),
+                WriteDescriptorSet::buffer_array(0, 0, mesh_info_bufs),
             ],
             cmd_buf_builder,
             camera,
         },
-        move |gui, partial_render_state| render_gui(gui, partial_render_state, &mut global_state),
+        global_state,
     );
 }

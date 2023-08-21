@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
+use lib::Dirtyable;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -48,6 +49,11 @@ pub mod camera;
 pub struct VertexBuffer {
     pub subbuffer: Subbuffer<[u8]>,
     pub vertex_count: u32,
+}
+
+pub trait StateCallable {
+    fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
+    fn update(&mut self);
 }
 
 pub struct RenderInitState {
@@ -388,10 +394,7 @@ pub struct PartialRenderState<'a> {
     pub camera: &'a mut Camera,
 }
 
-pub fn start_renderer(
-    mut state: RenderState,
-    mut gui_callback: impl FnMut(&mut Gui, PartialRenderState) + 'static,
-) {
+pub fn start_renderer<'a>(mut state: RenderState, mut callable: impl StateCallable + 'static) {
     let render_pass = get_render_pass(state.init_state.device.clone(), &state.init_state.swapchain);
     println!(
         "Viewport dimensions: x={} y={}",
@@ -649,7 +652,7 @@ pub fn start_renderer(
             }
 
             gui.immediate_ui(|gui| {
-                gui_callback(
+                callable.setup_gui(
                     gui,
                     PartialRenderState {
                         camera: &mut state.camera,
@@ -673,7 +676,7 @@ pub fn start_renderer(
             }
             acquire_future.wait(None).unwrap();
             state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
-
+            callable.update();
             let main_drawings = sync::now(state.init_state.device.clone())
                 .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                 .then_execute(

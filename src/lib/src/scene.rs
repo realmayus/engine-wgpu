@@ -1,10 +1,13 @@
+use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::util::shader_types::MaterialInfo;
+use crate::util::shader_types::{MaterialInfo, MeshInfo};
 use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use rand::Rng;
+use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
 
@@ -39,13 +42,17 @@ pub struct Material {
     pub occlusion_strength: f32,
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
+    pub buffer: Subbuffer<MaterialInfo>,
     // pub pipeline: Arc<GraphicsPipeline>,
 }
 
 impl Material {
-    pub fn from_default(base_texture: Option<Rc<Texture>>) -> Self {
+    pub fn from_default(
+        base_texture: Option<Rc<Texture>>,
+        buffer: Subbuffer<MaterialInfo>,
+    ) -> Self {
         Self {
-            dirty: false,
+            dirty: true,
             id: 0,
             name: Some(Box::from("Default material")),
             base_texture,
@@ -57,6 +64,7 @@ impl Material {
             occlusion_strength: 0.0,
             emissive_texture: None,
             emissive_factors: Vec3::from((1.0, 1.0, 1.0)),
+            buffer,
         }
     }
 }
@@ -68,6 +76,14 @@ impl Dirtyable for Material {
 
     fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty
+    }
+
+    fn update(&mut self) {
+        println!("Updated material #{}", self.id);
+        self.set_dirty(false);
+        let mut mapping = self.buffer.write().unwrap();
+        mapping.base_texture = self.base_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.base_color = self.base_color.to_array();
     }
 }
 
@@ -92,30 +108,35 @@ impl Debug for Material {
 
 pub struct Mesh {
     dirty: bool,
+    pub id: u32, // for key purposes in GUIs and stuff
     pub vertices: Vec<Vec3>,
     pub indices: Vec<u32>,
     pub normals: Vec<Vec3>,
-    pub material: Rc<Material>,
+    pub material: Rc<RefCell<Material>>,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
+    pub buffer: Subbuffer<MeshInfo>,
 }
 impl Mesh {
     pub fn from(
         vertices: Vec<Vec3>,
         indices: Vec<u32>,
         normals: Vec<Vec3>,
-        material: Rc<Material>,
+        material: Rc<RefCell<Material>>,
         uvs: Vec<Vec2>,
         global_transform: Mat4,
+        buffer: Subbuffer<MeshInfo>,
     ) -> Self {
         Self {
-            dirty: false,
+            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
+            dirty: true,
             vertices,
             indices,
             normals,
             material,
             uvs,
             global_transform,
+            buffer,
         }
     }
 }
@@ -127,6 +148,13 @@ impl Dirtyable for Mesh {
     fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty
     }
+
+    fn update(&mut self) {
+        self.set_dirty(false);
+        let mut mapping = self.buffer.write().unwrap();
+        mapping.model_transform = self.global_transform.to_cols_array_2d();
+        mapping.material = self.material.borrow().id;
+    }
 }
 impl Debug for Mesh {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -136,7 +164,7 @@ impl Debug for Mesh {
             self.vertices.len(),
             self.normals.len(),
             self.indices.len(),
-            self.material.name.clone().unwrap_or_default(),
+            self.material.borrow().name.clone().unwrap_or_default(),
             self.global_transform,
         )
     }
@@ -144,6 +172,7 @@ impl Debug for Mesh {
 
 pub struct Model {
     dirty: bool,
+    pub id: u32,
     pub meshes: Vec<Mesh>,
     pub name: Option<Box<str>>,
     pub children: Vec<Model>,
@@ -157,6 +186,7 @@ impl Model {
         local_transform: Mat4,
     ) -> Self {
         Self {
+            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
             dirty: false,
             meshes,
             name,
@@ -166,24 +196,17 @@ impl Model {
     }
 
     /**
-    Call this after changing the local_transform of a model, it updates the computed global_transforms of all meshes
+    Call this after changing the local_transform of a model, it updates the computed global_transforms of all meshes.
+    Sets dirty to true.
     */
     pub fn update_transforms(&mut self, parent: Mat4) {
         for mesh in self.meshes.as_mut_slice() {
-            mesh.global_transform = self.local_transform * parent;
+            mesh.global_transform = parent * self.local_transform;
+            mesh.set_dirty(true);
         }
         for child in self.children.as_mut_slice() {
             child.update_transforms(self.local_transform);
         }
-    }
-}
-impl Dirtyable for Model {
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty
     }
 }
 
@@ -204,13 +227,18 @@ impl Debug for Model {
 }
 
 pub struct Scene {
+    pub id: u32,
     pub models: Vec<Model>,
     pub name: Option<Box<str>>,
 }
 
 impl Scene {
     pub fn from(models: Vec<Model>, name: Option<Box<str>>) -> Self {
-        Self { models, name }
+        Self {
+            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
+            models,
+            name,
+        }
     }
 }
 

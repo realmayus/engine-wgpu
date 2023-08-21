@@ -12,3 +12,4 @@ winit = "0.28.3"
 glam = "0.24.1"
 egui_winit_vulkano = "0.24.0"
 systems = { path = "../systems" }
+lib = { path = "../lib" }

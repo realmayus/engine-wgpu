@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Index;
 use std::path::Path;
@@ -12,11 +13,13 @@ use gltf::image::Source;
 use gltf::image::Source::View;
 use gltf::{Error, Node};
 use image::DynamicImage;
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
-use vulkano::memory::allocator::StandardMemoryAllocator;
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
+use lib::util::shader_types::{MaterialInfo, MeshInfo};
 use lib::util::texture::create_texture;
 
 // TODO make independent of vulkano lib
@@ -197,13 +200,13 @@ pub fn load_gltf(
     path: &str,
     allocator: &StandardMemoryAllocator,
     mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    default_material: Rc<Material>,
+    default_material: Rc<RefCell<Material>>,
     tex_i: &mut u32,
     mat_i: &mut u32,
 ) -> (
     Vec<Scene>,
     HashMap<usize, Rc<Texture>>,
-    HashMap<usize, Rc<Material>>,
+    HashMap<usize, Rc<RefCell<Material>>>,
 ) {
     let (gltf, buffers, _) = gltf::import(path).unwrap(); // todo skip loading of images on gltf lib side
 
@@ -211,7 +214,7 @@ pub fn load_gltf(
 
     let mut scenes: Vec<Scene> = vec![];
     let mut textures: HashMap<usize, Rc<Texture>> = HashMap::new();
-    let mut materials: HashMap<usize, Rc<Material>> = HashMap::new();
+    let mut materials: HashMap<usize, Rc<RefCell<Material>>> = HashMap::new();
 
     let mut images = Vec::new();
     for image in gltf.images() {
@@ -239,7 +242,7 @@ pub fn load_gltf(
     for gltfMat in gltf.materials() {
         if let Some(index) = gltfMat.index() {
             let mat = Material {
-                dirty: false,
+                dirty: true, // must get updated upon start in order to prime the uniform
                 id: *mat_i,
                 name: gltfMat.name().map(Box::from),
                 base_texture: gltfMat
@@ -295,9 +298,25 @@ pub fn load_gltf(
                     },
                 ),
                 emissive_factors: gltfMat.emissive_factor().into(),
+                buffer: Buffer::from_data(
+                    allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    MaterialInfo {
+                        base_color: [1.0, 1.0, 1.0, 1.0],
+                        base_texture: 0,
+                    },
+                )
+                .expect("Couldn't allocate MaterialInfo uniform"),
             };
             *mat_i += 1;
-            materials.insert(index, Rc::from(mat));
+            materials.insert(index, Rc::new(RefCell::new(mat)));
         }
     }
 
@@ -326,9 +345,9 @@ pub fn load_gltf(
 fn load_node(
     node: &Node,
     buffers: &Vec<Data>,
-    materials: &HashMap<usize, Rc<Material>>,
+    materials: &HashMap<usize, Rc<RefCell<Material>>>,
     allocator: &StandardMemoryAllocator,
-    default_material: Rc<Material>,
+    default_material: Rc<RefCell<Material>>,
     parent_transform: Mat4,
 ) -> Model {
     let mut children: Vec<Model> = vec![];
@@ -380,6 +399,19 @@ fn load_node(
                     mat.unwrap_or(default_material.clone()),
                     uvs,
                     global_transform,
+                    Buffer::from_data(
+                        allocator,
+                        BufferCreateInfo {
+                            usage: BufferUsage::STORAGE_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            usage: MemoryUsage::Upload,
+                            ..Default::default()
+                        },
+                        MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
+                    )
+                    .expect("Couldn't allocate MeshInfo uniform"),
                 ));
             }
         }
