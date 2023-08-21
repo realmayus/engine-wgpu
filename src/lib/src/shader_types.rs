@@ -1,6 +1,7 @@
 use glam::Mat4;
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
+use crate::scene::PointLight;
 
 // Vertex buffers
 
@@ -62,6 +63,23 @@ impl MeshInfo {
             material,
             _align: [0; 3],
             model_transform,
+        }
+    }
+}
+
+#[derive(BufferContents, Debug, Default)]
+#[repr(C)]
+pub struct LightInfo {
+    pub transform: [[f32; 4]; 4],
+    pub light: u32,
+    pub intensity: f32,
+}
+impl LightInfo {
+    pub fn from_light(light: &PointLight) -> Self {
+        Self {
+            transform: light.global_transform.to_cols_array_2d(),
+            light: light.index as u32,
+            intensity: light.intensity
         }
     }
 }

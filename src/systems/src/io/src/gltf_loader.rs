@@ -243,7 +243,7 @@ pub fn load_gltf(
                 dirty: true, // must get updated upon start in order to prime the uniform
                 id: *mat_i,
                 name: gltf_mat.name().map(Box::from),
-                base_texture: gltf_mat
+                albedo_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .base_color_texture()
                     .map(|t| t.texture().index())
@@ -253,7 +253,7 @@ pub fn load_gltf(
                             .expect("Couldn't find base texture")
                             .clone()
                     }),
-                base_color: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
+                albedo: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
                 metallic_roughness_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .metallic_roughness_texture()
@@ -286,7 +286,7 @@ pub fn load_gltf(
                             .expect("Couldn't find occlusion texture")
                             .clone()
                     }),
-                occlusion_strength: 1.0, // TODO: Impl: try to read strength from glTF
+                occlusion_factor: 1.0, // TODO: Impl: try to read strength from glTF
                 emissive_texture: gltf_mat
                     .emissive_texture()
                     .map(|t| t.texture().index())

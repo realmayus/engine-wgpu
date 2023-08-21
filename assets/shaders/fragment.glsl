@@ -17,17 +17,17 @@ layout(set = 2, binding = 0) buffer MaterialUniform {
     MUStruct mat;
 } materials[];
 
-struct DCIStruct {
+struct MeshStruct {
     uint mat_id;
     mat4 model_transform;
 };
 
-layout(set = 3, binding = 0) buffer DrawCallInfo {
-    DCIStruct draw_call_infos[];
+layout(set = 3, binding = 0) buffer MeshInfo {
+    MeshStruct draw_call_infos[];
 };
 
 void main() {
-    DCIStruct dci = draw_call_infos[index];
+    MeshStruct dci = draw_call_infos[index];
     uint mat_id = dci.mat_id;
     MUStruct material = materials[mat_id].mat;
     uint base_texture = material.base_texture;

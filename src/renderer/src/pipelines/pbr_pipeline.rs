@@ -1,6 +1,7 @@
+use std::ops::Range;
 use std::sync::Arc;
 
-use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
+use lib::shader_types::{CameraUniform, LightInfo, MyNormal, MyUV, MyVertex};
 use vulkano::buffer::{BufferContents, Subbuffer};
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
@@ -8,7 +9,7 @@ use vulkano::command_buffer::{
     SubpassContents,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::layout::DescriptorSetLayout;
+use vulkano::descriptor_set::layout::{DescriptorSetLayout, DescriptorSetLayoutCreateInfo};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::ImageViewAbstract;
@@ -16,10 +17,12 @@ use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
+use vulkano::pipeline::layout::PipelineLayoutCreateInfo;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout};
 use vulkano::render_pass::{Framebuffer, RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
+use vulkano::DeviceSize;
 
 use crate::pipelines::PipelineProvider;
 use crate::VertexBuffer;
@@ -62,8 +65,11 @@ impl PBRPipeline {
         camera_buffer: Subbuffer<CameraUniform>,
         textures: impl IntoIterator<Item = (Arc<dyn ImageViewAbstract>, Arc<Sampler>)>
             + ExactSizeIterator,
-        material_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
-        mesh_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
+        material_info_buffers: impl IntoIterator<Item = (Subbuffer<impl ?Sized>, Range<DeviceSize>)>
+            + ExactSizeIterator,
+        mesh_info_buffers: impl IntoIterator<Item = (Subbuffer<impl ?Sized>, Range<DeviceSize>)>
+            + ExactSizeIterator,
+        light_buffer: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Self {
@@ -89,16 +95,28 @@ impl PBRPipeline {
                 material_info_buffers.len() as u32,
                 vec![
                     // Level 2: Pipeline-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, material_info_buffers),
+                    WriteDescriptorSet::buffer_with_range_array(0, 0, material_info_buffers),
                 ],
             ),
-            (
-                mesh_info_buffers.len() as u32,
-                vec![
-                    // Level 3: Model-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, mesh_info_buffers),
-                ],
-            ),
+            ({
+                let m_len = mesh_info_buffers.len() as u32;
+                let l_len = light_buffer.len() as u32;
+                (
+                    m_len + l_len,
+                    vec![
+                        // Level 3: Model-specific uniforms
+                        WriteDescriptorSet::buffer_with_range_array(0, 0, mesh_info_buffers),
+                        // WriteDescriptorSet::buffer_array(1,  m_len, light_buffer),
+                    ],
+                )
+            }),
+            // (
+            //     light_buffer.len() as u32,
+            //     vec![
+            //         // Level 3: Model-specific uniforms
+            //         WriteDescriptorSet::buffer_array(0, 0,light_buffer),
+            //     ],
+            // ),
         ];
 
         Self {
@@ -122,29 +140,35 @@ impl PBRPipeline {
     }
 }
 impl PipelineProvider for PBRPipeline {
-    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
+    fn get_pipeline(&self, viewport: Viewport) -> Arc<GraphicsPipeline> {
         GraphicsPipeline::start()
-            .vertex_input_state(self.vertex_input_state.clone()) // describes layout of vertex input
-            .vertex_shader(self.vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-            .input_assembly_state(InputAssemblyState::new()) //Indicate type of primitives (default is list of triangles)
-            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([self
-                .viewport
-                .clone()])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
-            .fragment_shader(self.fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
+            // describes layout of vertex input
+            .vertex_input_state(self.vertex_input_state.clone())
+            // specify entry point of vertex shader (vulkan shaders can technically have multiple)
+            .vertex_shader(self.vs.entry_point("main").unwrap(), ())
+            //Indicate type of primitives (default is list of triangles)
+            .input_assembly_state(InputAssemblyState::new())
+            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
+            // Specify entry point of fragment shader
+            .fragment_shader(self.fs.entry_point("main").unwrap(), ())
             .depth_stencil_state(DepthStencilState::simple_depth_test())
-            .render_pass(Subpass::from((&self.render_pass).clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
+            // This pipeline object concerns the first pass of the render pass
+            .render_pass(Subpass::from((&self.render_pass).clone(), 0).unwrap())
             .with_auto_layout(self.device.clone(), |x| {
+                // textures
                 let binding = x[1].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
                 binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
+                // material info
                 let binding = x[2].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
                 binding.descriptor_count = 128;
 
-                let binding = x[3].bindings.get_mut(&0).unwrap(); // MeshInfo
+                // MeshInfo
+                let binding = x[3].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128
+                binding.descriptor_count = 128;
             })
             .unwrap()
     }

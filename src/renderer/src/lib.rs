@@ -317,7 +317,7 @@ pub fn start_renderer<'a>(
         depth_buffer,
     );
 
-    let pipeline = pipeline_provider.get_pipeline();
+    let pipeline = pipeline_provider.get_pipeline(state.viewport.clone());
 
     pipeline_provider.init_descriptor_sets(
         pipeline.layout().set_layouts(),
@@ -481,7 +481,7 @@ pub fn start_renderer<'a>(
                     window_resized = false;
 
                     state.viewport.dimensions = new_dimensions.into();
-                    let new_pipeline = pipeline_provider.get_pipeline();
+                    let new_pipeline = pipeline_provider.get_pipeline(state.viewport.clone());
 
                     command_buffers = pipeline_provider.begin_render_pass(
                         &new_framebuffers,

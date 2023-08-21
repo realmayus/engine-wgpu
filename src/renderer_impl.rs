@@ -19,8 +19,8 @@ use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemo
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
-use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::shader_types::MaterialInfo;
+use lib::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
+use lib::shader_types::{LightInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::Dirtyable;
 use renderer::camera::Camera;
@@ -119,7 +119,7 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
                     if ui.button("Update").clicked() {
                         mat.clone().borrow_mut().set_dirty(true);
                     }
-                    ui.label(format!("Base color factors: {}", mat.borrow().base_color));
+                    ui.label(format!("Base color factors: {}", mat.borrow().albedo));
                     ui.label(format!(
                         "Metallic roughness factors: {}",
                         mat.borrow().metallic_roughness_factors
@@ -130,12 +130,12 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
                     ));
                     ui.label(format!(
                         "Occlusion strength: {}",
-                        mat.borrow().occlusion_strength
+                        mat.borrow().occlusion_factor
                     ));
                     ui.separator();
                     ui.label(format!(
                         "Base color texture: {:?}",
-                        mat.borrow().base_texture
+                        mat.borrow().albedo_texture
                     ));
                     ui.label(format!("Normal texture: {:?}", mat.borrow().normal_texture));
                     ui.label(format!(
@@ -391,20 +391,22 @@ pub fn start(gltf_paths: Vec<&str>) {
             &mut mat_i,
         );
         scenes.append(&mut gltf_scenes);
-        let texture_values: Vec<Rc<Texture>> = gltf_textures
+
+        let mut texture_values: Vec<Rc<Texture>> = gltf_textures
             .into_iter()
             .sorted_by_key(|x| x.0)
             .map(|x| x.1)
             .collect_vec();
 
-        textures.append(&mut texture_values.clone()); //TODO investigate if this is too performance-heavy?
-        let material_values: Vec<Rc<RefCell<Material>>> = gltf_materials
+        textures.append(&mut texture_values); //TODO investigate if this is too performance-heavy?
+
+        let mut material_values: Vec<Rc<RefCell<Material>>> = gltf_materials
             .into_iter()
             .sorted_by_key(|x| x.0)
             .map(|x| x.1)
             .collect_vec();
 
-        materials.append(&mut material_values.clone());
+        materials.append(&mut material_values);
     }
 
     let mut vertex_buffers: Vec<VertexBuffer> = vec![];
@@ -412,10 +414,15 @@ pub fn start(gltf_paths: Vec<&str>) {
     let mut uv_buffers: Vec<VertexBuffer> = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
     let mut mesh_info_bufs = vec![];
+    let mut lights_buffer: Vec<PointLight> = vec![];
     for scene in scenes.as_slice() {
         println!("{:?}", scene);
         for model in scene.models.as_slice() {
             println!("{:?}", model);
+
+            if let Some(point_light) = model.light.clone() {
+                lights_buffer.push(point_light);
+            }
 
             for mesh in model.meshes.as_slice() {
                 println!("{:?}", mesh);
@@ -463,9 +470,25 @@ pub fn start(gltf_paths: Vec<&str>) {
         .materials
         .as_slice()
         .into_iter()
-        .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
+        .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); //TODO so many clones!
 
     println!("# of materialUniforms: {}", material_info_bufs.len());
+
+    let lights_buffer = lights_buffer.into_iter().map(|light| {
+        Buffer::from_data(
+            &setup_info.memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            LightInfo::from_light(&light),
+        )
+        .expect("Couldn't allocate MaterialInfo uniform")
+    });
 
     let pbr_pipeline = PBRPipeline::new(
         device.clone(),
@@ -476,7 +499,10 @@ pub fn start(gltf_paths: Vec<&str>) {
         camera.buffer.clone(),
         texs,
         material_info_bufs,
-        mesh_info_bufs.into_iter(),
+        mesh_info_bufs
+            .into_iter()
+            .map(|mesh_info| (mesh_info.clone(), 0..mesh_info.size())),
+        lights_buffer,
         viewport.clone(),
         render_pass,
     );
