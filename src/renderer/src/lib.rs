@@ -606,7 +606,7 @@ pub fn start_renderer<'a>(mut state: RenderState, mut callable: impl StateCallab
                     }) {
                         Ok(r) => r,
                         Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                        Err(..) => panic!("failed to recreate swapchain: {e}"),
+                        Err(e) => panic!("failed to recreate swapchain: {e}"),
                     };
                 state.init_state.swapchain = new_swapchain;
                 let depth_buffer = ImageView::new_default(
@@ -670,7 +670,7 @@ pub fn start_renderer<'a>(mut state: RenderState, mut callable: impl StateCallab
                         recreate_swapchain = true;
                         return;
                     }
-                    Err(..) => panic!("Failed to acquire next image: {e}"),
+                    Err(e) => panic!("Failed to acquire next image: {e}"),
                 };
             if suboptimal {
                 recreate_swapchain = true;
