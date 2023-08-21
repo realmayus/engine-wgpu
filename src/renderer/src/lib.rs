@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
-use lib::Dirtyable;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -41,6 +40,8 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
+
+use lib::Dirtyable;
 
 use crate::camera::Camera;
 
@@ -184,7 +185,7 @@ pub fn init_renderer() -> RenderInitState {
         .0;
 
     // Create the swapchain
-    let (mut swapchain, images) = {
+    let (swapchain, images) = {
         Swapchain::new(
             device.clone(),
             surface.clone(),
@@ -193,7 +194,7 @@ pub fn init_renderer() -> RenderInitState {
                 image_format: Some(image_format),
                 image_extent: dimensions.into(),
                 image_usage: ImageUsage::COLOR_ATTACHMENT,
-                composite_alpha: composite_alpha,
+                composite_alpha,
                 ..Default::default()
             },
         )
@@ -605,7 +606,7 @@ pub fn start_renderer<'a>(mut state: RenderState, mut callable: impl StateCallab
                     }) {
                         Ok(r) => r,
                         Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                        Err(e) => panic!("failed to recreate swapchain: {e}"),
+                        Err(..) => panic!("failed to recreate swapchain: {e}"),
                     };
                 state.init_state.swapchain = new_swapchain;
                 let depth_buffer = ImageView::new_default(
@@ -669,7 +670,7 @@ pub fn start_renderer<'a>(mut state: RenderState, mut callable: impl StateCallab
                         recreate_swapchain = true;
                         return;
                     }
-                    Err(e) => panic!("Failed to acquire next image: {e}"),
+                    Err(..) => panic!("Failed to acquire next image: {e}"),
                 };
             if suboptimal {
                 recreate_swapchain = true;

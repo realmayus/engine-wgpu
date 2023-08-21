@@ -8,7 +8,6 @@ use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
 use image::DynamicImage;
 use itertools::Itertools;
-use rand::Rng;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -20,13 +19,12 @@ use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
-use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexDefinition};
+use vulkano::pipeline::graphics::vertex_input::Vertex;
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::{GraphicsPipeline, Pipeline};
+use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 use vulkano::shader::ShaderModule;
-use vulkano::sync::GpuFuture;
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
 use lib::util::shader_types::MaterialInfo;
@@ -168,8 +166,6 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
     });
 }
 
-fn update(state: &mut GlobalState) {}
-
 fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
@@ -255,7 +251,7 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
 fn load_preview_meshes(
     preview_models: Vec<&str>,
     memory_allocator: &StandardMemoryAllocator,
-    mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     default_material: Rc<RefCell<Material>>,
 ) -> (Vec<VertexBuffer>, Vec<VertexBuffer>, Vec<Subbuffer<[u32]>>) {
     let mut preview_vertices: Vec<VertexBuffer> = vec![];
@@ -274,7 +270,7 @@ fn load_preview_meshes(
         for scene in scenes {
             for model in scene.models {
                 for mesh in model.meshes {
-                    let (vert_buf, normal_buf, uvs, index_buf) =
+                    let (vert_buf, normal_buf, _uvs, index_buf) =
                         create_buffers(&mesh, memory_allocator);
                     preview_vertices.push(VertexBuffer {
                         subbuffer: vert_buf.into_bytes(),
@@ -399,7 +395,7 @@ pub fn start(gltf_paths: Vec<&str>) {
 
     let setup_info = init_renderer();
 
-    let mut viewport = Viewport {
+    let viewport = Viewport {
         origin: [0.0, 0.0],
         dimensions: setup_info.window.inner_size().into(),
         depth_range: 0.0..1.0,
@@ -534,7 +530,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         &setup_info.memory_allocator,
     );
 
-    let mut global_state = GlobalState {
+    let global_state = GlobalState {
         scenes,
         materials,
         textures,

@@ -171,7 +171,6 @@ impl Debug for Mesh {
 }
 
 pub struct Model {
-    dirty: bool,
     pub id: u32,
     pub meshes: Vec<Mesh>,
     pub name: Option<Box<str>>,
@@ -187,7 +186,6 @@ impl Model {
     ) -> Self {
         Self {
             id: rand::thread_rng().gen_range(0u32..1u32 << 31),
-            dirty: false,
             meshes,
             name,
             children,

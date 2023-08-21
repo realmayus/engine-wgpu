@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::Index;
 use std::path::Path;
 use std::rc::Rc;
 use std::{fs, io};
@@ -21,8 +20,6 @@ use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemo
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
 use lib::util::shader_types::{MaterialInfo, MeshInfo};
 use lib::util::texture::create_texture;
-
-// TODO make independent of vulkano lib
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where
@@ -104,8 +101,8 @@ fn load_image(
     buffer_data: &[Data],
 ) -> (Vec<u8>, u32, u32, Format) {
     let decoded_image = match source {
-        Source::Uri { uri, mime_type } if base.is_some() => match Scheme::parse(uri) {
-            Scheme::Data(Some(annoying_case), base64) => {
+        Source::Uri { uri, .. } if base.is_some() => match Scheme::parse(uri) {
+            Scheme::Data(Some(..), base64) => {
                 let encoded_image = general_purpose::STANDARD
                     .decode(base64)
                     .expect("Couldn't parse b64");
@@ -118,14 +115,13 @@ fn load_image(
                 image::load_from_memory(&encoded_image).expect("Couldn't load image")
             }
         },
-        View { view, mime_type } => {
+        View { view, .. } => {
             let parent_buffer_data = &buffer_data[view.buffer().index()].0;
             let begin = view.offset();
             let end = begin + view.length();
             let encoded_image = &parent_buffer_data[begin..end];
             image::load_from_memory(encoded_image).expect("Couldn't load image")
         }
-        _ => return panic!("External references are unsupported."),
     };
 
     let width = decoded_image.width();
@@ -199,7 +195,7 @@ fn load_image(
 pub fn load_gltf(
     path: &str,
     allocator: &StandardMemoryAllocator,
-    mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     default_material: Rc<RefCell<Material>>,
     tex_i: &mut u32,
     mat_i: &mut u32,
@@ -225,8 +221,8 @@ pub fn load_gltf(
         )); //TODO support relative paths
     }
 
-    for gltfTexture in gltf.textures() {
-        let image = &images[gltfTexture.source().index()];
+    for gltf_texture in gltf.textures() {
+        let image = &images[gltf_texture.source().index()];
         let vk_texture = create_texture(
             image.0.clone(), //TODO: Texture load optimization: check if this clone is bad
             image.3,
@@ -235,17 +231,17 @@ pub fn load_gltf(
             allocator,
             cmd_buf_builder,
         );
-        let texture = Texture::from(vk_texture, gltfTexture.name().map(Box::from), *tex_i);
+        let texture = Texture::from(vk_texture, gltf_texture.name().map(Box::from), *tex_i);
         *tex_i += 1;
-        textures.insert(gltfTexture.index(), Rc::from(texture));
+        textures.insert(gltf_texture.index(), Rc::from(texture));
     }
-    for gltfMat in gltf.materials() {
-        if let Some(index) = gltfMat.index() {
+    for gltf_mat in gltf.materials() {
+        if let Some(index) = gltf_mat.index() {
             let mat = Material {
                 dirty: true, // must get updated upon start in order to prime the uniform
                 id: *mat_i,
-                name: gltfMat.name().map(Box::from),
-                base_texture: gltfMat
+                name: gltf_mat.name().map(Box::from),
+                base_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .base_color_texture()
                     .map(|t| t.texture().index())
@@ -255,8 +251,8 @@ pub fn load_gltf(
                             .expect("Couldn't find base texture")
                             .clone()
                     }),
-                base_color: gltfMat.pbr_metallic_roughness().base_color_factor().into(),
-                metallic_roughness_texture: gltfMat
+                base_color: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
+                metallic_roughness_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .metallic_roughness_texture()
                     .map(|t| t.texture().index())
@@ -267,10 +263,10 @@ pub fn load_gltf(
                             .clone()
                     }),
                 metallic_roughness_factors: Vec2::from((
-                    gltfMat.pbr_metallic_roughness().metallic_factor(),
-                    gltfMat.pbr_metallic_roughness().roughness_factor(),
+                    gltf_mat.pbr_metallic_roughness().metallic_factor(),
+                    gltf_mat.pbr_metallic_roughness().roughness_factor(),
                 )),
-                normal_texture: gltfMat
+                normal_texture: gltf_mat
                     .normal_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
@@ -279,7 +275,7 @@ pub fn load_gltf(
                             .expect("Couldn't find normal texture")
                             .clone()
                     }),
-                occlusion_texture: gltfMat
+                occlusion_texture: gltf_mat
                     .occlusion_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
@@ -289,15 +285,16 @@ pub fn load_gltf(
                             .clone()
                     }),
                 occlusion_strength: 1.0, // TODO: Impl: try to read strength from glTF
-                emissive_texture: gltfMat.emissive_texture().map(|t| t.texture().index()).map(
-                    |id| {
+                emissive_texture: gltf_mat
+                    .emissive_texture()
+                    .map(|t| t.texture().index())
+                    .map(|id| {
                         textures
                             .get(&id)
                             .expect("Couldn't find emissive texture")
                             .clone()
-                    },
-                ),
-                emissive_factors: gltfMat.emissive_factor().into(),
+                    }),
+                emissive_factors: gltf_mat.emissive_factor().into(),
                 buffer: Buffer::from_data(
                     allocator,
                     BufferCreateInfo {

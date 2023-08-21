@@ -1,6 +1,5 @@
 use glam::{Mat4, Vec3, Vec4};
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 #[derive(BufferContents, Debug, Default, Copy, Clone)]
@@ -28,7 +27,6 @@ pub struct Camera {
     pub zfar: f32,
     pub buffer: Subbuffer<CameraUniform>,
     pub speed: f32,
-    pub(crate) buffer_data: CameraUniform,
 }
 
 impl Camera {
@@ -77,7 +75,6 @@ impl Camera {
             znear,
             zfar,
             buffer: camera_buffer,
-            buffer_data: data,
             speed: 0.5,
         }
     }
@@ -106,7 +103,6 @@ impl Camera {
         let new_proj = self.build_projection();
         let mut mapping = self.buffer.write().unwrap();
         mapping.proj_view = (new_proj).to_cols_array_2d();
-        // mapping.view_proj[1][1] *= -1.0;
         mapping.view_position = (Vec4::from((self.eye, 1.0))).into();
     }
 
