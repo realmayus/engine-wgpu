@@ -122,6 +122,7 @@ fn load_image(
             let encoded_image = &parent_buffer_data[begin..end];
             image::load_from_memory(encoded_image).expect("Couldn't load image")
         }
+        _ => panic!("Unsupported source"),
     };
 
     let width = decoded_image.width();
