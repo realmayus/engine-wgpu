@@ -1,22 +1,8 @@
 use glam::{Mat4, Vec3, Vec4};
+use lib::shader_types::CameraUniform;
+use log::debug;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
-
-#[derive(BufferContents, Debug, Default, Copy, Clone)]
-#[repr(C)]
-pub struct CameraUniform {
-    pub proj_view: [[f32; 4]; 4],
-    pub view_position: [f32; 4],
-}
-impl CameraUniform {
-    fn new() -> Self {
-        Self {
-            proj_view: Mat4::default().to_cols_array_2d(),
-            view_position: [0.0; 4],
-        }
-    }
-}
 
 pub struct Camera {
     pub eye: Vec3,
@@ -28,7 +14,6 @@ pub struct Camera {
     pub zfar: f32,
     pub buffer: Subbuffer<CameraUniform>,
     pub speed: f32,
-    pub(crate) buffer_data: CameraUniform,
 }
 
 impl Camera {
@@ -50,7 +35,7 @@ impl Camera {
         let view = Mat4::look_at_rh(eye, target, up);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
 
-        println!("View proj: {:?}", proj * view * scale);
+        debug!("Creating view proj: {:?}", proj * view * scale);
         data.proj_view = (proj * view * scale).to_cols_array_2d();
         data.view_position = (Vec4::from((eye, 1.0))).into();
 
@@ -77,7 +62,6 @@ impl Camera {
             znear,
             zfar,
             buffer: camera_buffer,
-            buffer_data: data,
             speed: 0.5,
         }
     }
@@ -106,7 +90,6 @@ impl Camera {
         let new_proj = self.build_projection();
         let mut mapping = self.buffer.write().unwrap();
         mapping.proj_view = (new_proj).to_cols_array_2d();
-        // mapping.view_proj[1][1] *= -1.0;
         mapping.view_position = (Vec4::from((self.eye, 1.0))).into();
     }
 

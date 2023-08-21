@@ -2,18 +2,16 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
+use log::{debug, error, info};
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-    PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+    AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::{
-    DescriptorSetsCollection, PersistentDescriptorSet, WriteDescriptorSet,
-};
+use vulkano::descriptor_set::DescriptorSetsCollection;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
     Device, DeviceCreateInfo, DeviceExtensions, Features, Queue, QueueCreateInfo, QueueFlags,
@@ -25,9 +23,8 @@ use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
+use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
     AcquireError, CompositeAlpha, Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo,
     SwapchainCreationError, SwapchainPresentInfo,
@@ -41,13 +38,22 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
 
+use lib::Dirtyable;
+
 use crate::camera::Camera;
+use crate::pipelines::PipelineProvider;
 
 pub mod camera;
+pub mod pipelines;
 
 pub struct VertexBuffer {
     pub subbuffer: Subbuffer<[u8]>,
     pub vertex_count: u32,
+}
+
+pub trait StateCallable {
+    fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
+    fn update(&mut self);
 }
 
 pub struct RenderInitState {
@@ -65,6 +71,7 @@ pub struct RenderInitState {
     pub images: Vec<Arc<SwapchainImage>>,
     pub cmd_buf_allocator: StandardCommandBufferAllocator,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
+    pub render_pass: Arc<RenderPass>,
 }
 
 pub fn select_physical_device(
@@ -130,7 +137,7 @@ pub fn init_renderer() -> RenderInitState {
     let (physical_device, queue_family_index) =
         select_physical_device(&instance, &surface, &device_extensions);
 
-    println!(
+    info!(
         "Using device: {} (type: {:?})",
         physical_device.properties().device_name,
         physical_device.properties().device_type,
@@ -165,7 +172,7 @@ pub fn init_renderer() -> RenderInitState {
         .surface_capabilities(&surface, Default::default())
         .expect("failed to get surface capabilities");
 
-    println!(
+    info!(
         "Max swapchain images: {:?}, min: {:?}",
         caps.max_image_count, caps.min_image_count
     );
@@ -178,7 +185,7 @@ pub fn init_renderer() -> RenderInitState {
         .0;
 
     // Create the swapchain
-    let (mut swapchain, images) = {
+    let (swapchain, images) = {
         Swapchain::new(
             device.clone(),
             surface.clone(),
@@ -187,7 +194,7 @@ pub fn init_renderer() -> RenderInitState {
                 image_format: Some(image_format),
                 image_extent: dimensions.into(),
                 image_usage: ImageUsage::COLOR_ATTACHMENT,
-                composite_alpha: composite_alpha,
+                composite_alpha,
                 ..Default::default()
             },
         )
@@ -200,6 +207,7 @@ pub fn init_renderer() -> RenderInitState {
 
     let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
+    let render_pass = get_render_pass(device.clone(), &swapchain);
 
     RenderInitState {
         device,
@@ -216,6 +224,7 @@ pub fn init_renderer() -> RenderInitState {
         images,
         cmd_buf_allocator,
         descriptor_set_allocator,
+        render_pass,
     }
 }
 
@@ -269,117 +278,9 @@ fn get_framebuffers(
         .unzip()
 }
 
-fn get_command_buffers(
-    // We now have one command buffer for each framebuffer
-    queue: &Arc<Queue>,
-    pipeline: &Arc<GraphicsPipeline>,
-    framebuffers: &Vec<Arc<Framebuffer>>,
-    vertex_buffers: &Vec<VertexBuffer>,
-    normal_buffers: &Vec<VertexBuffer>,
-    uv_buffers: &Vec<VertexBuffer>,
-    index_buffers: &Vec<Subbuffer<[u32]>>,
-    cmd_buf_allocator: &StandardCommandBufferAllocator,
-    descriptor_sets_0: Arc<PersistentDescriptorSet>,
-    descriptor_sets_1: Arc<PersistentDescriptorSet>,
-    descriptor_sets_2: Arc<PersistentDescriptorSet>,
-    descriptor_sets_3: Arc<PersistentDescriptorSet>,
-) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-    framebuffers
-        .iter()
-        .map(|framebuffer| {
-            let mut builder = AutoCommandBufferBuilder::primary(
-                cmd_buf_allocator,
-                queue.queue_family_index(),
-                CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
-            )
-            .unwrap();
-
-            builder
-                .begin_render_pass(
-                    RenderPassBeginInfo {
-                        clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                    },
-                    SubpassContents::Inline,
-                )
-                .unwrap()
-                .bind_pipeline_graphics(pipeline.clone())
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    pipeline.layout().clone(),
-                    0,
-                    descriptor_sets_0.clone(),
-                )
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    pipeline.layout().clone(),
-                    1,
-                    descriptor_sets_1.clone(),
-                )
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    pipeline.layout().clone(),
-                    2,
-                    descriptor_sets_2.clone(),
-                )
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    pipeline.layout().clone(),
-                    3,
-                    descriptor_sets_3.clone(),
-                );
-
-            assert_eq!(vertex_buffers.len(), normal_buffers.len()); // TODO optimization: remove asserts
-            assert_eq!(vertex_buffers.len(), index_buffers.len());
-            for i in 0..vertex_buffers.len() {
-                assert_eq!(
-                    vertex_buffers[i].vertex_count,
-                    normal_buffers[i].vertex_count
-                );
-                builder
-                    .bind_vertex_buffers(
-                        0,
-                        (
-                            vertex_buffers[i].subbuffer.clone(),
-                            normal_buffers[i].subbuffer.clone(),
-                            uv_buffers[i].subbuffer.clone(),
-                        ),
-                    )
-                    .bind_index_buffer(index_buffers[i].clone())
-                    .draw_indexed(index_buffers[i].len() as u32, 1, 0, 0, i as u32)
-                    .unwrap();
-            }
-
-            builder.end_render_pass().unwrap();
-
-            Arc::new(builder.build().unwrap())
-        })
-        .collect()
-}
-
 pub struct RenderState {
     pub init_state: RenderInitState,
     pub viewport: Viewport,
-    pub vertex_buffers: Vec<VertexBuffer>,
-    pub normal_buffers: Vec<VertexBuffer>,
-    pub uv_buffers: Vec<VertexBuffer>,
-    pub index_buffers: Vec<Subbuffer<[u32]>>,
-    pub vs: Arc<ShaderModule>,
-    pub fs: Arc<ShaderModule>,
-    pub get_pipeline: fn(
-        vs: Arc<ShaderModule>,
-        fs: Arc<ShaderModule>,
-        device: Arc<Device>,
-        viewport: Viewport,
-        render_pass: Arc<RenderPass>,
-    ) -> Arc<GraphicsPipeline>,
-    pub write_descriptor_sets_0: Vec<WriteDescriptorSet>,
-    pub write_descriptor_sets_1: Vec<WriteDescriptorSet>,
-    pub descriptor_len_1: usize,
-    pub write_descriptor_sets_2: Vec<WriteDescriptorSet>,
-    pub descriptor_len_2: usize,
-    pub write_descriptor_sets_3: Vec<WriteDescriptorSet>,
-    pub descriptor_len_3: usize,
     pub cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     pub camera: Camera,
 }
@@ -388,12 +289,12 @@ pub struct PartialRenderState<'a> {
     pub camera: &'a mut Camera,
 }
 
-pub fn start_renderer(
+pub fn start_renderer<'a>(
     mut state: RenderState,
-    mut gui_callback: impl FnMut(&mut Gui, PartialRenderState) + 'static,
+    mut pipeline_provider: impl PipelineProvider + 'static,
+    mut callable: impl StateCallable + 'static,
 ) {
-    let render_pass = get_render_pass(state.init_state.device.clone(), &state.init_state.swapchain);
-    println!(
+    info!(
         "Viewport dimensions: x={} y={}",
         state.viewport.dimensions[0] as u32, state.viewport.dimensions[1] as u32
     );
@@ -410,69 +311,24 @@ pub fn start_renderer(
     )
     .unwrap();
 
-    let (framebuffers, mut image_views) =
-        get_framebuffers(&state.init_state.images, &render_pass, depth_buffer);
-
-    let pipeline = (state.get_pipeline)(
-        state.vs.clone(),
-        state.fs.clone(),
-        state.init_state.device.clone(),
-        state.viewport.clone(),
-        render_pass.clone(),
+    let (framebuffers, mut image_views) = get_framebuffers(
+        &state.init_state.images,
+        &state.init_state.render_pass,
+        depth_buffer,
     );
 
-    let layout = pipeline.layout().set_layouts().get(0).unwrap();
+    let pipeline = pipeline_provider.get_pipeline();
 
-    let set_0 = PersistentDescriptorSet::new(
+    pipeline_provider.init_descriptor_sets(
+        pipeline.layout().set_layouts(),
         &state.init_state.descriptor_set_allocator,
-        layout.clone(),
-        state.write_descriptor_sets_0,
-    )
-    .unwrap();
+    );
 
-    let layout = pipeline.layout().set_layouts().get(1).unwrap();
-
-    let set_1 = PersistentDescriptorSet::new_variable(
-        &state.init_state.descriptor_set_allocator,
-        layout.clone(),
-        state.descriptor_len_1 as u32, //TODO this somehow is an upper bound as well?
-        state.write_descriptor_sets_1,
-    )
-    .unwrap();
-
-    let layout = pipeline.layout().set_layouts().get(2).unwrap();
-
-    let set_2 = PersistentDescriptorSet::new_variable(
-        &state.init_state.descriptor_set_allocator,
-        layout.clone(),
-        state.descriptor_len_2 as u32,
-        state.write_descriptor_sets_2,
-    )
-    .unwrap();
-
-    let layout = pipeline.layout().set_layouts().get(3).unwrap();
-
-    let set_3 = PersistentDescriptorSet::new_variable(
-        &state.init_state.descriptor_set_allocator,
-        layout.clone(),
-        state.descriptor_len_3 as u32,
-        state.write_descriptor_sets_3,
-    )
-    .unwrap();
-
-    let mut command_buffers = get_command_buffers(
-        &state.init_state.queue,
-        &pipeline,
+    let mut command_buffers = pipeline_provider.begin_render_pass(
         &framebuffers,
-        &state.vertex_buffers,
-        &state.normal_buffers,
-        &state.uv_buffers,
-        &state.index_buffers,
+        state.init_state.queue.queue_family_index(),
+        pipeline.clone(),
         &state.init_state.cmd_buf_allocator,
-        set_0.clone(),
-        set_1.clone(),
-        set_2.clone(),
-        set_3.clone(),
     );
 
     let mut window_resized = false;
@@ -502,9 +358,10 @@ pub fn start_renderer(
     let mut is_up_pressed = false;
     let mut is_down_pressed = false;
     let mut gui_catch = false;
-    let event_loop = state.init_state.event_loop;
-    // blocks main thread forever and calls closure whenever the event loop receives an event
 
+    let event_loop = state.init_state.event_loop;
+
+    // blocks main thread forever and calls closure whenever the event loop receives an event
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
@@ -571,7 +428,7 @@ pub fn start_renderer(
                         .window
                         .set_title("Engine Playground - Press ESC to release controls");
                 }
-                println!(
+                debug!(
                     "Gui catch is now: {}",
                     if gui_catch { "enabled" } else { "disabled" }
                 );
@@ -614,33 +471,23 @@ pub fn start_renderer(
                     .unwrap(),
                 )
                 .unwrap();
-                let (new_framebuffers, new_image_views) =
-                    get_framebuffers(&new_images, &render_pass, depth_buffer.clone());
+                let (new_framebuffers, new_image_views) = get_framebuffers(
+                    &new_images,
+                    &state.init_state.render_pass,
+                    depth_buffer.clone(),
+                );
                 image_views = new_image_views;
                 if window_resized {
                     window_resized = false;
 
                     state.viewport.dimensions = new_dimensions.into();
-                    let new_pipeline = (state.get_pipeline)(
-                        state.vs.clone(),
-                        state.fs.clone(),
-                        state.init_state.device.clone(),
-                        state.viewport.clone(),
-                        render_pass.clone(),
-                    );
-                    command_buffers = get_command_buffers(
-                        &state.init_state.queue,
-                        &new_pipeline,
+                    let new_pipeline = pipeline_provider.get_pipeline();
+
+                    command_buffers = pipeline_provider.begin_render_pass(
                         &new_framebuffers,
-                        &state.vertex_buffers,
-                        &state.normal_buffers,
-                        &state.uv_buffers,
-                        &state.index_buffers,
+                        state.init_state.queue.queue_family_index(),
+                        new_pipeline,
                         &state.init_state.cmd_buf_allocator,
-                        set_0.clone(),
-                        set_1.clone(),
-                        set_2.clone(),
-                        set_3.clone(),
                     );
                     state
                         .camera
@@ -649,7 +496,7 @@ pub fn start_renderer(
             }
 
             gui.immediate_ui(|gui| {
-                gui_callback(
+                callable.setup_gui(
                     gui,
                     PartialRenderState {
                         camera: &mut state.camera,
@@ -673,7 +520,7 @@ pub fn start_renderer(
             }
             acquire_future.wait(None).unwrap();
             state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
-
+            callable.update();
             let main_drawings = sync::now(state.init_state.device.clone())
                 .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                 .then_execute(
@@ -702,7 +549,7 @@ pub fn start_renderer(
                     recreate_swapchain = true;
                 }
                 Err(e) => {
-                    println!("Failed to flush future: {e}");
+                    error!("Failed to flush future: {e}");
                 }
             }
         }

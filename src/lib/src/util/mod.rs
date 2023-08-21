@@ -1,8 +1,5 @@
 use gltf;
 
-pub mod shader_types;
-pub mod texture;
-
 pub fn map_gltf_format_to_vulkano(format: gltf::image::Format) -> vulkano::format::Format {
     match format {
         gltf::image::Format::R8 => vulkano::format::Format::R8_UNORM,
