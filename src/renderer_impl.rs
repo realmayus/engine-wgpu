@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::vec::Vec;
@@ -14,11 +13,11 @@ use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
+use vulkano::format;
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
-use vulkano::{format};
 
 use lib::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
 use lib::shader_types::{LightInfo, MaterialInfo};
@@ -419,7 +418,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         for model in scene.models.as_slice() {
             println!("{:?}", model);
 
-            if let Some(point_light) = model.light.clone() {
+            if let Some(point_light) = model.light {
                 lights_buffer.push(point_light);
             }
 
@@ -468,7 +467,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     let material_info_bufs = global_state
         .materials
         .as_slice()
-        .into_iter()
+        .iter()
         .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); //TODO so many clones!
 
     println!("# of materialUniforms: {}", material_info_bufs.len());

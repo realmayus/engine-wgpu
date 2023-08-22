@@ -12,10 +12,14 @@ pub mod pbr_pipeline;
 pub trait PipelineProvider {
     fn get_pipeline(&self, viewport: Viewport) -> Arc<GraphicsPipeline>;
 
-    fn init_descriptor_sets(&mut self, set_layouts: &[Arc<DescriptorSetLayout>], descriptor_set_allocator: &StandardDescriptorSetAllocator);
+    fn init_descriptor_sets(
+        &mut self,
+        set_layouts: &[Arc<DescriptorSetLayout>],
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+    );
     fn begin_render_pass(
         &self,
-        framebuffers: &Vec<Arc<Framebuffer>>,
+        framebuffers: &[Arc<Framebuffer>],
         queue_family_index: u32,
         pipeline: Arc<GraphicsPipeline>,
         cmd_buf_allocator: &StandardCommandBufferAllocator,

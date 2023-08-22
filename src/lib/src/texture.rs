@@ -13,7 +13,7 @@ pub fn create_texture(
     width: u32,
     height: u32,
     allocator: &StandardMemoryAllocator,
-    mut cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<ImageView<ImmutableImage>> {
     debug!("Creating texture with format: {:?}", format);
     let image = ImmutableImage::from_iter(
@@ -26,7 +26,7 @@ pub fn create_texture(
         },
         MipmapsCount::One,
         format::Format::R8G8B8A8_UNORM,
-        &mut cmd_buf_builder,
+        cmd_buf_builder,
     )
     .expect("Couldn't create image");
 

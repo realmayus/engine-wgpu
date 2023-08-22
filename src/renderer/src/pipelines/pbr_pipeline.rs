@@ -1,15 +1,15 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use lib::shader_types::{CameraUniform, LightInfo, MyNormal, MyUV, MyVertex};
-use vulkano::buffer::{BufferContents, Subbuffer};
+use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
+use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
     SubpassContents,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::layout::{DescriptorSetLayout, DescriptorSetLayoutCreateInfo};
+use vulkano::descriptor_set::layout::DescriptorSetLayout;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::ImageViewAbstract;
@@ -17,8 +17,7 @@ use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::layout::PipelineLayoutCreateInfo;
-use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout};
+use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::render_pass::{Framebuffer, RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
@@ -115,7 +114,7 @@ impl PBRPipeline {
                 light_buffer.len() as u32,
                 vec![
                     // Level 3: Model-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0,light_buffer),
+                    WriteDescriptorSet::buffer_array(0, 0, light_buffer),
                 ],
             ),
         ];
@@ -154,7 +153,7 @@ impl PipelineProvider for PBRPipeline {
             .fragment_shader(self.fs.entry_point("main").unwrap(), ())
             .depth_stencil_state(DepthStencilState::simple_depth_test())
             // This pipeline object concerns the first pass of the render pass
-            .render_pass(Subpass::from((&self.render_pass).clone(), 0).unwrap())
+            .render_pass(Subpass::from((self.render_pass).clone(), 0).unwrap())
             .with_auto_layout(self.device.clone(), |x| {
                 // textures
                 let binding = x[1].bindings.get_mut(&0).unwrap();
@@ -203,7 +202,7 @@ impl PipelineProvider for PBRPipeline {
 
     fn begin_render_pass(
         &self,
-        framebuffers: &Vec<Arc<Framebuffer>>,
+        framebuffers: &[Arc<Framebuffer>],
         queue_family_index: u32,
         pipeline: Arc<GraphicsPipeline>,
         cmd_buf_allocator: &StandardCommandBufferAllocator,

@@ -130,12 +130,9 @@ fn load_image(
     let height = decoded_image.height();
 
     match decoded_image {
-        DynamicImage::ImageLuma8(_) => (
-            decoded_image.into_bytes(),
-            width,
-            height,
-            Format::R8_UNORM,
-        ),
+        DynamicImage::ImageLuma8(_) => {
+            (decoded_image.into_bytes(), width, height, Format::R8_UNORM)
+        }
         DynamicImage::ImageLumaA8(_) => (
             decoded_image.into_bytes(),
             width,
@@ -154,12 +151,9 @@ fn load_image(
             height,
             Format::R8G8B8A8_SRGB,
         ),
-        DynamicImage::ImageLuma16(_) => (
-            decoded_image.into_bytes(),
-            width,
-            height,
-            Format::R16_UINT,
-        ),
+        DynamicImage::ImageLuma16(_) => {
+            (decoded_image.into_bytes(), width, height, Format::R16_UINT)
+        }
         DynamicImage::ImageLumaA16(_) => (
             decoded_image.into_bytes(),
             width,
@@ -363,68 +357,61 @@ fn load_node(
     global_transform.y_axis *= -1.0;
 
     let mut meshes: Vec<Mesh> = vec![];
-    match node.mesh() {
-        Some(x) => {
-            for gltf_primitive in x.primitives() {
-                let mut positions: Vec<Vec3> = vec![];
-                let mut indices: Vec<u32> = vec![];
-                let mut normals: Vec<Vec3> = vec![];
-                let mut uvs: Vec<Vec2> = vec![];
-                let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-                if let Some(iter) = reader.read_tex_coords(0) {
-                    uvs = iter.into_f32().map(|arr| Vec2::from(arr)).collect();
-                }
-                if let Some(iter) = reader.read_positions() {
-                    positions = iter.map(|p| Vec3::from(p)).collect();
-                }
-                if let Some(iter) = reader.read_indices() {
-                    indices = iter.into_u32().collect();
-                }
-                if let Some(iter) = reader.read_normals() {
-                    normals = iter.map(|n| Vec3::from(n)).collect();
-                }
-
-                let mat = gltf_primitive
-                    .material()
-                    .index()
-                    .map(|i| materials.get(&i).expect("Couldn't find material").clone());
-                meshes.push(Mesh::from(
-                    positions,
-                    indices,
-                    normals,
-                    mat.unwrap_or(default_material.clone()),
-                    uvs,
-                    global_transform,
-                    Buffer::from_data(
-                        allocator,
-                        BufferCreateInfo {
-                            usage: BufferUsage::STORAGE_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            usage: MemoryUsage::Upload,
-                            ..Default::default()
-                        },
-                        MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
-                    )
-                    .expect("Couldn't allocate MeshInfo uniform"),
-                ));
+    if let Some(x) = node.mesh() {
+        for gltf_primitive in x.primitives() {
+            let mut positions: Vec<Vec3> = vec![];
+            let mut indices: Vec<u32> = vec![];
+            let mut normals: Vec<Vec3> = vec![];
+            let mut uvs: Vec<Vec2> = vec![];
+            let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+            if let Some(iter) = reader.read_tex_coords(0) {
+                uvs = iter.into_f32().map(Vec2::from).collect();
             }
+            if let Some(iter) = reader.read_positions() {
+                positions = iter.map(Vec3::from).collect();
+            }
+            if let Some(iter) = reader.read_indices() {
+                indices = iter.into_u32().collect();
+            }
+            if let Some(iter) = reader.read_normals() {
+                normals = iter.map(Vec3::from).collect();
+            }
+
+            let mat = gltf_primitive
+                .material()
+                .index()
+                .map(|i| materials.get(&i).expect("Couldn't find material").clone());
+            meshes.push(Mesh::from(
+                positions,
+                indices,
+                normals,
+                mat.unwrap_or(default_material.clone()),
+                uvs,
+                global_transform,
+                Buffer::from_data(
+                    allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
+                )
+                .expect("Couldn't allocate MeshInfo uniform"),
+            ));
         }
-        _ => {}
     }
 
-    let light = if let Some(light) = node.light() {
-        Some(PointLight {
-            global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
-            index: light.index(),
-            color: Vec4::from((light.color()[0], light.color()[1], light.color()[2], 1.0)),
-            intensity: light.intensity(),
-            range: light.range(),
-        })
-    } else {
-        None
-    };
+    let light = node.light().map(|light| PointLight {
+        global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
+        index: light.index(),
+        color: Vec4::from((light.color()[0], light.color()[1], light.color()[2], 1.0)),
+        intensity: light.intensity(),
+        range: light.range(),
+    });
 
     Model::from(
         meshes,

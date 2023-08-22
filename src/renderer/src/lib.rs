@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
@@ -7,21 +6,17 @@ use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::DescriptorSetsCollection;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
     Device, DeviceCreateInfo, DeviceExtensions, Features, Queue, QueueCreateInfo, QueueFlags,
 };
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageUsage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
@@ -37,8 +32,6 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
-
-use lib::Dirtyable;
 
 use crate::camera::Camera;
 use crate::pipelines::PipelineProvider;
@@ -274,7 +267,6 @@ fn get_framebuffers(
                 view.clone(),
             )
         })
-        .into_iter()
         .unzip()
 }
 
