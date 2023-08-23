@@ -114,19 +114,22 @@ impl MeshInfo {
 #[repr(C)]
 pub struct LightInfo {
     transform: [[f32; 4]; 4],
+    color: [f32; 3],
     light: u32,
     intensity: f32,
     range: f32,
-    color: [f32; 4],
 }
 impl LightInfo {
     pub fn from_light(light: &PointLight) -> Self {
         Self {
             transform: light.global_transform.to_cols_array_2d(),
+            color: {
+                let color = light.color.to_array();
+                [color[0], color[1], color[2]]
+            },
             light: light.index as u32,
             intensity: light.intensity,
             range: light.range.unwrap_or(1.),
-            color: light.color.to_array(),
         }
     }
 }
