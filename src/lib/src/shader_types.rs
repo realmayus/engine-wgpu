@@ -65,3 +65,10 @@ impl MeshInfo {
         }
     }
 }
+
+#[derive(BufferContents, Debug, Default)]
+#[repr(C)]
+pub struct LineInfo {
+    pub model_transform: [[f32; 4]; 4],
+    pub color: [f32; 4],
+}

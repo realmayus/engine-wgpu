@@ -5,10 +5,11 @@ use std::vec::Vec;
 
 use egui_winit_vulkano::egui::Ui;
 use egui_winit_vulkano::{egui, Gui};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use image::DynamicImage;
 use itertools::Itertools;
 use log::info;
+use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -20,10 +21,11 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::shader_types::MaterialInfo;
+use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::Dirtyable;
 use renderer::camera::Camera;
+use renderer::pipelines::line_pipeline::LinePipeline;
 use renderer::pipelines::pbr_pipeline::PBRPipeline;
 use renderer::{
     init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable, VertexBuffer,
@@ -473,6 +475,67 @@ pub fn start(gltf_paths: Vec<&str>) {
         material_info_bufs,
         mesh_info_bufs.into_iter(),
         viewport.clone(),
+        render_pass.clone(),
+    );
+
+    let line_vertex_buffers: Vec<VertexBuffer> = (0..10)
+        .into_iter()
+        .map(|_| VertexBuffer {
+            subbuffer: Buffer::from_iter(
+                &setup_info.memory_allocator,
+                BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    usage: MemoryUsage::Upload,
+                    ..Default::default()
+                },
+                (0..2).into_iter().map(|_| {
+                    [
+                        rand::thread_rng().gen_range(-10f32..10f32),
+                        rand::thread_rng().gen_range(-10f32..10f32),
+                        rand::thread_rng().gen_range(-10f32..10f32),
+                    ]
+                }),
+            )
+            .expect("Couldn't allocate vertex buffer")
+            .into_bytes(),
+            vertex_count: 2,
+        })
+        .collect_vec();
+
+    let line_info_buffers = (0..10).into_iter().map(|i| {
+        Buffer::from_data(
+            &setup_info.memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            LineInfo {
+                model_transform: Mat4::default().to_cols_array_2d(),
+                color: [
+                    1.0 / (i as f32 + 1.0),
+                    1.0 / (i as f32 + 1.0),
+                    1.0 / (i as f32 + 1.0),
+                    1.0,
+                ],
+            },
+        )
+        .expect("Couldn't allocate vertex buffer")
+        .into_bytes()
+    });
+
+    let line_pipeline = LinePipeline::new(
+        device.clone(),
+        line_vertex_buffers,
+        camera.buffer.clone(),
+        line_info_buffers,
+        viewport.clone(),
         render_pass,
     );
 
@@ -483,7 +546,7 @@ pub fn start(gltf_paths: Vec<&str>) {
             cmd_buf_builder,
             camera,
         },
-        pbr_pipeline,
+        vec![Box::from(pbr_pipeline), Box::from(line_pipeline)],
         global_state,
     );
 }

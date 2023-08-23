@@ -8,7 +8,8 @@ use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+    PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::DescriptorSetsCollection;
@@ -23,7 +24,7 @@ use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::pipeline::Pipeline;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{
     AcquireError, CompositeAlpha, Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo,
@@ -278,6 +279,44 @@ fn get_framebuffers(
         .unzip()
 }
 
+fn get_finalized_render_passes(
+    framebuffers: Vec<Arc<Framebuffer>>,
+    cmd_buf_allocator: &StandardCommandBufferAllocator,
+    queue_family_index: u32,
+    pipeline_providers: &mut [Box<dyn PipelineProvider>],
+    pipelines: Vec<Arc<GraphicsPipeline>>,
+) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+    framebuffers
+        .iter()
+        .map(|framebuffer| {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                cmd_buf_allocator,
+                queue_family_index,
+                CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
+            )
+            .unwrap();
+
+            builder
+                .begin_render_pass(
+                    RenderPassBeginInfo {
+                        clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
+                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                    },
+                    SubpassContents::Inline,
+                )
+                .unwrap();
+
+            for i in 0..pipeline_providers.len() {
+                pipeline_providers[i].render_pass(&mut builder, pipelines[i].clone());
+            }
+
+            builder.end_render_pass().unwrap();
+
+            Arc::new(builder.build().unwrap())
+        })
+        .collect()
+}
+
 pub struct RenderState {
     pub init_state: RenderInitState,
     pub viewport: Viewport,
@@ -291,7 +330,7 @@ pub struct PartialRenderState<'a> {
 
 pub fn start_renderer(
     mut state: RenderState,
-    mut pipeline_provider: impl PipelineProvider + 'static,
+    mut pipeline_providers: Vec<Box<dyn PipelineProvider + 'static>>,
     mut callable: impl StateCallable + 'static,
 ) {
     info!(
@@ -317,18 +356,21 @@ pub fn start_renderer(
         depth_buffer,
     );
 
-    let pipeline = pipeline_provider.get_pipeline();
-
-    pipeline_provider.init_descriptor_sets(
-        pipeline.layout().set_layouts(),
-        &state.init_state.descriptor_set_allocator,
-    );
-
-    let mut command_buffers = pipeline_provider.begin_render_pass(
-        &framebuffers,
-        state.init_state.queue.queue_family_index(),
-        pipeline.clone(),
+    let mut pipelines = vec![];
+    for mut provider in pipeline_providers.as_mut_slice() {
+        let pipeline = provider.get_pipeline();
+        provider.init_descriptor_sets(
+            pipeline.layout().set_layouts(),
+            &state.init_state.descriptor_set_allocator,
+        );
+        pipelines.push(pipeline);
+    }
+    let mut command_buffers = get_finalized_render_passes(
+        framebuffers,
         &state.init_state.cmd_buf_allocator,
+        state.init_state.queue.queue_family_index(),
+        pipeline_providers.as_mut_slice(),
+        pipelines,
     );
 
     let mut window_resized = false;
@@ -481,13 +523,22 @@ pub fn start_renderer(
                     window_resized = false;
 
                     state.viewport.dimensions = new_dimensions.into();
-                    let new_pipeline = pipeline_provider.get_pipeline();
-
-                    command_buffers = pipeline_provider.begin_render_pass(
-                        &new_framebuffers,
-                        state.init_state.queue.queue_family_index(),
-                        new_pipeline,
+                    let mut new_pipelines = vec![];
+                    for mut provider in pipeline_providers.as_mut_slice() {
+                        let pipeline = provider.get_pipeline();
+                        provider.init_descriptor_sets(
+                            pipeline.layout().set_layouts(),
+                            &state.init_state.descriptor_set_allocator,
+                        );
+                        provider.set_viewport(state.viewport.clone());
+                        new_pipelines.push(pipeline);
+                    }
+                    command_buffers = get_finalized_render_passes(
+                        new_framebuffers.clone(),
                         &state.init_state.cmd_buf_allocator,
+                        state.init_state.queue.queue_family_index(),
+                        pipeline_providers.as_mut_slice(),
+                        new_pipelines,
                     );
                     state
                         .camera

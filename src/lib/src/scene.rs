@@ -11,7 +11,6 @@ use rand::Rng;
 use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
-use vulkano::pipeline::GraphicsPipeline;
 
 pub struct Texture {
     pub id: u32,
