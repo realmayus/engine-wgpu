@@ -3,8 +3,6 @@ use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::shader_types::{MaterialInfo, MeshInfo};
-use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::debug;
 use rand::Rng;
@@ -12,15 +10,29 @@ use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
 
+use crate::shader_types::{MaterialInfo, MeshInfo};
+use crate::Dirtyable;
+
 pub struct Texture {
     pub id: u32,
     pub name: Option<Box<str>>,
     pub view: Arc<ImageView<ImmutableImage>>,
+    pub img_path: Box<str>,
 }
 
 impl Texture {
-    pub fn from(view: Arc<ImageView<ImmutableImage>>, name: Option<Box<str>>, id: u32) -> Self {
-        Self { view, name, id }
+    pub fn from(
+        view: Arc<ImageView<ImmutableImage>>,
+        name: Option<Box<str>>,
+        id: u32,
+        img_path: Box<str>,
+    ) -> Self {
+        Self {
+            view,
+            name,
+            id,
+            img_path,
+        }
     }
 }
 

@@ -89,6 +89,20 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
 fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
+            if ui.button("Load world").clicked() {}
+            if ui.button("Save world").clicked() {}
+        });
+        if ui.button("Import glTF").clicked() {
+            if let Some(paths) = rfd::FileDialog::new()
+                .add_filter("glTF scenes", &vec!["gltf", "glb"])
+                .pick_files()
+            {
+                for path in paths {
+                    println!("{}", path.display().to_string());
+                }
+            }
+        }
         ui.label("Loaded models:");
         for scene in state.scenes.as_mut_slice() {
             ui.push_id(scene.id, |ui| {

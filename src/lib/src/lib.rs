@@ -1,4 +1,5 @@
 pub mod scene;
+mod scene_serde;
 pub mod shader_types;
 pub mod texture;
 pub mod util;

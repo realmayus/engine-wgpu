@@ -233,6 +233,7 @@ pub fn load_gltf(
             allocator,
             cmd_buf_builder,
         );
+        //TODO extract image data from gltf, save it somewhere and pass path into Texture::from for serde
         let texture = Texture::from(vk_texture, gltf_texture.name().map(Box::from), *tex_i);
         *tex_i += 1;
         textures.insert(gltf_texture.index(), Rc::from(texture));

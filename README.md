@@ -4,6 +4,7 @@ Vulkan game engine
 ## Roadmap
 ### Renderer
 - [x] egui [17.08.23]
+- [ ] dynamic asset loading
 - [ ] point lights
 - [ ] gamma correction
 - [ ] Instancing
