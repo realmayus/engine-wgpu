@@ -142,7 +142,7 @@ void main() {
     normal = normalize(normal);
     vec3 view_dir = normalize(camera.view_position.xyz - world_pos);
 
-    vec3 Lo;
+    vec3 Lo = vec3(0.0);
     // contribution of each light,
     for (int i = 0; i < 1; i++) {
         Light light = lights[i];
