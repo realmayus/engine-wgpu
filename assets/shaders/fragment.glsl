@@ -118,26 +118,12 @@ void main() {
 
     vec3 world_pos = mesh.model_transform[3].xyz;
 
-    vec3 albedo = material.base_color.xyz;
-    if (material.base_texture != 0) {
-        albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords).xyz;
-    }
-    vec3 normal = vec3(1.0);
-    if (material.normal_texture != 0) {
-        normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).xyz;
-    }
-    float metallic = material.metal_roughness_factors.x;
-    if (material.metal_roughness_texture != 0) {
-        metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b;
-    }
-    float roughness = material.metal_roughness_factors.y;
-    if (material.metal_roughness_texture != 0) {
-        roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g;
-    }
-    vec3 ao = vec3(material.ao_factor);
-    if (material.ao_texture != 0){
-        ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).xyz;
-    }
+    // load material values, if index 0, value will be 1 because of white default texture
+    vec3 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords).xyz;
+    vec3 normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).xyz;
+    float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b;
+    float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g;
+    vec3 ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).xyz;
 
     normal = normalize(normal);
     vec3 view_dir = normalize(camera.view_position.xyz - world_pos);

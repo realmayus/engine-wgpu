@@ -327,7 +327,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     .unwrap();
 
     let (default_material, default_texture) = {
-        let img = image::open("assets/textures/no_texture.png")
+        let img = image::open("assets/textures/default.png")
             .expect("Couldn't load default texture")
             .to_rgba8();
         let width = img.width();
