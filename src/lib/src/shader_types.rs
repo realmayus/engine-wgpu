@@ -46,24 +46,24 @@ impl CameraUniform {
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
 pub struct MaterialInfo {
-    /// index of the albedo texture, panics if None
-    pub albedo_texture: u32,
     /// scales albedo texture if defined, otherwise defines color
     pub albedo: [f32; 4],
-    /// index of the metal_roughness texture
-    pub metal_roughness_texture: u32,
     /// scales metal_roughness texture if defined, otherwise defines reflection properties
     pub metal_roughness_factors: [f32; 2],
+    /// index of the albedo texture, panics if None
+    pub albedo_texture: u32,
+    /// index of the metal_roughness texture
+    pub metal_roughness_texture: u32,
+    /// scales emission texture if defined, otherwise defines the emission color
+    pub emission_factors: [f32; 3],
+    /// index of the emission texture
+    pub emission_texture: u32,
     /// index of the normal texture
     pub normal_texture: u32,
     /// index of the occlusion texture
     pub occlusion_texture: u32,
     /// scales occlusion texture if defined, otherwise defines constant occlusion value
     pub occlusion_factor: f32,
-    /// index of the emission texture
-    pub emission_texture: u32,
-    /// scales emission texture if defined, otherwise defines the emission color
-    pub emission_factors: [f32; 3],
 }
 impl MaterialInfo {
     pub fn from_material(material: &Material) -> Self {

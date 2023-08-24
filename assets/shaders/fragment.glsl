@@ -14,15 +14,15 @@ layout(set = 0, binding = 0) buffer CameraUniform {
 layout(set = 1, binding = 0) uniform sampler2D[] texs;
 
 struct MUStruct {
-    uint base_texture;
     vec4 base_color;
-    uint metal_roughness_texture;
     vec2 metal_roughness_factors;
+    uint base_texture;
+    uint metal_roughness_texture;
+    vec3 emission_factors;
+    uint emission_texture;
     uint normal_texture;
     uint ao_texture;
     float ao_factor;
-    uint emission_texture;
-    vec3 emission_factors;
 };
 
 layout(set = 2, binding = 0) buffer MaterialUniform {
