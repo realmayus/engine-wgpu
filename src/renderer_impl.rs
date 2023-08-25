@@ -8,7 +8,7 @@ use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
 use image::DynamicImage;
 use itertools::Itertools;
-use log::info;
+use log::{error, info};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -20,7 +20,7 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
 use lib::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
-use lib::shader_types::{LightInfo, MaterialInfo};
+use lib::shader_types::MaterialInfo;
 use lib::texture::create_texture;
 use lib::Dirtyable;
 use renderer::camera::Camera;
@@ -180,6 +180,7 @@ fn load_preview_meshes(
 ) -> (Vec<VertexBuffer>, Vec<VertexBuffer>, Vec<Subbuffer<[u32]>>) {
     let mut preview_vertices: Vec<VertexBuffer> = vec![];
     let mut normal_buffers: Vec<VertexBuffer> = vec![];
+    let mut tangent_buffers = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
 
     for gltf_path in preview_models {
@@ -194,17 +195,20 @@ fn load_preview_meshes(
         for scene in scenes {
             for model in scene.models {
                 for mesh in model.meshes {
-                    let (vert_buf, normal_buf, _uvs, index_buf) =
-                        create_buffers(&mesh, memory_allocator);
+                    let buffers = create_buffers(&mesh, memory_allocator);
                     preview_vertices.push(VertexBuffer {
-                        subbuffer: vert_buf.into_bytes(),
+                        subbuffer: buffers.vert_buf.into_bytes(),
                         vertex_count: mesh.vertices.len() as u32,
                     });
                     normal_buffers.push(VertexBuffer {
-                        subbuffer: normal_buf.into_bytes(),
+                        subbuffer: buffers.normal_buf.into_bytes(),
                         vertex_count: mesh.vertices.len() as u32,
                     });
-                    index_buffers.push(index_buf);
+                    tangent_buffers.push(VertexBuffer {
+                        subbuffer: buffers.tangent_buf.into_bytes(),
+                        vertex_count: mesh.vertices.len() as u32,
+                    });
+                    index_buffers.push(buffers.index_buf);
                 }
             }
         }
@@ -212,72 +216,91 @@ fn load_preview_meshes(
     (preview_vertices, normal_buffers, index_buffers)
 }
 
-fn create_buffers(
-    mesh: &Mesh,
-    memory_allocator: &StandardMemoryAllocator,
-) -> (
-    Subbuffer<[[f32; 3]]>,
-    Subbuffer<[[f32; 3]]>,
-    Subbuffer<[[f32; 2]]>,
-    Subbuffer<[u32]>,
-) {
-    let vert_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.vertices.iter().map(|v| v.to_array()),
-    )
-    .expect("Couldn't allocate vertex buffer");
+struct Buffers {
+    pub vert_buf: Subbuffer<[[f32; 3]]>,
+    pub normal_buf: Subbuffer<[[f32; 3]]>,
+    pub tangent_buf: Subbuffer<[[f32; 4]]>,
+    pub uv_buf: Subbuffer<[[f32; 2]]>,
+    pub index_buf: Subbuffer<[u32]>,
+}
 
-    let normal_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.vertices.iter().map(|v| v.to_array()),
-    )
-    .expect("Couldn't allocate normal buffer");
+fn create_buffers(mesh: &Mesh, memory_allocator: &StandardMemoryAllocator) -> Buffers {
+    Buffers {
+        vert_buf: Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.vertices.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate vertex buffer"),
 
-    let uv_buf: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.uvs.iter().map(|v| v.to_array()),
-    )
-    .expect("Couldn't allocate UV buffer");
+        normal_buf: Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.normals.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate normal buffer"),
 
-    let index_buf = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::INDEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.indices.clone(),
-    )
-    .expect("Couldn't allocate index buffer");
+        tangent_buf: Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            if mesh.tangents.is_empty() {
+                error!("Tangent buffer is emtpy!");
+                panic!()
+            } else {
+                mesh.tangents.iter().map(|t| t.to_array())
+            },
+        )
+        .expect("Couldn't allocate tangent buffer"),
 
-    (vert_buf, normal_buf, uv_buf, index_buf)
+        uv_buf: Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.uvs.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate UV buffer"),
+
+        index_buf: Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::INDEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.indices.clone(),
+        )
+        .expect("Couldn't allocate index buffer"),
+    }
 }
 
 struct GlobalState {
@@ -376,12 +399,12 @@ pub fn start(gltf_paths: Vec<&str>) {
     };
 
     // Load preview meshes (for material/texture preview)
-    load_preview_meshes(
-        preview_models,
-        &setup_info.memory_allocator,
-        &mut cmd_buf_builder,
-        default_material.clone(),
-    );
+    // load_preview_meshes(
+    //     preview_models,
+    //     &setup_info.memory_allocator,
+    //     &mut cmd_buf_builder,
+    //     default_material.clone(),
+    // );
 
     // Load scene
     let mut scenes: Vec<Scene> = vec![];
@@ -406,7 +429,7 @@ pub fn start(gltf_paths: Vec<&str>) {
             .map(|x| x.1)
             .collect_vec();
 
-        textures.append(&mut texture_values); //TODO investigate if this is too performance-heavy?
+        textures.append(&mut texture_values); // TODO investigate if this is too performance-heavy?
 
         let mut material_values: Vec<Rc<RefCell<Material>>> = gltf_materials
             .into_iter()
@@ -419,6 +442,7 @@ pub fn start(gltf_paths: Vec<&str>) {
 
     let mut vertex_buffers: Vec<VertexBuffer> = vec![];
     let mut normal_buffers: Vec<VertexBuffer> = vec![];
+    let mut tangent_buffers: Vec<VertexBuffer> = vec![];
     let mut uv_buffers: Vec<VertexBuffer> = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
     let mut mesh_info_bufs = vec![];
@@ -435,21 +459,24 @@ pub fn start(gltf_paths: Vec<&str>) {
 
             for mesh in model.meshes.as_slice() {
                 println!("{:?}", mesh);
-                let (vert_buf, normal_buf, uv_buf, index_buf) =
-                    create_buffers(mesh, &setup_info.memory_allocator);
+                let buffers = create_buffers(mesh, &setup_info.memory_allocator);
                 vertex_buffers.push(VertexBuffer {
-                    subbuffer: vert_buf.into_bytes(),
+                    subbuffer: buffers.vert_buf.into_bytes(),
                     vertex_count: mesh.vertices.len() as u32,
                 });
                 normal_buffers.push(VertexBuffer {
-                    subbuffer: normal_buf.into_bytes(),
+                    subbuffer: buffers.normal_buf.into_bytes(),
                     vertex_count: mesh.normals.len() as u32,
                 });
+                tangent_buffers.push(VertexBuffer {
+                    subbuffer: buffers.tangent_buf.into_bytes(),
+                    vertex_count: mesh.tangents.len() as u32,
+                });
                 uv_buffers.push(VertexBuffer {
-                    subbuffer: uv_buf.into_bytes(),
+                    subbuffer: buffers.uv_buf.into_bytes(),
                     vertex_count: mesh.uvs.len() as u32,
                 });
-                index_buffers.push(index_buf);
+                index_buffers.push(buffers.index_buf);
                 mesh_info_bufs.push(mesh.buffer.clone());
             }
         }
@@ -489,6 +516,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         device.clone(),
         vertex_buffers,
         normal_buffers,
+        tangent_buffers,
         uv_buffers,
         index_buffers,
         camera.buffer.clone(),

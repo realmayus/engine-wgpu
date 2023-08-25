@@ -128,6 +128,7 @@ pub struct Mesh {
     pub vertices: Vec<Vec3>,
     pub indices: Vec<u32>,
     pub normals: Vec<Vec3>,
+    pub tangents: Vec<Vec4>,
     pub material: Rc<RefCell<Material>>,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
@@ -138,6 +139,7 @@ impl Mesh {
         vertices: Vec<Vec3>,
         indices: Vec<u32>,
         normals: Vec<Vec3>,
+        tangents: Vec<Vec4>,
         material: Rc<RefCell<Material>>,
         uvs: Vec<Vec2>,
         global_transform: Mat4,
@@ -149,6 +151,7 @@ impl Mesh {
             vertices,
             indices,
             normals,
+            tangents,
             material,
             uvs,
             global_transform,
@@ -176,9 +179,10 @@ impl Debug for Mesh {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{MESH: # of vertices: {}, # of normals: {}, # of indices: {}, material: {}, global transform: {}}}",
+            "{{MESH: # of vertices: {}, # of normals: {}, # of tangents: {}, # of indices: {}, material: {}, global transform: {}}}",
             self.vertices.len(),
             self.normals.len(),
+            self.tangents.len(),
             self.indices.len(),
             self.material.borrow().name.clone().unwrap_or_default(),
             self.global_transform,

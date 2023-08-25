@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
+use lib::shader_types::{CameraUniform, MyNormal, MyTangent, MyUV, MyVertex};
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
@@ -45,6 +45,7 @@ pub struct PBRPipeline {
     fs: Arc<ShaderModule>,
     vertex_buffers: Vec<VertexBuffer>,
     normal_buffers: Vec<VertexBuffer>,
+    tangent_buffers: Vec<VertexBuffer>,
     uv_buffers: Vec<VertexBuffer>,
     index_buffers: Vec<Subbuffer<[u32]>>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
@@ -59,6 +60,7 @@ impl PBRPipeline {
         device: Arc<Device>,
         vertex_buffers: Vec<VertexBuffer>,
         normal_buffers: Vec<VertexBuffer>,
+        tangent_buffers: Vec<VertexBuffer>,
         uv_buffers: Vec<VertexBuffer>,
         index_buffers: Vec<Subbuffer<[u32]>>,
         camera_buffer: Subbuffer<CameraUniform>,
@@ -124,6 +126,7 @@ impl PBRPipeline {
             fs,
             vertex_buffers,
             normal_buffers,
+            tangent_buffers,
             uv_buffers,
             index_buffers,
             write_descriptor_sets,
@@ -134,6 +137,7 @@ impl PBRPipeline {
             vertex_input_state: vec![
                 MyVertex::per_vertex(),
                 MyNormal::per_vertex(),
+                MyTangent::per_vertex(),
                 MyUV::per_vertex(),
             ],
         }
@@ -246,6 +250,7 @@ impl PipelineProvider for PBRPipeline {
                             (
                                 self.vertex_buffers[i].subbuffer.clone(),
                                 self.normal_buffers[i].subbuffer.clone(),
+                                self.tangent_buffers[i].subbuffer.clone(),
                                 self.uv_buffers[i].subbuffer.clone(),
                             ),
                         )

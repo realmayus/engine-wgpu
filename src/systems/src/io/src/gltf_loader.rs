@@ -362,6 +362,8 @@ fn load_node(
             let mut positions: Vec<Vec3> = vec![];
             let mut indices: Vec<u32> = vec![];
             let mut normals: Vec<Vec3> = vec![];
+            // xyz is tangent, w is bi-tangent sign
+            let mut tangents: Vec<Vec4> = vec![];
             let mut uvs: Vec<Vec2> = vec![];
             let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             if let Some(iter) = reader.read_tex_coords(0) {
@@ -376,6 +378,9 @@ fn load_node(
             if let Some(iter) = reader.read_normals() {
                 normals = iter.map(Vec3::from).collect();
             }
+            if let Some(iter) = reader.read_tangents() {
+                tangents = iter.map(Vec4::from).collect();
+            }
 
             let mat = gltf_primitive
                 .material()
@@ -385,6 +390,7 @@ fn load_node(
                 positions,
                 indices,
                 normals,
+                tangents,
                 mat.unwrap_or(default_material.clone()),
                 uvs,
                 global_transform,

@@ -3,7 +3,8 @@
 
 layout(location = 0) in vec2 tex_coords;
 layout(location = 1) in vec3 normal_frag;
-layout(location = 2) flat in uint index;
+layout(location = 2) in vec4 tangent;
+layout(location = 3) flat in uint index;
 layout(location = 0) out vec4 frag_color;
 
 layout(set = 0, binding = 0) buffer CameraUniform {
@@ -102,6 +103,7 @@ float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
 }
 
 void main() {
+    vec4 tang = tangent;
     MeshStruct mesh = meshes[index];
     uint mat_id = mesh.mat_id;
     MUStruct material = materials[mat_id].mat;
@@ -110,13 +112,14 @@ void main() {
 
     // load material values, if index 0, value will be 1 because of white default texture
     vec4 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords);
-    // convert to linear space
-    albedo = pow(albedo, vec4(2.2));
     vec3 normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).xyz;
     float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b * material.metal_roughness_factors.x;
     float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g * material.metal_roughness_factors.y;
     float ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).r;
     // convert to linear space
+    albedo = pow(albedo, vec4(2.2));
+    metallic = pow(metallic, 2.2);
+    roughness = pow(roughness, 2.2);
     ao = pow(ao, 2.2);
 
     normal = normalize(normal_frag);
@@ -162,7 +165,8 @@ void main() {
     vec3 ambient = vec3(0.03) * albedo.rgb * ao;
     vec3 color = ambient + Lo;
 
-    // HDR -> LDR
+    // HDR -> LDR / or linear to sRGB idk
+    // does not give nice results
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2));
 

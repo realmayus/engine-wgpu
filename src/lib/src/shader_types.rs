@@ -21,6 +21,13 @@ pub struct MyNormal {
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
+pub struct MyTangent {
+    #[format(R32G32B32A32_SFLOAT)]
+    tangent: [f32; 4],
+}
+
+#[derive(BufferContents, Vertex)]
+#[repr(C)]
 pub struct MyUV {
     #[format(R32G32_SFLOAT)]
     uv: [f32; 2],
