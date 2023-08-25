@@ -62,16 +62,6 @@ vec3 fresnel(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// Fresnel equation F of DFG which is the specular part of BRDF
-vec3 reflect_ratio(vec3 half_vec, vec3 view_dir, vec3 albedo, float metallic) {
-    // most dieclictric surfaces look visually correct with F0 of 0.04
-    vec3 F0 = vec3(0.04);
-    // metallic surfaces absorb all refraction so the F0 for them is just the albedo
-    F0 = mix(F0, albedo, metallic);
-    return fresnel(max(dot(half_vec, view_dir), 0.0), F0);
-}
-
-
 // Normal distribution function D of DFG (Trowbridge-Reitz GGX)
 // (n, h, a) = a^2 / pi*((n*h)^2 (a^2 - 1) + 1)^2
 // Approximates the relative surface area of microfacets exactly aligned to the (halfway) vector
@@ -119,14 +109,23 @@ void main() {
     vec3 world_pos = mesh.model_transform[3].xyz;
 
     // load material values, if index 0, value will be 1 because of white default texture
-    vec3 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords).xyz;
+    vec4 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords);
+    // convert to linear space
+    albedo = pow(albedo, vec4(2.2));
     vec3 normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).xyz;
-    float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b;
-    float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g;
-    vec3 ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).xyz;
+    float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b * material.metal_roughness_factors.x;
+    float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g * material.metal_roughness_factors.y;
+    float ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).r;
+    // convert to linear space
+    ao = pow(ao, 2.2);
 
-    normal = normalize(normal);
+    normal = normalize(normal_frag);
     vec3 view_dir = normalize(camera.view_position.xyz - world_pos);
+
+    // most dieclictric surfaces look visually correct with F0 of 0.04
+    vec3 F0 = vec3(0.04);
+    // metallic surfaces absorb all refraction so the F0 for them is just the albedo
+    F0 = mix(F0, albedo.rgb, metallic);
 
     vec3 Lo = vec3(0.0);
     // contribution of each light,
@@ -136,34 +135,36 @@ void main() {
         vec3 light_dir = normalize(light_pos - world_pos);
         vec3 half_vec = normalize(view_dir + light_dir); // \|/
 
-        float dist = distance(light_pos, world_pos);
+        float dist = length(light_pos - world_pos); //distance(world_pos, light_pos);
         float attenuation = 1.0 / (dist * dist);
-        vec3 radiance = light.color * attenuation;
+        vec3 radiance = light.color * 10.0 * attenuation;
 
-        vec3 refl_ratio = reflect_ratio(half_vec, view_dir, albedo, metallic);
+        // Fresnel equation F of DFG which is the specular part of BRDF
+        vec3 reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), F0);
 
         float normal_dist = distribution(normal, half_vec, roughness);
         float geom = geometry_smith(normal, view_dir, light_dir, roughness);
 
         // BRDF
-        vec3 numerator = normal_dist * geom * refl_ratio;
+        vec3 numerator = normal_dist * geom * reflect_ratio;
         float denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0) + 0.0001;
         vec3 specular = numerator / denominator;
 
-        vec3 k_specular = refl_ratio;
+        vec3 k_specular = reflect_ratio;
         vec3 k_diffuse = vec3(1.0) - k_specular;
-
+        // metallic surfaces don't rafract light / have no diffuse lighting
         k_diffuse *= 1.0 - metallic;
 
         float normal_dot_light = max(dot(normal, light_dir), 0.0);
-        Lo += (k_diffuse * albedo / PI + specular) * radiance * normal_dot_light;
+        Lo += (k_diffuse * albedo.rgb / PI + specular) * radiance * normal_dot_light;
     }
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 ambient = vec3(0.03) * albedo.rgb * ao;
     vec3 color = ambient + Lo;
 
+    // HDR -> LDR
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2));
 
-    frag_color = vec4(color, 1.0);
+    frag_color = vec4(color, albedo.a);
 }

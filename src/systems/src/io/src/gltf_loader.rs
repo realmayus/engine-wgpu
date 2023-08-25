@@ -19,7 +19,7 @@ use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 use lib::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
-use lib::shader_types::{MaterialInfo, MeshInfo};
+use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
@@ -406,11 +406,25 @@ fn load_node(
     }
 
     let light = node.light().map(|light| PointLight {
+        dirty: true,
         global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
         index: light.index(),
-        color: Vec4::from((light.color()[0], light.color()[1], light.color()[2], 1.0)),
+        color: Vec3::from(light.color()),
         intensity: light.intensity(),
         range: light.range(),
+        buffer: Buffer::from_data(
+            allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            LightInfo::default(),
+        )
+        .unwrap(),
     });
 
     Model::from(

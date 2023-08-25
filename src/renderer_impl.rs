@@ -36,20 +36,12 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
         if ui
             .add(egui::Slider::new(&mut model.local_transform.w_axis.x, -10.0..=10.0).text("X"))
             .changed()
-        {
-            model.update_transforms(parent_transform);
-        }
-
-        if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.y, -10.0..=10.0).text("Y"))
-            .changed()
-        {
-            model.update_transforms(parent_transform);
-        }
-
-        if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.z, -10.0..=10.0).text("Z"))
-            .changed()
+            || ui
+                .add(egui::Slider::new(&mut model.local_transform.w_axis.y, -10.0..=10.0).text("Y"))
+                .changed()
+            || ui
+                .add(egui::Slider::new(&mut model.local_transform.w_axis.z, -10.0..=10.0).text("Z"))
+                .changed()
         {
             model.update_transforms(parent_transform);
         }
@@ -124,6 +116,20 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
                         "Metallic roughness factors: {}",
                         mat.borrow().metallic_roughness_factors
                     ));
+                    ui.add(
+                        egui::Slider::new(
+                            &mut mat.borrow_mut().metallic_roughness_factors.x,
+                            0.0..=1.0,
+                        )
+                        .text("Metallicness"),
+                    );
+                    ui.add(
+                        egui::Slider::new(
+                            &mut mat.borrow_mut().metallic_roughness_factors.y,
+                            0.0..=1.0,
+                        )
+                        .text("Roughness"),
+                    );
                     ui.label(format!(
                         "Emissive factors: {}",
                         mat.borrow().emissive_factors
@@ -293,6 +299,11 @@ impl StateCallable for GlobalState {
                         mesh.update();
                     }
                 }
+                if let Some(ref mut light) = model.light {
+                    if light.dirty {
+                        light.update();
+                    }
+                }
             }
         }
         for material in self.materials.as_slice() {
@@ -418,7 +429,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         for model in scene.models.as_slice() {
             println!("{:?}", model);
 
-            if let Some(point_light) = model.light {
+            if let Some(point_light) = model.light.clone() {
                 lights_buffer.push(point_light);
             }
 
@@ -472,21 +483,7 @@ pub fn start(gltf_paths: Vec<&str>) {
 
     println!("# of materialUniforms: {}", material_info_bufs.len());
 
-    let lights_buffer = lights_buffer.into_iter().map(|light| {
-        Buffer::from_data(
-            &setup_info.memory_allocator,
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
-                ..Default::default()
-            },
-            LightInfo::from_light(&light),
-        )
-        .expect("Couldn't allocate LightInfo uniform")
-    });
+    let lights_buffer = lights_buffer.into_iter().map(|light| light.buffer.clone());
 
     let pbr_pipeline = PBRPipeline::new(
         device.clone(),

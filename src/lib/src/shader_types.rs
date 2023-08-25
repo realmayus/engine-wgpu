@@ -82,7 +82,7 @@ impl MaterialInfo {
                 .as_ref()
                 .map(|t| t.id)
                 .unwrap_or(0),
-            occlusion_factor: material.occlusion_factor,
+            occlusion_factor: 1.,
             emission_texture: material
                 .emissive_texture
                 .as_ref()
@@ -113,11 +113,11 @@ impl MeshInfo {
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
 pub struct LightInfo {
-    transform: [[f32; 4]; 4],
-    color: [f32; 3],
-    light: u32,
-    intensity: f32,
-    range: f32,
+    pub transform: [[f32; 4]; 4],
+    pub color: [f32; 3],
+    pub light: u32,
+    pub intensity: f32,
+    pub range: f32,
 }
 impl LightInfo {
     pub fn from_light(light: &PointLight) -> Self {

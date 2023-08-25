@@ -3,10 +3,10 @@ use std::fmt::{Debug, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::shader_types::{MaterialInfo, MeshInfo};
+use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use log::debug;
+use log::{debug, info};
 use rand::Rng;
 use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
@@ -109,14 +109,14 @@ impl Debug for Material {
             f,
             "{{MATERIAL: name: {}, base_texture: {}, base_color: {:?}, metallic_roughness_texture: {}, metallic_roughness_factors: {:?}, normal_texture: {}, occlusion_texture: {}, occlusion_strength: {}, emissive_texture: {}, emissive_factors: {:?}}}",
             self.name.clone().unwrap_or_default(),
-            self.albedo_texture.clone().map(|t| t.id as i32).unwrap_or(-1),  // there really shouldn't be any int overflow :p
+            self.albedo_texture.clone().map(|t| t.id).unwrap_or(0),  // there really shouldn't be any int overflow :p
             self.albedo,
-            self.metallic_roughness_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
+            self.metallic_roughness_texture.clone().map(|t| t.id).unwrap_or(0),
             self.metallic_roughness_factors,
-            self.normal_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
-            self.occlusion_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
+            self.normal_texture.clone().map(|t| t.id).unwrap_or(0),
+            self.occlusion_texture.clone().map(|t| t.id).unwrap_or(0),
             self.occlusion_factor,
-            self.emissive_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
+            self.emissive_texture.clone().map(|t| t.id).unwrap_or(0),
             self.emissive_factors,
         )
     }
@@ -186,13 +186,35 @@ impl Debug for Mesh {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct PointLight {
+    pub dirty: bool,
     pub global_transform: Mat4,
     pub index: usize,
-    pub color: Vec4,
+    pub color: Vec3,
     pub intensity: f32,
     pub range: Option<f32>,
+    pub buffer: Subbuffer<LightInfo>,
+}
+impl Dirtyable for PointLight {
+    fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
+
+    fn update(&mut self) {
+        info!("Updated light {}", self.index);
+        self.set_dirty(false);
+        let mut mapping = self.buffer.write().unwrap();
+        mapping.transform = self.global_transform.to_cols_array_2d();
+        mapping.color = self.color.to_array();
+        mapping.light = self.index as u32;
+        mapping.intensity = self.intensity;
+        mapping.range = self.range.unwrap_or(1.0);
+    }
 }
 
 pub struct Model {
@@ -232,6 +254,10 @@ impl Model {
         }
         for child in self.children.as_mut_slice() {
             child.update_transforms(self.local_transform);
+        }
+        if let Some(ref mut light) = self.light {
+            light.global_transform = parent * self.local_transform;
+            light.set_dirty(true);
         }
     }
 }
