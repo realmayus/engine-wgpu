@@ -116,10 +116,12 @@ void main() {
     float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b * material.metal_roughness_factors.x;
     float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g * material.metal_roughness_factors.y;
     float ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).r;
+    vec3 emmission = texture(nonuniformEXT(texs[material.emission_texture]), tex_coords).rgb;
     // convert to linear space
     albedo = pow(albedo, vec4(2.2));
-    metallic = pow(metallic, 2.2);
-    roughness = pow(roughness, 2.2);
+    //metallic = pow(metallic, 2.2);
+    //roughness = pow(roughness, 2.2);
+    emmission = pow(emmission, vec3(2.2));
     ao = pow(ao, 2.2);
 
     normal = normalize(normal_frag);
@@ -140,7 +142,7 @@ void main() {
 
         float dist = length(light_pos - world_pos); //distance(world_pos, light_pos);
         float attenuation = 1.0 / (dist * dist);
-        vec3 radiance = light.color * 10.0 * attenuation;
+        vec3 radiance = light.color * 1.0 * attenuation;
 
         // Fresnel equation F of DFG which is the specular part of BRDF
         vec3 reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), F0);
@@ -162,8 +164,8 @@ void main() {
         Lo += (k_diffuse * albedo.rgb / PI + specular) * radiance * normal_dot_light;
     }
 
-    vec3 ambient = vec3(0.03) * albedo.rgb * ao;
-    vec3 color = ambient + Lo;
+    vec3 ambient = vec3(0.001) * albedo.rgb * ao;
+    vec3 color = ambient + Lo + emmission * material.emission_factors;
 
     // HDR -> LDR / or linear to sRGB idk
     // does not give nice results

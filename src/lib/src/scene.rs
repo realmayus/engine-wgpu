@@ -67,7 +67,7 @@ impl Material {
             occlusion_texture: None,
             occlusion_factor: 0.0,
             emissive_texture: None,
-            emissive_factors: Vec3::from((1.0, 1.0, 1.0)),
+            emissive_factors: Vec3::from((0.0, 0.0, 0.0)),
             buffer,
         }
     }
