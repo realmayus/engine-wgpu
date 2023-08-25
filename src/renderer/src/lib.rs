@@ -55,6 +55,7 @@ pub struct VertexBuffer {
 pub trait StateCallable {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
     fn update(&mut self);
+    fn cleanup(&self);
 }
 
 pub struct RenderInitState {
@@ -409,6 +410,7 @@ pub fn start_renderer(
             event: WindowEvent::CloseRequested,
             ..
         } => {
+            callable.cleanup();
             *control_flow = ControlFlow::Exit;
         }
         Event::WindowEvent {
@@ -491,7 +493,14 @@ pub fn start_renderer(
             // TODO: Optimization: Implement Frames in Flight
             if window_resized || recreate_swapchain {
                 recreate_swapchain = false;
-
+                info!(
+                    "Partial reinitialization due to {}",
+                    if (window_resized) {
+                        "window resize"
+                    } else {
+                        "request to recreate swapchain"
+                    }
+                );
                 let new_dimensions = state.init_state.window.inner_size();
 
                 let (new_swapchain, new_images) =
@@ -567,6 +576,7 @@ pub fn start_renderer(
                     Err(e) => panic!("Failed to acquire next image: {e}"),
                 };
             if suboptimal {
+                info!("Suboptimal image encountered, recreating swapchain in next frame");
                 recreate_swapchain = true;
             }
             acquire_future.wait(None).unwrap();

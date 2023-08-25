@@ -42,11 +42,20 @@ impl CameraUniform {
     }
 }
 
-#[derive(BufferContents, Debug, Default)]
+#[derive(BufferContents, Debug)]
 #[repr(C)]
 pub struct MaterialInfo {
     pub base_color: [f32; 4],
     pub base_texture: u32, // index of texture
+}
+
+impl Default for MaterialInfo {
+    fn default() -> Self {
+        Self {
+            base_color: [1.0, 1.0, 1.0, 1.0],
+            base_texture: 0,
+        }
+    }
 }
 
 #[derive(BufferContents, Debug, Default)]

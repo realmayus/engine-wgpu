@@ -1,8 +1,11 @@
 use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::shader_types::{MaterialInfo, MeshInfo};
+use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::debug;
 use rand::Rng;
@@ -10,14 +13,11 @@ use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
 
-use crate::shader_types::{MaterialInfo, MeshInfo};
-use crate::Dirtyable;
-
 pub struct Texture {
     pub id: u32,
     pub name: Option<Box<str>>,
     pub view: Arc<ImageView<ImmutableImage>>,
-    pub img_path: Box<str>,
+    pub img_path: PathBuf, // relative to run directory
 }
 
 impl Texture {
@@ -25,7 +25,7 @@ impl Texture {
         view: Arc<ImageView<ImmutableImage>>,
         name: Option<Box<str>>,
         id: u32,
-        img_path: Box<str>,
+        img_path: PathBuf,
     ) -> Self {
         Self {
             view,
@@ -118,6 +118,7 @@ impl Debug for Material {
     }
 }
 
+#[derive(Clone)]
 pub struct Mesh {
     dirty: bool,
     pub id: u32, // for key purposes in GUIs and stuff
@@ -185,8 +186,8 @@ impl Debug for Mesh {
 pub struct Model {
     pub id: u32,
     pub meshes: Vec<Mesh>,
-    pub name: Option<Box<str>>,
     pub children: Vec<Model>,
+    pub name: Option<Box<str>>,
     pub local_transform: Mat4,
 }
 impl Model {
@@ -236,6 +237,18 @@ impl Debug for Model {
     }
 }
 
+impl Clone for Model {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            meshes: self.meshes.clone(),
+            children: self.children.clone(),
+            name: self.name.clone(),
+            local_transform: self.local_transform.clone(),
+        }
+    }
+}
+
 pub struct Scene {
     pub id: u32,
     pub models: Vec<Model>,
@@ -264,5 +277,15 @@ impl Debug for Scene {
                 .map(|c| format!("\n - {:?}", c))
                 .collect::<String>(),
         )
+    }
+}
+
+impl Clone for Scene {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            name: self.name.clone(),
+            models: self.models.clone(),
+        }
     }
 }

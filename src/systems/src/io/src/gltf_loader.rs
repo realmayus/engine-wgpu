@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::ops::Add;
 use std::path::Path;
 use std::rc::Rc;
 use std::{fs, io};
@@ -10,14 +11,17 @@ use glam::{Mat4, Vec2, Vec3};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
-use gltf::{Error, Node};
-use image::DynamicImage;
+use gltf::{Error, Image, Node};
+use image::ImageFormat::{Jpeg, Png};
+use image::{guess_format, DynamicImage, ImageFormat};
 use log::info;
+use rand::distributions::{Alphanumeric, DistString};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
+use crate::extract_image_to_file;
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
 use lib::shader_types::{MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
@@ -100,28 +104,56 @@ fn load_image(
     source: Source<'_>,
     base: Option<&Path>,
     buffer_data: &[Data],
-) -> (Vec<u8>, u32, u32, Format) {
-    let decoded_image = match source {
-        Source::Uri { uri, .. } if base.is_some() => match Scheme::parse(uri) {
-            Scheme::Data(Some(..), base64) => {
+) -> (DynamicImage, u32, u32, Format, ImageFormat) {
+    let (decoded_image, file_format) = match source {
+        Source::Uri { uri, mime_type } if base.is_some() => match Scheme::parse(uri) {
+            Scheme::Data(Some(mime), base64) => {
                 let encoded_image = general_purpose::STANDARD
                     .decode(base64)
                     .expect("Couldn't parse b64");
-
-                image::load_from_memory(&encoded_image).expect("Couldn't load image")
+                let encoded_format = match mime {
+                    "image/png" => Png,
+                    "image/jpeg" => Jpeg,
+                    _ => panic!("Couldn't determine format of b64-encoded image"),
+                };
+                (
+                    image::load_from_memory(&encoded_image).expect("Couldn't load image"),
+                    encoded_format,
+                )
             }
             Scheme::Unsupported => panic!("Unsupported scheme."),
             _ => {
                 let encoded_image = Scheme::read(base, uri);
-                image::load_from_memory(&encoded_image).expect("Couldn't load image")
+                let encoded_format = match mime_type {
+                    Some("image/png") => Png,
+                    Some("image/jpeg") => Jpeg,
+                    None => match uri.rsplit('.').next() {
+                        Some("png") => Png,
+                        Some("jpg") | Some("jpeg") => Jpeg,
+                        _ => panic!("Couldn't determine format of image"),
+                    },
+                    _ => panic!("Couldn't determine format of image"),
+                };
+                (
+                    image::load_from_memory(&encoded_image).expect("Couldn't load image"),
+                    encoded_format,
+                )
             }
         },
-        View { view, .. } => {
+        View { view, mime_type } => {
             let parent_buffer_data = &buffer_data[view.buffer().index()].0;
             let begin = view.offset();
             let end = begin + view.length();
             let encoded_image = &parent_buffer_data[begin..end];
-            image::load_from_memory(encoded_image).expect("Couldn't load image")
+            let encoded_format = match mime_type {
+                "image/png" => Png,
+                "image/jpeg" => Jpeg,
+                _ => panic!("Couldn't determine format of image"),
+            };
+            (
+                image::load_from_memory(encoded_image).expect("Couldn't load image"),
+                encoded_format,
+            )
         }
         _ => panic!("Unsupported source"),
     };
@@ -131,64 +163,74 @@ fn load_image(
 
     match decoded_image {
         DynamicImage::ImageLuma8(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R8_UNORM,
+            file_format,
         ),
         DynamicImage::ImageLumaA8(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R8G8_UNORM,
+            file_format,
         ),
         DynamicImage::ImageRgb8(_) => (
-            DynamicImage::from(decoded_image.to_rgba8()).into_bytes(),
+            DynamicImage::from(decoded_image.to_rgba8()),
             decoded_image.width(),
             decoded_image.height(),
             vulkano::format::Format::R8G8B8A8_SRGB,
+            file_format,
         ),
         DynamicImage::ImageRgba8(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R8G8B8A8_SRGB,
+            file_format,
         ),
         DynamicImage::ImageLuma16(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R16_UINT,
+            file_format,
         ),
         DynamicImage::ImageLumaA16(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R16G16_UINT,
+            file_format,
         ),
         DynamicImage::ImageRgb16(_) => (
-            DynamicImage::from(decoded_image.to_rgba16()).into_bytes(),
+            DynamicImage::from(decoded_image.to_rgba16()),
             width,
             height,
             vulkano::format::Format::R16G16B16A16_UINT,
+            file_format,
         ),
         DynamicImage::ImageRgba16(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R16G16B16A16_UINT,
+            file_format,
         ),
         DynamicImage::ImageRgb32F(_) => (
-            DynamicImage::from(decoded_image.to_rgba32f()).into_bytes(),
+            DynamicImage::from(decoded_image.to_rgba32f()),
             width,
             height,
             vulkano::format::Format::R32G32B32A32_SFLOAT,
+            file_format,
         ),
         DynamicImage::ImageRgba32F(_) => (
-            decoded_image.into_bytes(),
+            decoded_image,
             width,
             height,
             vulkano::format::Format::R32G32B32A32_SFLOAT,
+            file_format,
         ),
         _ => panic!("Unsupported input format."),
     }
@@ -214,27 +256,56 @@ pub fn load_gltf(
     let mut textures: HashMap<usize, Rc<Texture>> = HashMap::new();
     let mut materials: HashMap<usize, Rc<RefCell<Material>>> = HashMap::new();
 
-    let mut images = Vec::new();
+    let mut images: HashMap<u32, (DynamicImage, u32, u32, Format, ImageFormat)> =
+        HashMap::with_capacity(gltf.images().len());
     for image in gltf.images() {
-        images.push(load_image(
-            image.source(),
-            Path::new(path).parent(),
-            &buffers,
-        )); //TODO support relative paths
+        images.insert(
+            image.index() as u32,
+            load_image(image.source(), Path::new(path).parent(), &buffers),
+        ); //TODO support relative paths
     }
 
     for gltf_texture in gltf.textures() {
-        let image = &images[gltf_texture.source().index()];
+        let (img, width, height, format, file_format) = images
+            .remove(&(gltf_texture.source().index() as u32))
+            .unwrap();
+
+        let img_name = if let Some(name) = gltf_texture.name() {
+            format!(
+                "{}_{}",
+                Path::new(path)
+                    .file_name()
+                    .map(|s| s.to_str())
+                    .unwrap_or(Some(""))
+                    .unwrap_or("")
+                    .split('.')
+                    .next()
+                    .unwrap(),
+                name
+            ) //TODO fix this abomination
+        } else {
+            Path::new(path)
+                .file_name()
+                .map(|s| s.to_str())
+                .unwrap_or(Some(""))
+                .unwrap_or("")
+                .split('.')
+                .next()
+                .unwrap()
+                .to_string()
+        };
+
+        let path = extract_image_to_file(img_name.as_str(), &img, file_format);
         let vk_texture = create_texture(
-            image.0.clone(), //TODO: Texture load optimization: check if this clone is bad
-            image.3,
-            image.1,
-            image.2,
+            img.into_bytes(), //TODO: Texture load optimization: check if this clone is bad
+            format,
+            width,
+            height,
             allocator,
             cmd_buf_builder,
         );
         //TODO extract image data from gltf, save it somewhere and pass path into Texture::from for serde
-        let texture = Texture::from(vk_texture, gltf_texture.name().map(Box::from), *tex_i);
+        let texture = Texture::from(vk_texture, gltf_texture.name().map(Box::from), *tex_i, path);
         *tex_i += 1;
         textures.insert(gltf_texture.index(), Rc::from(texture));
     }
@@ -308,10 +379,7 @@ pub fn load_gltf(
                         usage: MemoryUsage::Upload,
                         ..Default::default()
                     },
-                    MaterialInfo {
-                        base_color: [1.0, 1.0, 1.0, 1.0],
-                        base_texture: 0,
-                    },
+                    MaterialInfo::default(),
                 )
                 .expect("Couldn't allocate MaterialInfo uniform"),
             };
@@ -408,7 +476,7 @@ fn load_node(
                             usage: MemoryUsage::Upload,
                             ..Default::default()
                         },
-                        MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
+                        MeshInfo::default(),
                     )
                     .expect("Couldn't allocate MeshInfo uniform"),
                 ));
