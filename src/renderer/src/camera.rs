@@ -128,8 +128,6 @@ impl Camera {
         if mouse_middle && shift {
             self.target += translation.xyz() * delta_time * 50.;
             self.eye += translation.xyz() * delta_time * 50.;
-            info!("{}", delta_time);
-            // self.build_projection();
         }
     }
 }
