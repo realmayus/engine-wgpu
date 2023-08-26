@@ -27,6 +27,7 @@ The working directory can be set using the ` WORKING_DIR` environment variable.
 - [ ] Skybox
 - [ ] reflections (both skybox and reflections require cubemaps)
 - [ ] Billboarding
+- [ ] Decals
 - [ ] Tessellation
 - [ ] text rendering
 - [ ] transparency
