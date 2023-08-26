@@ -25,7 +25,7 @@ pub fn create_texture(
             array_layers: 1, // images can be arrays of layers
         },
         MipmapsCount::One,
-        format::Format::R8G8B8A8_UNORM,
+        format,
         cmd_buf_builder,
     )
     .expect("Couldn't create image");

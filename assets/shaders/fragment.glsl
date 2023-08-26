@@ -1,16 +1,13 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
 
-layout(location = 0) in vec2 tex_coords;
-layout(location = 1) in vec3 normal_frag;
-layout(location = 2) in vec4 tangent;
-layout(location = 3) flat in uint index;
-layout(location = 0) out vec4 frag_color;
+layout(location = 0) flat in uint index;
+layout(location = 1) in vec2 tex_coords;
+layout(location = 2) in vec3 fragPos_tan;
+layout(location = 3) in vec3 viewPos_tan;
+layout(location = 4) in mat3 TBN;
 
-layout(set = 0, binding = 0) buffer CameraUniform {
-    mat4 proj_view;
-    vec4 view_position;
-} camera;
+layout(location = 0) out vec4 frag_color;
 
 layout(set = 1, binding = 0) uniform sampler2D[] texs;
 
@@ -52,7 +49,81 @@ layout(set = 4, binding = 0) buffer LightInfo {
 };
 
 const float PI = 3.14159265359;
+vec3 fresnel(float cosTheta, vec3 F0);
+float distribution(vec3 N, vec3 H, float roughness);
+float geometry_schlick(float NdotV, float roughness);
+float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness);
 
+void main() {
+    MeshStruct mesh = meshes[index];
+    uint mat_id = mesh.mat_id;
+    MUStruct material = materials[mat_id].mat;
+
+    // load material values, if index 0, value will be 1 because of white default texture
+    vec4 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords);
+    vec3 normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).rgb;
+    // transform normal vector from [0,1] to range [-1,1]
+    normal = normalize(normal * 2.0 - 1.0);  // this normal is in tangent space
+    float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b * material.metal_roughness_factors.x;
+    float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g * material.metal_roughness_factors.y;
+    float ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).r;
+    vec3 emmission = texture(nonuniformEXT(texs[material.emission_texture]), tex_coords).rgb;
+    // convert to linear space
+    albedo = pow(albedo, vec4(2.2));
+    emmission = pow(emmission, vec3(2.2));
+    ao = pow(ao, 2.2);
+
+    // already in tangent space
+    vec3 view_dir = normalize(viewPos_tan - fragPos_tan);
+
+    // most dieclictric surfaces look visually correct with F0 of 0.04
+    vec3 F0 = vec3(0.04);
+    // metallic surfaces absorb all refraction so the F0 for them is just the albedo
+    F0 = mix(F0, albedo.rgb, metallic);
+
+    vec3 Lo = vec3(0.0);
+    // contribution of each light,
+    for (int i = 0; i < 1; i++) {
+        Light light = lights[i];
+        // convert to tangent space
+        vec3 lightPos_tan = TBN * light.transform[3].xyz;
+        vec3 light_dir = normalize(lightPos_tan - fragPos_tan);
+        vec3 half_vec = normalize(view_dir + light_dir); // \|/
+
+        float dist = length(lightPos_tan - fragPos_tan);
+        float attenuation = 1.0 / (dist * dist);
+        vec3 radiance = light.color * attenuation;
+
+        // Fresnel equation F of DFG which is the specular part of BRDF
+        vec3 reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), F0);
+
+        float normal_dist = distribution(normal, half_vec, roughness);
+        float geom = geometry_smith(normal, view_dir, light_dir, roughness);
+
+        // BRDF
+        vec3 numerator = normal_dist * geom * reflect_ratio;
+        float denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0) + 0.0001;
+        vec3 specular = numerator / denominator;
+
+        vec3 k_specular = reflect_ratio;
+        vec3 k_diffuse = vec3(1.0) - k_specular;
+        // metallic surfaces don't rafract light / have no diffuse lighting
+        k_diffuse *= 1.0 - metallic;
+
+        float normal_dot_light = max(dot(normal, light_dir), 0.0);
+        Lo += (k_diffuse * albedo.rgb / PI + specular) * radiance * normal_dot_light;
+    }
+
+    vec3 ambient = vec3(0.001) * albedo.rgb * ao;
+    vec3 color = ambient + Lo + emmission * material.emission_factors;
+
+    // reinhard tone mapping
+    color = color / (color + vec3(1.0));
+    // gamma correction
+    color = pow(color, vec3(1.0/2.2));
+
+    frag_color = vec4(color, albedo.a);
+}
 
 // Fresnel-Schlick approximation
 // F0: base surface-reflectivity at 0 incidence (reflectivity when looking directly at it)
@@ -100,77 +171,4 @@ float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
     float ggx1 = geometry_schlick(NdotL, roughness);
 
     return ggx1 * ggx2;
-}
-
-void main() {
-    vec4 tang = tangent;
-    MeshStruct mesh = meshes[index];
-    uint mat_id = mesh.mat_id;
-    MUStruct material = materials[mat_id].mat;
-
-    vec3 world_pos = mesh.model_transform[3].xyz;
-
-    // load material values, if index 0, value will be 1 because of white default texture
-    vec4 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords);
-    vec3 normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).xyz;
-    float metallic = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).b * material.metal_roughness_factors.x;
-    float roughness = texture(nonuniformEXT(texs[material.metal_roughness_texture]), tex_coords).g * material.metal_roughness_factors.y;
-    float ao = texture(nonuniformEXT(texs[material.ao_texture]), tex_coords).r;
-    vec3 emmission = texture(nonuniformEXT(texs[material.emission_texture]), tex_coords).rgb;
-    // convert to linear space
-    albedo = pow(albedo, vec4(2.2));
-    //metallic = pow(metallic, 2.2);
-    //roughness = pow(roughness, 2.2);
-    emmission = pow(emmission, vec3(2.2));
-    ao = pow(ao, 2.2);
-
-    normal = normalize(normal_frag);
-    vec3 view_dir = normalize(camera.view_position.xyz - world_pos);
-
-    // most dieclictric surfaces look visually correct with F0 of 0.04
-    vec3 F0 = vec3(0.04);
-    // metallic surfaces absorb all refraction so the F0 for them is just the albedo
-    F0 = mix(F0, albedo.rgb, metallic);
-
-    vec3 Lo = vec3(0.0);
-    // contribution of each light,
-    for (int i = 0; i < 1; i++) {
-        Light light = lights[i];
-        vec3 light_pos = light.transform[3].xyz;
-        vec3 light_dir = normalize(light_pos - world_pos);
-        vec3 half_vec = normalize(view_dir + light_dir); // \|/
-
-        float dist = length(light_pos - world_pos); //distance(world_pos, light_pos);
-        float attenuation = 1.0 / (dist * dist);
-        vec3 radiance = light.color * 1.0 * attenuation;
-
-        // Fresnel equation F of DFG which is the specular part of BRDF
-        vec3 reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), F0);
-
-        float normal_dist = distribution(normal, half_vec, roughness);
-        float geom = geometry_smith(normal, view_dir, light_dir, roughness);
-
-        // BRDF
-        vec3 numerator = normal_dist * geom * reflect_ratio;
-        float denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0) + 0.0001;
-        vec3 specular = numerator / denominator;
-
-        vec3 k_specular = reflect_ratio;
-        vec3 k_diffuse = vec3(1.0) - k_specular;
-        // metallic surfaces don't rafract light / have no diffuse lighting
-        k_diffuse *= 1.0 - metallic;
-
-        float normal_dot_light = max(dot(normal, light_dir), 0.0);
-        Lo += (k_diffuse * albedo.rgb / PI + specular) * radiance * normal_dot_light;
-    }
-
-    vec3 ambient = vec3(0.001) * albedo.rgb * ao;
-    vec3 color = ambient + Lo + emmission * material.emission_factors;
-
-    // HDR -> LDR / or linear to sRGB idk
-    // does not give nice results
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0/2.2));
-
-    frag_color = vec4(color, albedo.a);
 }

@@ -4,10 +4,10 @@ Vulkan game engine
 ## Roadmap
 ### Renderer
 - [x] egui [17.08.23]
-- [ ] point lights
-- [ ] gamma correction
+- [x] point lights
+- [x] gamma correction (for pbr)
 - [ ] Instancing
-- [ ] Physically based Rendering
+- [x] Physically based Rendering
 - [ ] Normal/Bump maps
 - [ ] Shadows
 - [ ] Anti-Aliasing
@@ -28,7 +28,7 @@ Vulkan game engine
 - [ ] deferred shading
 - [ ] area lights
 - [ ] Image-based lighting
-- [ ] HDR, Tone Mapping
+- [x] HDR, Tone Mapping (for pbr)
 - [ ] mip maps
 
 ### ECS

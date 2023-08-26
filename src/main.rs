@@ -8,5 +8,8 @@ fn main() {
     info!("Starting up engine...");
 
     // renderer_impl::start(vec!["assets/models/sponza/Sponza.gltf"]);
-    renderer_impl::start(vec!["assets/models/helmet_light_sphere.gltf"]);
+    renderer_impl::start(vec![
+        //"assets/models/plane.gltf",
+        "assets/models/plane_sphere.gltf",
+    ]);
 }
