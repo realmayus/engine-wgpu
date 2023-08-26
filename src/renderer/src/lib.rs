@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
 use log::{debug, error, info};
@@ -27,8 +28,10 @@ use vulkano::swapchain::{
 use vulkano::sync::{FlushError, GpuFuture};
 use vulkano::{swapchain, sync, VulkanLibrary};
 use vulkano_win::VkSurfaceBuild;
-use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::{
+    ElementState, Event, KeyboardInput, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
+};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
@@ -349,6 +352,14 @@ pub fn start_renderer(
     let mut is_right_pressed = false;
     let mut is_up_pressed = false;
     let mut is_down_pressed = false;
+
+    let mut mouse_middle_pressed = false;
+    let mut shift_pressed = false;
+    let mut cursor_pos = PhysicalPosition { x: 0f64, y: 0f64 };
+    let mut cursor_delta = PhysicalPosition { x: 0f32, y: 0f32 };
+
+    let mut delta_time = 0.001;
+
     let mut gui_catch = false;
 
     let event_loop = state.init_state.event_loop;
@@ -428,6 +439,47 @@ pub fn start_renderer(
                 );
             }
         }
+        Event::WindowEvent {
+            event:
+                WindowEvent::MouseInput {
+                    state,
+                    button: MouseButton::Middle,
+                    ..
+                },
+            ..
+        } => mouse_middle_pressed = state == ElementState::Pressed,
+        // Event::WindowEvent {
+        //     event:
+        //         WindowEvent::MouseWheel {
+        //             delta: MouseScrollDelta::LineDelta(x, y),
+        //             ..
+        //         },
+        //     ..
+        // } => {
+        //     if x >= 0. || y >= 0. {
+        //         is_down_pressed = false;
+        //         is_up_pressed = true;
+        //     } else {
+        //         is_up_pressed = false;
+        //         is_down_pressed = true;
+        //     }
+        // }
+        Event::WindowEvent {
+            event: WindowEvent::CursorMoved { position: pos, .. },
+            ..
+        } => {
+            cursor_delta = PhysicalPosition {
+                x: (cursor_pos.x - pos.x) as f32 / state.viewport.dimensions[0],
+                y: (cursor_pos.y - pos.y) as f32 / state.viewport.dimensions[1],
+            };
+            cursor_pos = pos;
+        }
+        Event::WindowEvent {
+            event: WindowEvent::ModifiersChanged(mods),
+            ..
+        } => {
+            shift_pressed = mods.shift();
+        }
         Event::WindowEvent { event, .. } => {
             gui.update(&event);
         }
@@ -435,11 +487,15 @@ pub fn start_renderer(
             state.camera.recv_input(
                 is_up_pressed,
                 is_down_pressed,
-                is_left_pressed,
-                is_right_pressed,
+                mouse_middle_pressed,
+                shift_pressed,
+                cursor_delta,
+                delta_time,
             );
+            cursor_delta = PhysicalPosition { x: 0.0, y: 0.0 };
         }
         Event::RedrawEventsCleared => {
+            let time = Instant::now();
             // TODO: Optimization: Implement Frames in Flight
             if window_resized || recreate_swapchain {
                 recreate_swapchain = false;
@@ -546,6 +602,8 @@ pub fn start_renderer(
                     error!("Failed to flush future: {e}");
                 }
             }
+            let elapsed = time.elapsed().as_micros() as f32;
+            delta_time = elapsed / 1_000_000.0;
         }
         _ => {}
     });

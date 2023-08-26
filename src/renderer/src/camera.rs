@@ -1,8 +1,10 @@
+use glam::Vec4Swizzles;
 use glam::{Mat4, Vec3, Vec4};
 use lib::shader_types::CameraUniform;
-use log::debug;
+use log::{debug, info};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use winit::dpi::PhysicalPosition;
 
 pub struct Camera {
     pub eye: Vec3,
@@ -80,7 +82,7 @@ impl Camera {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
         let proj =
             Mat4::perspective_rh_gl(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
-        let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
+        let scale = Mat4::from_scale((0.02, 0.02, 0.02).into());
         proj * view * scale
     }
     pub(crate) fn update_aspect(&mut self, width: f32, height: f32) {
@@ -97,8 +99,10 @@ impl Camera {
         &mut self,
         is_up_pressed: bool,
         is_down_pressed: bool,
-        is_right_pressed: bool,
-        is_left_pressed: bool,
+        mouse_middle: bool,
+        shift: bool,
+        translation: PhysicalPosition<f32>,
+        delta_time: f32,
     ) {
         let forward = self.target - self.eye;
         let forward_norm = forward.normalize();
@@ -111,16 +115,21 @@ impl Camera {
             self.eye -= forward_norm * self.speed;
         }
 
+        let translation = Vec4::from((translation.x, translation.y, 0.0, 0.0));
         let right = forward_norm.cross(self.up);
 
         let forward = self.target - self.eye;
         let forward_mag = forward.length();
 
-        if is_right_pressed {
-            self.eye = self.target - (forward - right * self.speed).normalize() * forward_mag;
-        }
-        if is_left_pressed {
-            self.eye = self.target - (forward + right * self.speed).normalize() * forward_mag;
+        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        view.to_scale_rotation_translation();
+        let translation = view * translation;
+
+        if mouse_middle && shift {
+            self.target += translation.xyz() * delta_time * 50.;
+            self.eye += translation.xyz() * delta_time * 50.;
+            info!("{}", delta_time);
+            // self.build_projection();
         }
     }
 }
