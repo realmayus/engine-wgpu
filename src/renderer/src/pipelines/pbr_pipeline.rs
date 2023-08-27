@@ -29,17 +29,20 @@ use crate::VertexBuffer;
 mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "../../assets/shaders/vertex.glsl",
+        path: "../../assets/shaders/pbr.vert",
     }
 }
 
 mod fs {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "../../assets/shaders/fragment.glsl",
+        path: "../../assets/shaders/pbr.frag",
     }
 }
 
+/**
+Pipeline for physically-based rendering
+*/
 pub struct PBRPipeline {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
@@ -74,8 +77,8 @@ impl PBRPipeline {
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Self {
-        let vs = vs::load(device.clone()).expect("failed to create shader module");
-        let fs = fs::load(device.clone()).expect("failed to create shader module");
+        let vs = vs::load(device.clone()).expect("failed to create vertex shader module");
+        let fs = fs::load(device.clone()).expect("failed to create fragment shader module");
 
         let write_descriptor_sets = vec![
             (
@@ -103,7 +106,7 @@ impl PBRPipeline {
                 let m_len = mesh_info_buffers.len() as u32;
                 let l_len = light_buffer.len() as u32;
                 (
-                    m_len + l_len,
+                    m_len,
                     vec![
                         // Level 3: Model-specific uniforms
                         WriteDescriptorSet::buffer_with_range_array(0, 0, mesh_info_buffers),
@@ -144,7 +147,7 @@ impl PBRPipeline {
     }
 }
 impl PipelineProvider for PBRPipeline {
-    fn get_pipeline(&self, viewport: Viewport) -> Arc<GraphicsPipeline> {
+    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
         GraphicsPipeline::start()
             // describes layout of vertex input
             .vertex_input_state(self.vertex_input_state.clone())
@@ -152,7 +155,10 @@ impl PipelineProvider for PBRPipeline {
             .vertex_shader(self.vs.entry_point("main").unwrap(), ())
             //Indicate type of primitives (default is list of triangles)
             .input_assembly_state(InputAssemblyState::new())
-            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
+            // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
+            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([self
+                .viewport
+                .clone()]))
             // Specify entry point of fragment shader
             .fragment_shader(self.fs.entry_point("main").unwrap(), ())
             .depth_stencil_state(DepthStencilState::simple_depth_test())
@@ -182,6 +188,10 @@ impl PipelineProvider for PBRPipeline {
             .unwrap()
     }
 
+    fn set_viewport(&mut self, viewport: Viewport) {
+        self.viewport = viewport;
+    }
+
     fn init_descriptor_sets(
         &mut self,
         set_layouts: &[Arc<DescriptorSetLayout>],
@@ -204,65 +214,35 @@ impl PipelineProvider for PBRPipeline {
         }
     }
 
-    fn begin_render_pass(
+    fn render_pass(
         &self,
-        framebuffers: &[Arc<Framebuffer>],
-        queue_family_index: u32,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         pipeline: Arc<GraphicsPipeline>,
-        cmd_buf_allocator: &StandardCommandBufferAllocator,
-    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-        framebuffers
-            .iter()
-            .map(|framebuffer| {
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    cmd_buf_allocator,
-                    queue_family_index,
-                    CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
+    ) {
+        builder.bind_pipeline_graphics(pipeline.clone());
+
+        for i in 0..self.descriptor_sets.len() {
+            builder.bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipeline.layout().clone(),
+                i as u32,
+                self.descriptor_sets[i].clone(),
+            );
+        }
+        for i in 0..self.vertex_buffers.len() {
+            builder
+                .bind_vertex_buffers(
+                    0,
+                    (
+                        self.vertex_buffers[i].subbuffer.clone(),
+                        self.normal_buffers[i].subbuffer.clone(),
+                        self.tangent_buffers[i].subbuffer.clone(),
+                        self.uv_buffers[i].subbuffer.clone(),
+                    ),
                 )
+                .bind_index_buffer(self.index_buffers[i].clone())
+                .draw_indexed(self.index_buffers[i].len() as u32, 1, 0, 0, i as u32)
                 .unwrap();
-
-                builder
-                    .begin_render_pass(
-                        RenderPassBeginInfo {
-                            clear_values: vec![
-                                Some([0.1, 0.1, 0.1, 1.0].into()),
-                                Some(1f32.into()),
-                            ],
-                            ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                        },
-                        SubpassContents::Inline,
-                    )
-                    .unwrap()
-                    .bind_pipeline_graphics(pipeline.clone());
-
-                for i in 0..self.descriptor_sets.len() {
-                    builder.bind_descriptor_sets(
-                        PipelineBindPoint::Graphics,
-                        pipeline.layout().clone(),
-                        i as u32,
-                        self.descriptor_sets[i].clone(),
-                    );
-                }
-                for i in 0..self.vertex_buffers.len() {
-                    builder
-                        .bind_vertex_buffers(
-                            0,
-                            (
-                                self.vertex_buffers[i].subbuffer.clone(),
-                                self.normal_buffers[i].subbuffer.clone(),
-                                self.tangent_buffers[i].subbuffer.clone(),
-                                self.uv_buffers[i].subbuffer.clone(),
-                            ),
-                        )
-                        .bind_index_buffer(self.index_buffers[i].clone())
-                        .draw_indexed(self.index_buffers[i].len() as u32, 1, 0, 0, i as u32)
-                        .unwrap();
-                }
-
-                builder.end_render_pass().unwrap();
-
-                Arc::new(builder.build().unwrap())
-            })
-            .collect()
+        }
     }
 }
