@@ -8,7 +8,7 @@ use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
 use image::DynamicImage;
 use itertools::Itertools;
-use log::info;
+use log::{error, info};
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
@@ -534,7 +534,6 @@ pub fn start(gltf_paths: Vec<&str>) {
     );
 
     let line_vertex_buffers: Vec<VertexBuffer> = (0..10)
-        .into_iter()
         .map(|_| VertexBuffer {
             subbuffer: Buffer::from_iter(
                 &setup_info.memory_allocator,
@@ -546,7 +545,7 @@ pub fn start(gltf_paths: Vec<&str>) {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                (0..2).into_iter().map(|_| {
+                (0..2).map(|_| {
                     [
                         rand::thread_rng().gen_range(-10f32..10f32),
                         rand::thread_rng().gen_range(-10f32..10f32),
@@ -560,7 +559,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         })
         .collect_vec();
 
-    let line_info_buffers = (0..10).into_iter().map(|i| {
+    let line_info_buffers = (0..10).map(|i| {
         Buffer::from_data(
             &setup_info.memory_allocator,
             BufferCreateInfo {

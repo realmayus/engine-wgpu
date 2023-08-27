@@ -410,6 +410,7 @@ pub fn start_renderer(
     let event_loop = state.init_state.event_loop;
 
     state.init_state.window.set_maximized(true);
+    window_resized = true;
 
     // blocks main thread forever and calls closure whenever the event loop receives an event
     event_loop.run(move |event, _, control_flow| match event {
@@ -508,16 +509,6 @@ pub fn start_renderer(
         //         is_up_pressed = false;
         //         is_down_pressed = true;
         //     }
-        // }
-        // Event::WindowEvent {
-        //     event: WindowEvent::CursorMoved { position: pos, .. },
-        //     ..
-        // } if !gui_catch => {
-        //     let x = pos.x as f32 / state.viewport.dimensions[0];
-        //     let y = pos.y as f32 / state.viewport.dimensions[1];
-        //     cursor_delta.x = cursor_pos.x - x;
-        //     cursor_delta.y = cursor_pos.y - y;
-        //     cursor_pos = Vec2::from((x, y));
         // }
         Event::WindowEvent {
             event: WindowEvent::ModifiersChanged(mods),
