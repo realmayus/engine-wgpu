@@ -2,6 +2,7 @@ use dotenv::dotenv;
 use log::info;
 
 mod renderer_impl;
+
 fn main() {
     dotenv().ok(); // load environment variables
     env_logger::init();

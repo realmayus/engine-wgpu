@@ -1,9 +1,17 @@
 # engine-vk [![Rust](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml/badge.svg)](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml)
 Vulkan game engine
 
+## I/O
+The program creates a directory `run` in the current working directory (cwd) where all textures and other resources are expanded at runtime. This directory is cleared upon exit.
+
+World files (`world.json`) contain relative paths to resources like images. Thus, the scene file must be contained in the same directory as the other resource directories. 
+
+The working directory can be set using the ` WORKING_DIR` environment variable.
+
 ## Roadmap
 ### Renderer
 - [x] egui [17.08.23]
+- [ ] dynamic asset loading
 - [x] point lights
 - [x] gamma correction (for pbr)
 - [ ] Instancing
@@ -19,6 +27,7 @@ Vulkan game engine
 - [ ] Skybox
 - [ ] reflections (both skybox and reflections require cubemaps)
 - [ ] Billboarding
+- [ ] Decals
 - [ ] Tessellation
 - [ ] text rendering
 - [ ] transparency
@@ -31,6 +40,11 @@ Vulkan game engine
 - [x] HDR, Tone Mapping (for pbr)
 - [ ] mip maps
 
+### I/O
+- [x] world (de-)serialization [25.08.23]
+- [ ] investigate https://github.com/google/flatbuffers
+- [ ] multithreaded asset loading
+
 ### ECS
 - [ ] Implement
 ### Physics
@@ -41,6 +55,3 @@ Vulkan game engine
 - [ ] Implement basic particle system
 ### UI
 - [ ] Asset drag & drop
-
-### I/O
-- [ ] multithreaded asset loading

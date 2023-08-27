@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::vec::Vec;
@@ -7,6 +8,7 @@ use egui_winit_vulkano::egui::Ui;
 use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
 use image::DynamicImage;
+use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::{error, info};
 use rand::Rng;
@@ -21,6 +23,7 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
 use lib::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
+use lib::scene_serde::WorldSerde;
 use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::Dirtyable;
@@ -30,7 +33,9 @@ use renderer::pipelines::pbr_pipeline::PBRPipeline;
 use renderer::{
     init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable, VertexBuffer,
 };
+use systems::io;
 use systems::io::gltf_loader::load_gltf;
+use systems::io::{clear_run_dir, extract_image_to_file};
 
 fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4) {
     ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
@@ -81,6 +86,32 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
 fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
+            if ui.button("Load world").clicked() {}
+            if ui.button("Save world").clicked() {
+                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    io::world_saver::save(
+                        path.as_path(),
+                        WorldSerde::from(
+                            state.textures.clone(),
+                            state.materials.clone(),
+                            state.scenes.clone(),
+                        ),
+                    )
+                    .expect("Couldn't save world");
+                }
+            }
+        });
+        if ui.button("Import glTF").clicked() {
+            if let Some(paths) = rfd::FileDialog::new()
+                .add_filter("glTF scenes", &vec!["gltf", "glb"])
+                .pick_files()
+            {
+                for path in paths {
+                    println!("{}", path.display().to_string());
+                }
+            }
+        }
         ui.label("Loaded models:");
         for scene in state.scenes.as_mut_slice() {
             ui.push_id(scene.id, |ui| {
@@ -338,6 +369,11 @@ impl StateCallable for GlobalState {
             }
         }
     }
+
+    fn cleanup(&self) {
+        info!("Cleaning up...");
+        clear_run_dir();
+    }
 }
 
 pub fn start(gltf_paths: Vec<&str>) {
@@ -368,16 +404,25 @@ pub fn start(gltf_paths: Vec<&str>) {
             .to_rgba8();
         let width = img.width();
         let height = img.height();
+        let dyn_img = DynamicImage::from(img);
+
+        let path = extract_image_to_file("no_texture", &dyn_img, Png);
 
         let tex = create_texture(
-            DynamicImage::from(img).into_bytes(),
+            dyn_img.into_bytes(),
             format::Format::R8G8B8A8_UNORM,
             width,
             height,
             &setup_info.memory_allocator,
             &mut cmd_buf_builder,
         );
-        let texture = Rc::new(Texture::from(tex, Some(Box::from("Default texture")), 0));
+
+        let texture = Rc::new(Texture::from(
+            tex,
+            Some(Box::from("Default texture")),
+            0,
+            path,
+        ));
 
         (
             Rc::new(RefCell::new(Material::from_default(

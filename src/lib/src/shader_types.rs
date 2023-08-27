@@ -50,7 +50,7 @@ impl CameraUniform {
     }
 }
 
-#[derive(BufferContents, Debug, Default)]
+#[derive(BufferContents, Debug)]
 #[repr(C)]
 pub struct MaterialInfo {
     /// scales albedo texture if defined, otherwise defines color
@@ -96,6 +96,15 @@ impl MaterialInfo {
                 .map(|t| t.id)
                 .unwrap_or(0),
             emission_factors: material.emissive_factors.to_array(),
+        }
+    }
+}
+
+impl Default for MaterialInfo {
+    fn default() -> Self {
+        Self {
+            base_color: [1.0, 1.0, 1.0, 1.0],
+            base_texture: 0,
         }
     }
 }
