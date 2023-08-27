@@ -162,13 +162,9 @@ fn load_image(
     let height = decoded_image.height();
 
     match decoded_image {
-        DynamicImage::ImageLuma8(_) => (
-            decoded_image,
-            width,
-            height,
-            vulkano::format::Format::R8_UNORM,
-            file_format,
-        ),
+        DynamicImage::ImageLuma8(_) => {
+            (decoded_image, width, height, Format::R8_UNORM, file_format)
+        }
         DynamicImage::ImageLumaA8(_) => (
             decoded_image,
             width,
@@ -190,13 +186,9 @@ fn load_image(
             Format::R8G8B8A8_SRGB,
             file_format,
         ),
-        DynamicImage::ImageLuma16(_) => (
-            decoded_image,
-            width,
-            height,
-            vulkano::format::Format::R16_UINT,
-            file_format,
-        ),
+        DynamicImage::ImageLuma16(_) => {
+            (decoded_image, width, height, Format::R16_UINT, file_format)
+        }
         DynamicImage::ImageLumaA16(_) => (
             decoded_image,
             width,

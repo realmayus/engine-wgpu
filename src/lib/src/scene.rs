@@ -303,6 +303,7 @@ impl Clone for Model {
             children: self.children.clone(),
             name: self.name.clone(),
             local_transform: self.local_transform.clone(),
+            light: self.light.clone(),
         }
     }
 }

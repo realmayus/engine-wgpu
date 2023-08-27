@@ -103,8 +103,9 @@ impl MaterialInfo {
 impl Default for MaterialInfo {
     fn default() -> Self {
         Self {
-            base_color: [1.0, 1.0, 1.0, 1.0],
-            base_texture: 0,
+            albedo: [1.0, 1.0, 1.0, 1.0],
+            albedo_texture: 0,
+            ..Default::default()
         }
     }
 }

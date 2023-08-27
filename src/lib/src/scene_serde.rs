@@ -1,5 +1,5 @@
-use crate::scene::{Material, Mesh, Model, Scene, Texture};
-use crate::shader_types::{MaterialInfo, MeshInfo};
+use crate::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
+use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use crate::texture::create_texture;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
@@ -76,11 +76,11 @@ impl From<Rc<RefCell<Material>>> for MaterialSerde {
             name: value.borrow().name.clone(),
             base_texture: value
                 .borrow()
-                .base_texture
+                .albedo_texture
                 .as_ref()
                 .map(|t| t.id)
                 .unwrap_or(0),
-            base_color: value.borrow().base_color,
+            base_color: value.borrow().albedo,
             metallic_roughness_texture: value
                 .borrow()
                 .metallic_roughness_texture
@@ -100,7 +100,7 @@ impl From<Rc<RefCell<Material>>> for MaterialSerde {
                 .as_ref()
                 .map(|t| t.id)
                 .unwrap_or(0),
-            occlusion_strength: value.borrow().occlusion_strength,
+            occlusion_strength: value.borrow().occlusion_factor,
             emissive_texture: value
                 .borrow()
                 .emissive_texture
@@ -122,13 +122,13 @@ impl Material {
             dirty: true,
             id: value.id,
             name: value.name,
-            base_texture: textures.get(&value.base_texture).cloned(),
-            base_color: value.base_color,
+            albedo_texture: textures.get(&value.base_texture).cloned(),
+            albedo: value.base_color,
             metallic_roughness_texture: textures.get(&value.metallic_roughness_texture).cloned(),
             metallic_roughness_factors: value.metallic_roughness_factors,
             normal_texture: textures.get(&value.normal_texture).cloned(),
             occlusion_texture: textures.get(&value.occlusion_texture).cloned(),
-            occlusion_strength: value.occlusion_strength,
+            occlusion_factor: value.occlusion_strength,
             emissive_texture: textures.get(&value.emissive_texture).cloned(),
             emissive_factors: value.emissive_factors,
             buffer: Buffer::from_data(
@@ -154,6 +154,7 @@ pub struct MeshSerde {
     pub vertices: Vec<Vec3>,
     pub indices: Vec<u32>,
     pub normals: Vec<Vec3>,
+    pub tangents: Vec<Vec4>,
     pub material: u32,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
@@ -166,6 +167,7 @@ impl From<Mesh> for MeshSerde {
             vertices: value.vertices,
             indices: value.indices,
             normals: value.normals,
+            tangents: value.tangents,
             material: value.material.borrow().id,
             uvs: value.uvs,
             global_transform: value.global_transform,
@@ -183,6 +185,7 @@ impl Mesh {
             value.vertices,
             value.indices,
             value.normals,
+            value.tangents,
             materials.get(&value.material).cloned().unwrap(),
             value.uvs,
             value.global_transform,
@@ -204,12 +207,60 @@ impl Mesh {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct PointLightSerde {
+    pub global_transform: Mat4,
+    pub index: usize,
+    pub color: Vec3,
+    pub intensity: f32,
+    pub range: Option<f32>,
+}
+
+impl From<PointLight> for PointLightSerde {
+    fn from(value: PointLight) -> Self {
+        Self {
+            global_transform: value.global_transform,
+            index: value.index,
+            color: value.color,
+            intensity: value.intensity,
+            range: value.range,
+        }
+    }
+}
+
+impl PointLight {
+    fn from_serde(value: PointLightSerde, allocator: &StandardMemoryAllocator) -> Self {
+        Self {
+            dirty: true,
+            global_transform: value.global_transform,
+            index: value.index,
+            color: value.color,
+            intensity: value.intensity,
+            range: value.range,
+            buffer: Buffer::from_data(
+                allocator,
+                BufferCreateInfo {
+                    usage: BufferUsage::STORAGE_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    usage: MemoryUsage::Upload,
+                    ..Default::default()
+                },
+                LightInfo::default(),
+            )
+            .expect("Couldn't allocate LightInfo buffer."),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct ModelSerde {
     pub id: u32,
     pub meshes: Vec<MeshSerde>,
     pub children: Vec<ModelSerde>,
     pub name: Option<Box<str>>,
     pub local_transform: Mat4,
+    pub light: Option<PointLightSerde>,
 }
 
 impl From<Model> for ModelSerde {
@@ -220,6 +271,7 @@ impl From<Model> for ModelSerde {
             children: value.children.into_iter().map(ModelSerde::from).collect(),
             name: value.name,
             local_transform: value.local_transform,
+            light: value.light.map(PointLightSerde::from),
         }
     }
 }
@@ -244,6 +296,9 @@ impl Model {
                 .collect(),
             name: value.name,
             local_transform: value.local_transform,
+            light: value
+                .light
+                .map(|light| PointLight::from_serde(light, allocator)),
         }
     }
 }
