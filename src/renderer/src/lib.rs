@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
-use log::{debug, error, info};
+use glam::Vec2;
+use log::{error, info};
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -355,10 +356,10 @@ pub fn start_renderer(
 
     let mut mouse_middle_pressed = false;
     let mut shift_pressed = false;
-    let mut cursor_pos = PhysicalPosition { x: 0f64, y: 0f64 };
-    let mut cursor_delta = PhysicalPosition { x: 0f32, y: 0f32 };
+    let mut cursor_pos = Vec2::default();
+    let mut cursor_delta = Vec2::default();
 
-    let mut delta_time = 0.001;
+    let mut delta_time = 0.01;
 
     let mut gui_catch = false;
 
@@ -433,8 +434,8 @@ pub fn start_renderer(
                         .window
                         .set_title("Engine Playground - Press ESC to release controls");
                 }
-                debug!(
-                    "Gui catch is now: {}",
+                info!(
+                    "Gui catch is {}.",
                     if gui_catch { "enabled" } else { "disabled" }
                 );
             }
@@ -464,25 +465,35 @@ pub fn start_renderer(
         //         is_down_pressed = true;
         //     }
         // }
-        Event::WindowEvent {
-            event: WindowEvent::CursorMoved { position: pos, .. },
-            ..
-        } => {
-            cursor_delta = PhysicalPosition {
-                x: (cursor_pos.x - pos.x) as f32 / state.viewport.dimensions[0],
-                y: (cursor_pos.y - pos.y) as f32 / state.viewport.dimensions[1],
-            };
-            cursor_pos = pos;
-        }
+        // Event::WindowEvent {
+        //     event: WindowEvent::CursorMoved { position: pos, .. },
+        //     ..
+        // } if !gui_catch => {
+        //     let x = pos.x as f32 / state.viewport.dimensions[0];
+        //     let y = pos.y as f32 / state.viewport.dimensions[1];
+        //     cursor_delta.x = cursor_pos.x - x;
+        //     cursor_delta.y = cursor_pos.y - y;
+        //     cursor_pos = Vec2::from((x, y));
+        // }
         Event::WindowEvent {
             event: WindowEvent::ModifiersChanged(mods),
             ..
         } => {
             shift_pressed = mods.shift();
         }
-        Event::WindowEvent { event, .. } => {
-            gui.update(&event);
-        }
+        Event::WindowEvent { event, .. } => match event {
+            WindowEvent::CursorMoved { position: pos, .. } => {
+                let x = pos.x as f32 / state.viewport.dimensions[0];
+                let y = pos.y as f32 / state.viewport.dimensions[1];
+                cursor_delta.x = cursor_pos.x - x;
+                cursor_delta.y = cursor_pos.y - y;
+                cursor_pos = Vec2::from((x, y));
+                gui.update(&event);
+            }
+            _ => {
+                gui.update(&event);
+            }
+        },
         Event::MainEventsCleared => {
             state.camera.recv_input(
                 is_up_pressed,
@@ -492,7 +503,7 @@ pub fn start_renderer(
                 cursor_delta,
                 delta_time,
             );
-            cursor_delta = PhysicalPosition { x: 0.0, y: 0.0 };
+            cursor_delta = Vec2::default();
         }
         Event::RedrawEventsCleared => {
             let time = Instant::now();

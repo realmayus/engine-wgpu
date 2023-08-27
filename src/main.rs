@@ -10,6 +10,6 @@ fn main() {
     // renderer_impl::start(vec!["assets/models/sponza/Sponza.gltf"]);
     renderer_impl::start(vec![
         //"assets/models/plane.gltf",
-        "assets/models/plane_sphere.gltf",
+        "assets/models/helmet_light_sphere.gltf",
     ]);
 }

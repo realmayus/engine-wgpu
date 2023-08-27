@@ -9,7 +9,7 @@ edition = "2021"
 renderer = { path = "src/renderer" }
 systems = { path = "src/systems" }
 lib = { path = "src/lib" }
-glam = "0.24.1"
+glam = { version = "0.24.1", features = ["glam-assert", "debug-glam-assert"] }
 vulkano = "0.33.0"
 image = "0.24"
 egui_winit_vulkano = "0.24.0"
