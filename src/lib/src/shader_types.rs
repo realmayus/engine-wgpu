@@ -105,7 +105,13 @@ impl Default for MaterialInfo {
         Self {
             albedo: [1.0, 1.0, 1.0, 1.0],
             albedo_texture: 0,
-            ..Default::default()
+            metal_roughness_factors: [0.5, 0.5],
+            metal_roughness_texture: 0,
+            emission_factors: [0.0, 0.0, 0.0],
+            emission_texture: 0,
+            normal_texture: 0,
+            occlusion_texture: 0,
+            occlusion_factor: 0.0,
         }
     }
 }
