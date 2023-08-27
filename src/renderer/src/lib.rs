@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
@@ -8,21 +8,19 @@ use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-    PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
+    SubpassContents,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::DescriptorSetsCollection;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
     Device, DeviceCreateInfo, DeviceExtensions, Features, Queue, QueueCreateInfo, QueueFlags,
 };
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageUsage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, Pipeline};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
@@ -39,7 +37,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
 
-use lib::Dirtyable;
+use lib::VertexBuffer;
 
 use crate::camera::Camera;
 use crate::pipelines::PipelineProvider;
@@ -47,15 +45,24 @@ use crate::pipelines::PipelineProvider;
 pub mod camera;
 pub mod pipelines;
 
-pub struct VertexBuffer {
-    pub subbuffer: Subbuffer<[u8]>,
-    pub vertex_count: u32,
-}
-
+// unified communication interface between renderer lib and implementation, to avoid revealing the scene complexity to the lib
 pub trait StateCallable {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
     fn update(&mut self);
     fn cleanup(&self);
+
+    /**
+    Should return a copy of vertex buffers, normal buffers, UV buffers, and index buffers for use in render passes
+    */
+    fn get_subbuffers(
+        &mut self,
+        memory_allocator: &StandardMemoryAllocator,
+    ) -> VecDeque<(
+        Vec<VertexBuffer>,
+        Vec<VertexBuffer>,
+        Vec<VertexBuffer>,
+        Vec<Subbuffer<[u32]>>,
+    )>;
 }
 
 pub struct RenderInitState {
@@ -282,10 +289,12 @@ fn get_framebuffers(
 
 fn get_finalized_render_passes(
     framebuffers: Vec<Arc<Framebuffer>>,
+    allocator: &StandardMemoryAllocator,
     cmd_buf_allocator: &StandardCommandBufferAllocator,
     queue_family_index: u32,
     pipeline_providers: &mut [Box<dyn PipelineProvider>],
     pipelines: Vec<Arc<GraphicsPipeline>>,
+    callable: &mut dyn StateCallable,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -307,8 +316,20 @@ fn get_finalized_render_passes(
                 )
                 .unwrap();
 
+            let mut pipeline_subbuffers = callable.get_subbuffers(allocator);
+
             for i in 0..pipeline_providers.len() {
-                pipeline_providers[i].render_pass(&mut builder, pipelines[i].clone());
+                debug!("Render pass for pipeline {}", pipeline_providers[i].name());
+                let (vertex_buffers, normal_buffers, uv_buffers, index_buffers) =
+                    pipeline_subbuffers.pop_front().unwrap();
+                pipeline_providers[i].render_pass(
+                    &mut builder,
+                    pipelines[i].clone(),
+                    vertex_buffers,
+                    normal_buffers,
+                    uv_buffers,
+                    index_buffers,
+                );
             }
 
             builder.end_render_pass().unwrap();
@@ -327,6 +348,9 @@ pub struct RenderState {
 
 pub struct PartialRenderState<'a> {
     pub camera: &'a mut Camera,
+    pub allocator: &'a StandardMemoryAllocator,
+    pub cmd_buf_allocator: &'a StandardCommandBufferAllocator,
+    pub queue_family_index: u32,
 }
 
 pub fn start_renderer(
@@ -368,10 +392,12 @@ pub fn start_renderer(
     }
     let mut command_buffers = get_finalized_render_passes(
         framebuffers,
+        &state.init_state.memory_allocator,
         &state.init_state.cmd_buf_allocator,
         state.init_state.queue.queue_family_index(),
         pipeline_providers.as_mut_slice(),
         pipelines,
+        &mut callable,
     );
 
     let mut window_resized = false;
@@ -533,7 +559,7 @@ pub fn start_renderer(
 
                     state.viewport.dimensions = new_dimensions.into();
                     let mut new_pipelines = vec![];
-                    for mut provider in pipeline_providers.as_mut_slice() {
+                    for provider in pipeline_providers.as_mut_slice() {
                         let pipeline = provider.get_pipeline();
                         provider.init_descriptor_sets(
                             pipeline.layout().set_layouts(),
@@ -544,10 +570,12 @@ pub fn start_renderer(
                     }
                     command_buffers = get_finalized_render_passes(
                         new_framebuffers.clone(),
+                        &state.init_state.memory_allocator,
                         &state.init_state.cmd_buf_allocator,
                         state.init_state.queue.queue_family_index(),
                         pipeline_providers.as_mut_slice(),
                         new_pipelines,
+                        &mut callable,
                     );
                     state
                         .camera
@@ -560,6 +588,9 @@ pub fn start_renderer(
                     gui,
                     PartialRenderState {
                         camera: &mut state.camera,
+                        allocator: &state.init_state.memory_allocator,
+                        cmd_buf_allocator: &state.init_state.cmd_buf_allocator,
+                        queue_family_index: state.init_state.queue.queue_family_index(),
                     },
                 )
             });

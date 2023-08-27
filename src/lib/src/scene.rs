@@ -1,17 +1,21 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::iter::{Flatten, Map};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::slice::Iter;
 use std::sync::Arc;
 
 use crate::shader_types::{MaterialInfo, MeshInfo};
-use crate::Dirtyable;
+use crate::{Dirtyable, VertexBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::debug;
 use rand::Rng;
-use vulkano::buffer::Subbuffer;
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 pub struct Texture {
     pub id: u32,
@@ -240,11 +244,11 @@ impl Debug for Model {
 impl Clone for Model {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             meshes: self.meshes.clone(),
             children: self.children.clone(),
             name: self.name.clone(),
-            local_transform: self.local_transform.clone(),
+            local_transform: self.local_transform,
         }
     }
 }
@@ -262,6 +266,10 @@ impl Scene {
             models,
             name,
         }
+    }
+
+    pub fn iter_meshes(&self) -> impl Iterator<Item = &Mesh> {
+        self.models.iter().flat_map(|model| model.meshes.iter())
     }
 }
 
@@ -287,5 +295,143 @@ impl Clone for Scene {
             name: self.name.clone(),
             models: self.models.clone(),
         }
+    }
+}
+
+pub struct World {
+    pub textures: HashMap<u32, Rc<Texture>>,
+    pub materials: HashMap<u32, Rc<RefCell<Material>>>,
+    pub scenes: Vec<Scene>,
+    pub cached_vertex_buffers: Option<Vec<VertexBuffer>>,
+    pub cached_normal_buffers: Option<Vec<VertexBuffer>>,
+    pub cached_uv_buffers: Option<Vec<VertexBuffer>>,
+    pub cached_index_buffers: Option<Vec<Subbuffer<[u32]>>>,
+}
+
+impl World {
+    pub fn get_vertex_buffers(
+        &mut self,
+        memory_allocator: &StandardMemoryAllocator,
+    ) -> Vec<VertexBuffer> {
+        if self.cached_vertex_buffers.is_none() {
+            self.cached_vertex_buffers = Some(
+                self.scenes
+                    .iter()
+                    .flat_map(|s| s.iter_meshes())
+                    .map(|mesh| VertexBuffer {
+                        vertex_count: mesh.vertices.len() as u32,
+                        subbuffer: Buffer::from_iter(
+                            memory_allocator,
+                            BufferCreateInfo {
+                                usage: BufferUsage::VERTEX_BUFFER,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                usage: MemoryUsage::Upload,
+                                ..Default::default()
+                            },
+                            mesh.vertices.iter().map(|v| v.to_array()),
+                        )
+                        .expect("Couldn't allocate vertex buffer")
+                        .into_bytes(),
+                    })
+                    .collect(),
+            );
+        }
+        self.cached_vertex_buffers.clone().unwrap()
+    }
+
+    pub fn get_normal_buffers(
+        &mut self,
+        memory_allocator: &StandardMemoryAllocator,
+    ) -> Vec<VertexBuffer> {
+        if self.cached_normal_buffers.is_none() {
+            self.cached_normal_buffers = Some(
+                self.scenes
+                    .iter()
+                    .flat_map(|s| s.iter_meshes())
+                    .map(|mesh| VertexBuffer {
+                        vertex_count: mesh.vertices.len() as u32,
+                        subbuffer: Buffer::from_iter(
+                            memory_allocator,
+                            BufferCreateInfo {
+                                usage: BufferUsage::VERTEX_BUFFER,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                usage: MemoryUsage::Upload,
+                                ..Default::default()
+                            },
+                            mesh.normals.iter().map(|v| v.to_array()),
+                        )
+                        .expect("Couldn't allocate normal buffer")
+                        .into_bytes(),
+                    })
+                    .collect(),
+            );
+        }
+        self.cached_normal_buffers.clone().unwrap()
+    }
+
+    pub fn get_uv_buffers(
+        &mut self,
+        memory_allocator: &StandardMemoryAllocator,
+    ) -> Vec<VertexBuffer> {
+        if self.cached_uv_buffers.is_none() {
+            self.cached_uv_buffers = Some(
+                self.scenes
+                    .iter()
+                    .flat_map(|s| s.iter_meshes())
+                    .map(|mesh| VertexBuffer {
+                        vertex_count: mesh.vertices.len() as u32,
+                        subbuffer: Buffer::from_iter(
+                            memory_allocator,
+                            BufferCreateInfo {
+                                usage: BufferUsage::VERTEX_BUFFER,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                usage: MemoryUsage::Upload,
+                                ..Default::default()
+                            },
+                            mesh.uvs.iter().map(|v| v.to_array()),
+                        )
+                        .expect("Couldn't allocate UV buffer")
+                        .into_bytes(),
+                    })
+                    .collect(),
+            );
+        }
+        self.cached_uv_buffers.clone().unwrap()
+    }
+
+    pub fn get_index_buffers(
+        &mut self,
+        memory_allocator: &StandardMemoryAllocator,
+    ) -> Vec<Subbuffer<[u32]>> {
+        if self.cached_index_buffers.is_none() {
+            self.cached_index_buffers = Some(
+                self.scenes
+                    .iter()
+                    .flat_map(|s| s.iter_meshes())
+                    .map(|mesh| {
+                        Buffer::from_iter(
+                            memory_allocator,
+                            BufferCreateInfo {
+                                usage: BufferUsage::INDEX_BUFFER,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                usage: MemoryUsage::Upload,
+                                ..Default::default()
+                            },
+                            mesh.indices.clone().into_iter(),
+                        )
+                        .expect("Couldn't allocate index buffer")
+                    })
+                    .collect(),
+            );
+        }
+        self.cached_index_buffers.clone().unwrap()
     }
 }

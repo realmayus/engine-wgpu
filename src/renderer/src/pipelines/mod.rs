@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use vulkano::buffer::Subbuffer;
 
+use lib::VertexBuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::layout::DescriptorSetLayout;
@@ -10,6 +12,7 @@ pub mod line_pipeline;
 pub mod pbr_pipeline;
 
 pub trait PipelineProvider {
+    fn name(&self) -> String;
     fn get_pipeline(&self) -> Arc<GraphicsPipeline>;
     fn set_viewport(&mut self, viewport: Viewport);
     fn init_descriptor_sets(
@@ -21,5 +24,9 @@ pub trait PipelineProvider {
         &self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         pipeline: Arc<GraphicsPipeline>,
+        vertex_buffers: Vec<VertexBuffer>,
+        normal_buffers: Vec<VertexBuffer>,
+        uv_buffers: Vec<VertexBuffer>,
+        index_buffers: Vec<Subbuffer<[u32]>>,
     );
 }

@@ -1,6 +1,8 @@
+use log::debug;
 use std::sync::Arc;
 
 use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
+use lib::VertexBuffer;
 use vulkano::buffer::{BufferContents, Subbuffer};
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
@@ -22,7 +24,6 @@ use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
 use crate::pipelines::PipelineProvider;
-use crate::VertexBuffer;
 
 mod vs {
     vulkano_shaders::shader! {
@@ -44,10 +45,6 @@ Pipeline for physically-based rendering
 pub struct PBRPipeline {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertex_buffers: Vec<VertexBuffer>,
-    normal_buffers: Vec<VertexBuffer>,
-    uv_buffers: Vec<VertexBuffer>,
-    index_buffers: Vec<Subbuffer<[u32]>>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
@@ -58,10 +55,6 @@ pub struct PBRPipeline {
 impl PBRPipeline {
     pub fn new(
         device: Arc<Device>,
-        vertex_buffers: Vec<VertexBuffer>,
-        normal_buffers: Vec<VertexBuffer>,
-        uv_buffers: Vec<VertexBuffer>,
-        index_buffers: Vec<Subbuffer<[u32]>>,
         camera_buffer: Subbuffer<CameraUniform>,
         textures: impl IntoIterator<Item = (Arc<dyn ImageViewAbstract>, Arc<Sampler>)>
             + ExactSizeIterator,
@@ -107,10 +100,6 @@ impl PBRPipeline {
         Self {
             vs,
             fs,
-            vertex_buffers,
-            normal_buffers,
-            uv_buffers,
-            index_buffers,
             write_descriptor_sets,
             descriptor_sets: vec![],
             viewport,
@@ -125,6 +114,10 @@ impl PBRPipeline {
     }
 }
 impl PipelineProvider for PBRPipeline {
+    fn name(&self) -> String {
+        "PBR Pipeline".to_string()
+    }
+
     fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
         GraphicsPipeline::start()
             .vertex_input_state(self.vertex_input_state.clone()) // describes layout of vertex input
@@ -135,19 +128,19 @@ impl PipelineProvider for PBRPipeline {
                 .clone()])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
             .fragment_shader(self.fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
             .depth_stencil_state(DepthStencilState::simple_depth_test())
-            .render_pass(Subpass::from((&self.render_pass).clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
+            .render_pass(Subpass::from(self.render_pass.clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
             .with_auto_layout(self.device.clone(), |x| {
                 let binding = x[1].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
+                binding.descriptor_count = 1000; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
                 let binding = x[2].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128;
+                binding.descriptor_count = 1000;
 
                 let binding = x[3].bindings.get_mut(&0).unwrap(); // MeshInfo
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128
+                binding.descriptor_count = 1000;
             })
             .unwrap()
     }
@@ -182,9 +175,13 @@ impl PipelineProvider for PBRPipeline {
         &self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         pipeline: Arc<GraphicsPipeline>,
+        vertex_buffers: Vec<VertexBuffer>,
+        normal_buffers: Vec<VertexBuffer>,
+        uv_buffers: Vec<VertexBuffer>,
+        index_buffers: Vec<Subbuffer<[u32]>>,
     ) {
         builder.bind_pipeline_graphics(pipeline.clone());
-
+        debug!("Binding {} descriptor sets", vertex_buffers.len());
         for i in 0..self.descriptor_sets.len() {
             builder.bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
@@ -193,18 +190,20 @@ impl PipelineProvider for PBRPipeline {
                 self.descriptor_sets[i].clone(),
             );
         }
-        for i in 0..self.vertex_buffers.len() {
+        debug!("Binding {} vertex buffers", vertex_buffers.len());
+        debug!("# of index Subbuffer<[u32]>: {}", index_buffers.len());
+        for i in 0..vertex_buffers.len() {
             builder
                 .bind_vertex_buffers(
                     0,
                     (
-                        self.vertex_buffers[i].subbuffer.clone(),
-                        self.normal_buffers[i].subbuffer.clone(),
-                        self.uv_buffers[i].subbuffer.clone(),
+                        vertex_buffers[i].subbuffer.clone(),
+                        normal_buffers[i].subbuffer.clone(),
+                        uv_buffers[i].subbuffer.clone(),
                     ),
                 )
-                .bind_index_buffer(self.index_buffers[i].clone())
-                .draw_indexed(self.index_buffers[i].len() as u32, 1, 0, 0, i as u32)
+                .bind_index_buffer(index_buffers[i].clone())
+                .draw_indexed(index_buffers[i].len() as u32, 1, 0, 0, i as u32)
                 .unwrap();
         }
     }

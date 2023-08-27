@@ -1,13 +1,8 @@
-use crate::pipelines::PipelineProvider;
-use crate::VertexBuffer;
-use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
+use log::debug;
 use std::sync::Arc;
+
 use vulkano::buffer::Subbuffer;
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::layout::DescriptorSetLayout;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
@@ -18,9 +13,13 @@ use vulkano::pipeline::graphics::input_assembly::{InputAssemblyState, PrimitiveT
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
-use vulkano::render_pass::{Framebuffer, RenderPass, Subpass};
-use vulkano::sampler::Sampler;
+use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
+
+use lib::shader_types::{CameraUniform, MyVertex};
+use lib::VertexBuffer;
+
+use crate::pipelines::PipelineProvider;
 
 mod vs {
     vulkano_shaders::shader! {
@@ -42,7 +41,6 @@ Pipeline for drawing lines in 3D space, e.g. for axes
 pub struct LinePipeline {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertex_buffers: Vec<VertexBuffer>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
@@ -54,7 +52,6 @@ pub struct LinePipeline {
 impl LinePipeline {
     pub fn new(
         device: Arc<Device>,
-        vertex_buffers: Vec<VertexBuffer>,
         camera_buffer: Subbuffer<CameraUniform>,
         line_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
         viewport: Viewport,
@@ -83,7 +80,6 @@ impl LinePipeline {
         Self {
             vs,
             fs,
-            vertex_buffers,
             write_descriptor_sets,
             descriptor_sets: vec![],
             viewport,
@@ -95,6 +91,10 @@ impl LinePipeline {
 }
 
 impl PipelineProvider for LinePipeline {
+    fn name(&self) -> String {
+        "Line Pipeline".to_string()
+    }
+
     fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
         GraphicsPipeline::start()
             .vertex_input_state(self.vertex_input_state.clone()) // describes layout of vertex input
@@ -144,9 +144,13 @@ impl PipelineProvider for LinePipeline {
         &self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         pipeline: Arc<GraphicsPipeline>,
+        vertex_buffers: Vec<VertexBuffer>,
+        _normal_buffers: Vec<VertexBuffer>,
+        _uv_buffers: Vec<VertexBuffer>,
+        _index_buffers: Vec<Subbuffer<[u32]>>,
     ) {
         builder.bind_pipeline_graphics(pipeline.clone());
-
+        debug!("Binding {} descriptor sets", vertex_buffers.len());
         for i in 0..self.descriptor_sets.len() {
             builder.bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
@@ -155,10 +159,11 @@ impl PipelineProvider for LinePipeline {
                 self.descriptor_sets[i].clone(),
             );
         }
-        for i in 0..self.vertex_buffers.len() {
+        debug!("Binding {} vertex buffers", vertex_buffers.len());
+        for i in 0..vertex_buffers.len() {
             builder
-                .bind_vertex_buffers(0, self.vertex_buffers[i].subbuffer.clone())
-                .draw(self.vertex_buffers[i].vertex_count, 1, 0, i as u32)
+                .bind_vertex_buffers(0, vertex_buffers[i].subbuffer.clone())
+                .draw(vertex_buffers[i].vertex_count, 1, 0, i as u32)
                 .unwrap();
         }
     }

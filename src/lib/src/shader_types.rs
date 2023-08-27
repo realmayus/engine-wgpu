@@ -42,6 +42,7 @@ impl CameraUniform {
     }
 }
 
+
 #[derive(BufferContents, Debug)]
 #[repr(C)]
 pub struct MaterialInfo {

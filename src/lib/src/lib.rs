@@ -1,3 +1,5 @@
+use vulkano::buffer::Subbuffer;
+
 pub mod scene;
 pub mod scene_serde;
 pub mod shader_types;
@@ -19,4 +21,10 @@ pub trait Dirtyable {
     Call to update buffers. Sets dirty to false.
     */
     fn update(&mut self);
+}
+
+#[derive(Clone)]
+pub struct VertexBuffer {
+    pub subbuffer: Subbuffer<[u8]>,
+    pub vertex_count: u32,
 }

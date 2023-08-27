@@ -1,13 +1,14 @@
-use crate::scene::{Material, Mesh, Model, Scene, Texture};
+use crate::scene::{Material, Mesh, Model, Scene, Texture, World};
 use crate::shader_types::{MaterialInfo, MeshInfo};
 use crate::texture::create_texture;
+use crate::VertexBuffer;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
@@ -31,7 +32,7 @@ impl From<Rc<Texture>> for TextureSerde {
 
 impl Texture {
     fn from_serde(
-        value: TextureSerde,
+        value: &TextureSerde,
         allocator: &StandardMemoryAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) -> Texture {
@@ -50,7 +51,12 @@ impl Texture {
             allocator,
             cmd_buf_builder,
         );
-        Texture::from(texture, value.name, value.id, value.img_path)
+        Texture::from(
+            texture,
+            value.name.to_owned(),
+            value.id,
+            value.img_path.to_owned(),
+        )
     }
 }
 
@@ -114,14 +120,14 @@ impl From<Rc<RefCell<Material>>> for MaterialSerde {
 
 impl Material {
     fn from_serde(
-        value: MaterialSerde,
-        textures: HashMap<u32, Rc<Texture>>,
+        value: &MaterialSerde,
+        textures: &HashMap<u32, Rc<Texture>>,
         allocator: &StandardMemoryAllocator,
     ) -> Material {
         Material {
             dirty: true,
             id: value.id,
-            name: value.name,
+            name: value.name.to_owned(),
             base_texture: textures.get(&value.base_texture).cloned(),
             base_color: value.base_color,
             metallic_roughness_texture: textures.get(&value.metallic_roughness_texture).cloned(),
@@ -175,16 +181,16 @@ impl From<Mesh> for MeshSerde {
 
 impl Mesh {
     fn from_serde(
-        value: MeshSerde,
+        value: &MeshSerde,
         materials: &HashMap<u32, Rc<RefCell<Material>>>,
         allocator: &StandardMemoryAllocator,
     ) -> Self {
         Mesh::from(
-            value.vertices,
-            value.indices,
-            value.normals,
+            value.vertices.clone(),
+            value.indices.clone(),
+            value.normals.clone(),
             materials.get(&value.material).cloned().unwrap(),
-            value.uvs,
+            value.uvs.clone(),
             value.global_transform,
             Buffer::from_data(
                 allocator,
@@ -226,7 +232,7 @@ impl From<Model> for ModelSerde {
 
 impl Model {
     fn from_serde(
-        value: ModelSerde,
+        value: &ModelSerde,
         materials: &HashMap<u32, Rc<RefCell<Material>>>,
         allocator: &StandardMemoryAllocator,
     ) -> Self {
@@ -234,15 +240,15 @@ impl Model {
             id: value.id,
             meshes: value
                 .meshes
-                .into_iter()
+                .iter()
                 .map(|m| Mesh::from_serde(m, materials, allocator))
                 .collect(),
             children: value
                 .children
-                .into_iter()
+                .iter()
                 .map(|m| Model::from_serde(m, materials, allocator))
                 .collect(),
-            name: value.name,
+            name: value.name.clone(),
             local_transform: value.local_transform,
         }
     }
@@ -267,7 +273,7 @@ impl From<Scene> for SceneSerde {
 
 impl Scene {
     fn from_serde(
-        value: SceneSerde,
+        value: &SceneSerde,
         materials: &HashMap<u32, Rc<RefCell<Material>>>,
         allocator: &StandardMemoryAllocator,
     ) -> Self {
@@ -275,10 +281,10 @@ impl Scene {
             id: value.id,
             models: value
                 .models
-                .into_iter()
+                .iter()
                 .map(|m| Model::from_serde(m, materials, allocator))
                 .collect(),
-            name: value.name,
+            name: value.name.clone(),
         }
     }
 }
@@ -291,15 +297,68 @@ pub struct WorldSerde {
 }
 
 impl WorldSerde {
-    pub fn from(
-        textures: Vec<Rc<Texture>>,
-        materials: Vec<Rc<RefCell<Material>>>,
-        scenes: Vec<Scene>,
-    ) -> Self {
+    pub fn from(world: &World) -> Self {
         Self {
-            textures: textures.into_iter().map(TextureSerde::from).collect(),
-            materials: materials.into_iter().map(MaterialSerde::from).collect(),
-            scenes: scenes.into_iter().map(SceneSerde::from).collect(),
+            textures: world
+                .textures
+                .values()
+                .map(|t| TextureSerde::from(t.clone()))
+                .collect(),
+            materials: world
+                .materials
+                .values()
+                .map(|m| MaterialSerde::from(m.clone()))
+                .collect(),
+            scenes: world
+                .scenes
+                .clone()
+                .into_iter()
+                .map(SceneSerde::from)
+                .collect(),
+        }
+    }
+
+    pub fn parse(
+        &self,
+        allocator: &StandardMemoryAllocator,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    ) -> World {
+        let mut textures = HashMap::new();
+        for serde_texture in self.textures.as_slice() {
+            textures.insert(
+                serde_texture.id,
+                Rc::new(Texture::from_serde(
+                    serde_texture,
+                    allocator,
+                    cmd_buf_builder,
+                )),
+            );
+        }
+
+        let mut materials = HashMap::new();
+        for serde_material in self.materials.as_slice() {
+            materials.insert(
+                serde_material.id,
+                Rc::new(RefCell::new(Material::from_serde(
+                    serde_material,
+                    &textures,
+                    allocator,
+                ))),
+            );
+        }
+
+        World {
+            scenes: self
+                .scenes
+                .iter()
+                .map(|s| Scene::from_serde(s, &materials, allocator))
+                .collect(),
+            textures,
+            materials,
+            cached_vertex_buffers: None,
+            cached_normal_buffers: None,
+            cached_uv_buffers: None,
+            cached_index_buffers: None,
         }
     }
 }
