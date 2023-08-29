@@ -1,6 +1,6 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use lib::shader_types::CameraUniform;
-use log::{debug, error, info};
+use log::debug;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
@@ -80,7 +80,7 @@ impl Camera {
             .cross(Vec4::from(GLOBAL_Y).xyz())
             .cross(self.eye - self.target)
             .normalize();
-        self.fovy = std::f32::consts::FRAC_PI_2.to_radians();
+        self.fovy = std::f32::consts::FRAC_PI_2;
         self.znear = 0.1;
         self.zfar = 100.0;
         self.speed = 0.5;

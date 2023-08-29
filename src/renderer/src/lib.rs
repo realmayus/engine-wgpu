@@ -410,8 +410,8 @@ pub fn start_renderer(
 
     let event_loop = state.init_state.event_loop;
 
-    state.init_state.window.set_maximized(true);
-    window_resized = true;
+    //state.init_state.window.set_maximized(true);
+    //window_resized = true;
 
     // blocks main thread forever and calls closure whenever the event loop receives an event
     event_loop.run(move |event, _, control_flow| match event {
@@ -424,6 +424,10 @@ pub fn start_renderer(
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(_),
+            ..
+        }
+        | Event::WindowEvent {
+            event: WindowEvent::ScaleFactorChanged { .. },
             ..
         } => {
             window_resized = true;

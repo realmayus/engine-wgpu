@@ -578,8 +578,8 @@ pub fn start(gltf_paths: Vec<&str>) {
         render_pass.clone(),
     );
 
-    let line_vertex_buffers: Vec<VertexBuffer> = (0..10)
-        .map(|_| VertexBuffer {
+    let line_vertex_buffers: Vec<VertexBuffer> = (0..3)
+        .map(|axis| VertexBuffer {
             subbuffer: Buffer::from_iter(
                 &setup_info.memory_allocator,
                 BufferCreateInfo {
@@ -590,12 +590,14 @@ pub fn start(gltf_paths: Vec<&str>) {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                (0..2).map(|_| {
-                    [
-                        rand::thread_rng().gen_range(-10f32..10f32),
-                        rand::thread_rng().gen_range(-10f32..10f32),
-                        rand::thread_rng().gen_range(-10f32..10f32),
-                    ]
+                (0..2).map(|vert| {
+                    let sign = if vert == 0 { 1. } else { -1. };
+                    match axis {
+                        0 => [sign * 1000.0, 0.0, 0.0],
+                        1 => [0.0, sign * 1000.0, 0.0],
+                        2 => [0.0, 0.0, sign * 1000.0],
+                        _ => [0.0, 0.0, 0.0],
+                    }
                 }),
             )
             .expect("Couldn't allocate vertex buffer")
@@ -604,7 +606,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         })
         .collect_vec();
 
-    let line_info_buffers = (0..10).map(|i| {
+    let line_info_buffers = (0..3).map(|i| {
         Buffer::from_data(
             &setup_info.memory_allocator,
             BufferCreateInfo {
@@ -617,12 +619,12 @@ pub fn start(gltf_paths: Vec<&str>) {
             },
             LineInfo {
                 model_transform: Mat4::default().to_cols_array_2d(),
-                color: [
-                    1.0 / (i as f32 + 1.0),
-                    1.0 / (i as f32 + 1.0),
-                    1.0 / (i as f32 + 1.0),
-                    1.0,
-                ],
+                color: match i {
+                    0 => [1.0, 0.0, 0.0, 1.0],
+                    1 => [0.0, 1.0, 0.0, 1.0],
+                    2 => [0.0, 0.0, 1.0, 1.0],
+                    _ => [1.0, 1.0, 1.0, 1.0],
+                },
             },
         )
         .expect("Couldn't allocate vertex buffer")
