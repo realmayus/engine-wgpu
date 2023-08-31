@@ -132,15 +132,15 @@ impl PipelineProvider for PBRPipeline {
             .with_auto_layout(self.device.clone(), |x| {
                 let binding = x[1].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 1000; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
+                binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
                 let binding = x[2].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 1000;
+                binding.descriptor_count = 128;
 
                 let binding = x[3].bindings.get_mut(&0).unwrap(); // MeshInfo
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 1000;
+                binding.descriptor_count = 128;
             })
             .unwrap()
     }

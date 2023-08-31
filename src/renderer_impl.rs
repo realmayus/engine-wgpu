@@ -80,10 +80,22 @@ impl StateCallable for GlobalState {
     )> {
         VecDeque::from([
             (
-                self.world.get_vertex_buffers(memory_allocator),
-                self.world.get_normal_buffers(memory_allocator),
-                self.world.get_uv_buffers(memory_allocator),
-                self.world.get_index_buffers(memory_allocator),
+                self.world
+                    .cached_vertex_buffers
+                    .clone()
+                    .expect("Vertex buffers uninitialized!"),
+                self.world
+                    .cached_normal_buffers
+                    .clone()
+                    .expect("Normal buffers uninitialized!"),
+                self.world
+                    .cached_uv_buffers
+                    .clone()
+                    .expect("UV buffers uninitialized!"),
+                self.world
+                    .cached_index_buffers
+                    .clone()
+                    .expect("Index buffers uninitialized!"),
             ),
             (self.line_vertex_buffers.clone(), vec![], vec![], vec![]),
         ])
@@ -206,7 +218,7 @@ pub fn start() {
         &mut cmd_buf_builder,
     );
 
-    let global_state = GlobalState {
+    let mut global_state = GlobalState {
         world: default_world,
         opened_file: None,
         line_vertex_buffers: (0..10)
@@ -302,6 +314,19 @@ pub fn start() {
         viewport.clone(),
         render_pass,
     );
+
+    global_state
+        .world
+        .create_vertex_buffers(&setup_info.memory_allocator);
+    global_state
+        .world
+        .create_normal_buffers(&setup_info.memory_allocator);
+    global_state
+        .world
+        .create_uv_buffers(&setup_info.memory_allocator);
+    global_state
+        .world
+        .create_index_buffers(&setup_info.memory_allocator);
 
     start_renderer(
         RenderState {
