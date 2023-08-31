@@ -398,7 +398,8 @@ pub fn start(gltf_paths: Vec<&str>) {
     )
     .unwrap();
 
-    let (default_material, default_texture) = {
+    let (default_material, default_texture, default_normal) = {
+        // default texture
         let img = image::open("assets/textures/default.png")
             .expect("Couldn't load default texture")
             .to_rgba8();
@@ -406,7 +407,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         let height = img.height();
         let dyn_img = DynamicImage::from(img);
 
-        let path = extract_image_to_file("no_texture", &dyn_img, Png);
+        let path = extract_image_to_file("default", &dyn_img, Png);
 
         let tex = create_texture(
             dyn_img.into_bytes(),
@@ -416,11 +417,35 @@ pub fn start(gltf_paths: Vec<&str>) {
             &setup_info.memory_allocator,
             &mut cmd_buf_builder,
         );
-
         let texture = Rc::new(Texture::from(
             tex,
             Some(Box::from("Default texture")),
             0,
+            path,
+        ));
+
+        // default normal texture
+        let img = image::open("assets/textures/default_normal.png")
+            .expect("Couldn't load default normal texture")
+            .to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        let dyn_img = DynamicImage::from(img);
+
+        let path = extract_image_to_file("default_normal", &dyn_img, Png);
+
+        let tex = create_texture(
+            dyn_img.into_bytes(),
+            format::Format::R8G8B8A8_UNORM,
+            width,
+            height,
+            &setup_info.memory_allocator,
+            &mut cmd_buf_builder,
+        );
+        let texture_normal = Rc::new(Texture::from(
+            tex,
+            Some(Box::from("Default texture")),
+            1,
             path,
         ));
 
@@ -442,6 +467,7 @@ pub fn start(gltf_paths: Vec<&str>) {
                 .expect("Couldn't allocate MaterialInfo uniform"),
             ))),
             texture.clone(),
+            texture_normal,
         )
     };
 
@@ -455,7 +481,7 @@ pub fn start(gltf_paths: Vec<&str>) {
 
     // Load scene
     let mut scenes: Vec<Scene> = vec![];
-    let mut textures: Vec<Rc<Texture>> = vec![default_texture];
+    let mut textures: Vec<Rc<Texture>> = vec![default_texture, default_normal];
     let mut materials: Vec<Rc<RefCell<Material>>> = vec![default_material.clone()];
     let mut tex_i = 1; // 0 reserved for default tex, mat
     let mut mat_i = 1;

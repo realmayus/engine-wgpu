@@ -81,7 +81,7 @@ impl MaterialInfo {
                 .metallic_roughness_texture
                 .as_ref()
                 .map(|t| t.id)
-                .unwrap_or(0),
+                .unwrap_or(1),
             metal_roughness_factors: material.metallic_roughness_factors.to_array(),
             normal_texture: material.normal_texture.as_ref().map(|t| t.id).unwrap_or(0),
             occlusion_texture: material
@@ -109,7 +109,7 @@ impl Default for MaterialInfo {
             metal_roughness_texture: 0,
             emission_factors: [0.0, 0.0, 0.0],
             emission_texture: 0,
-            normal_texture: 0,
+            normal_texture: 1,
             occlusion_texture: 0,
             occlusion_factor: 0.0,
         }
