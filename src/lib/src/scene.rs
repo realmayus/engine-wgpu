@@ -107,7 +107,7 @@ impl Dirtyable for Material {
             .map(|t| t.id)
             .unwrap_or(0);
         mapping.metal_roughness_factors = self.metallic_roughness_factors.to_array();
-        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id).unwrap_or(1);
         mapping.occlusion_texture = self.occlusion_texture.as_ref().map(|t| t.id).unwrap_or(0);
         mapping.occlusion_factor = self.occlusion_factor;
         mapping.emission_texture = self.emissive_texture.as_ref().map(|t| t.id).unwrap_or(0);
@@ -125,7 +125,7 @@ impl Debug for Material {
             self.albedo,
             self.metallic_roughness_texture.clone().map(|t| t.id).unwrap_or(0),
             self.metallic_roughness_factors,
-            self.normal_texture.clone().map(|t| t.id).unwrap_or(0),
+            self.normal_texture.clone().map(|t| t.id).unwrap_or(1),
             self.occlusion_texture.clone().map(|t| t.id).unwrap_or(0),
             self.occlusion_factor,
             self.emissive_texture.clone().map(|t| t.id).unwrap_or(0),

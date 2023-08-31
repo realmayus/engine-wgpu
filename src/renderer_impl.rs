@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::vec::Vec;
@@ -11,7 +10,6 @@ use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::{error, info};
-use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -104,11 +102,11 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
         });
         if ui.button("Import glTF").clicked() {
             if let Some(paths) = rfd::FileDialog::new()
-                .add_filter("glTF scenes", &vec!["gltf", "glb"])
+                .add_filter("glTF scenes", &["gltf", "glb"])
                 .pick_files()
             {
                 for path in paths {
-                    println!("{}", path.display().to_string());
+                    println!("{}", path.display());
                 }
             }
         }
@@ -130,7 +128,10 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
         ui.label(format!("Target: {}", &render_state.camera.target));
         ui.label(format!("Up: {}", &render_state.camera.up));
         ui.add(egui::Slider::new(&mut render_state.camera.speed, 0.03..=0.3).text("Speed"));
-        ui.add(egui::Slider::new(&mut render_state.camera.fovy, 0.0..=180.0).text("Field of view"));
+        ui.add(
+            egui::Slider::new(&mut render_state.camera.fovy, 0.0..=(std::f32::consts::PI))
+                .text("Field of view"),
+        );
         if ui.button("Reset").clicked() {
             render_state.camera.reset();
         }
@@ -377,11 +378,11 @@ impl StateCallable for GlobalState {
 }
 
 pub fn start(gltf_paths: Vec<&str>) {
-    let preview_models = vec![
-        "assets/models/cube.glb",
-        "assets/models/sphere.glb",
-        "assets/models/suzanne.glb",
-    ];
+    // let preview_models = vec![
+    //     "assets/models/cube.glb",
+    //     "assets/models/sphere.glb",
+    //     "assets/models/suzanne.glb",
+    // ];
 
     let setup_info = init_renderer();
 
@@ -466,7 +467,7 @@ pub fn start(gltf_paths: Vec<&str>) {
                 )
                 .expect("Couldn't allocate MaterialInfo uniform"),
             ))),
-            texture.clone(),
+            texture,
             texture_normal,
         )
     };
@@ -483,7 +484,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     let mut scenes: Vec<Scene> = vec![];
     let mut textures: Vec<Rc<Texture>> = vec![default_texture, default_normal];
     let mut materials: Vec<Rc<RefCell<Material>>> = vec![default_material.clone()];
-    let mut tex_i = 1; // 0 reserved for default tex, mat
+    let mut tex_i = 2; // 0 reserved for default texture, 1 reserved for default normal texture
     let mut mat_i = 1;
     for gltf_path in gltf_paths {
         let (mut gltf_scenes, gltf_textures, gltf_materials) = load_gltf(
