@@ -6,7 +6,7 @@ The program creates a directory `run` in the current working directory (cwd) whe
 
 World files (`world.json`) contain relative paths to resources like images. Thus, the scene file must be contained in the same directory as the other resource directories. 
 
-The working directory can be set using the ` WORKING_DIR` environment variable.
+The working directory can be set using the `WORKING_DIR` environment variable.
 
 ## Roadmap
 ### Renderer
