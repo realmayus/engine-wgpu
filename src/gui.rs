@@ -14,25 +14,25 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
     egui::Window::new("Scene").show(&ctx, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
             if ui.button("Load world").clicked() {
-                // if let Some(path) = rfd::FileDialog::new()
-                //     .add_filter("World files", &["json"])
-                //     .pick_file()
-                // {
-                //     state.opened_file = Some(path.clone());
-                //     let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
-                //         render_state.cmd_buf_allocator,
-                //         render_state.queue_family_index,
-                //         CommandBufferUsage::OneTimeSubmit,
-                //     )
-                //     .unwrap();
-                //
-                //     io::world_loader::load_world(
-                //         path.as_path(),
-                //         render_state.allocator,
-                //         &mut cmd_buf_builder,
-                //     );
-                //     let cmd_buf = cmd_buf_builder.build().unwrap();
-                // }
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("World files", &["json"])
+                    .pick_file()
+                {
+                    state.opened_file = Some(path.clone());
+                    // let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
+                    //     render_state.cmd_buf_allocator,
+                    //     render_state.queue_family_index,
+                    //     CommandBufferUsage::OneTimeSubmit,
+                    // )
+                    // .unwrap();
+                    //
+                    // io::world_loader::load_world(
+                    //     path.as_path(),
+                    //     render_state.allocator,
+                    //     &mut cmd_buf_builder,
+                    // );
+                    // let cmd_buf = cmd_buf_builder.build().unwrap();
+                }
             }
             if ui.button("Save world as").clicked() {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
@@ -59,8 +59,22 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
                 .add_filter("glTF scenes", &["gltf", "glb"])
                 .pick_files()
             {
+                // let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
+                //     render_state.cmd_buf_allocator,
+                //     render_state.queue_family_index,
+                //     CommandBufferUsage::OneTimeSubmit,
+                // )
+                // .unwrap();
+
                 for path in paths {
-                    println!("{}", path.display());
+                    // load_gltf(
+                    //     path.as_path(),
+                    //     render_state.allocator,
+                    //     &mut cmd_buf_builder,
+                    //     state.world.materials.get(&0).unwrap().clone(),
+                    //     &mut state.world.highest_texture_index,
+                    //     &mut state.world.highest_material_index,
+                    // );
                 }
             }
         }

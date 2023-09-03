@@ -111,7 +111,10 @@ fn load_default_world(
     cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> World {
     let (cube, texs, mats) = load_gltf(
-        "assets/models/cube.glb",
+        PathBuf::from("assets")
+            .join("models")
+            .join("cube.glb")
+            .as_path(),
         memory_allocator,
         cmd_buf_builder,
         default_material.clone(),
@@ -132,6 +135,8 @@ fn load_default_world(
         cached_normal_buffers: None,
         cached_uv_buffers: None,
         cached_index_buffers: None,
+        highest_material_index: 1,
+        highest_texture_index: 1,
     }
 }
 

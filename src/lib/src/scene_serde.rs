@@ -294,6 +294,8 @@ pub struct WorldSerde {
     pub textures: Vec<TextureSerde>,
     pub materials: Vec<MaterialSerde>,
     pub scenes: Vec<SceneSerde>,
+    pub highest_material_index: u32,
+    pub highest_texture_index: u32,
 }
 
 impl WorldSerde {
@@ -315,6 +317,8 @@ impl WorldSerde {
                 .into_iter()
                 .map(SceneSerde::from)
                 .collect(),
+            highest_material_index: world.highest_material_index,
+            highest_texture_index: world.highest_texture_index,
         }
     }
 
@@ -359,6 +363,8 @@ impl WorldSerde {
             cached_normal_buffers: None,
             cached_uv_buffers: None,
             cached_index_buffers: None,
+            highest_material_index: self.highest_material_index,
+            highest_texture_index: self.highest_texture_index,
         }
     }
 }

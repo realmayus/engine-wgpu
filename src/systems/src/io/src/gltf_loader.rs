@@ -237,7 +237,7 @@ fn load_image(
 }
 
 pub fn load_gltf(
-    path: &str,
+    path: &Path,
     allocator: &StandardMemoryAllocator,
     cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     default_material: Rc<RefCell<Material>>,

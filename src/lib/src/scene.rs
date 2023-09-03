@@ -304,6 +304,8 @@ pub struct World {
     pub cached_normal_buffers: Option<Vec<VertexBuffer>>,
     pub cached_uv_buffers: Option<Vec<VertexBuffer>>,
     pub cached_index_buffers: Option<Vec<Subbuffer<[u32]>>>,
+    pub highest_material_index: u32,
+    pub highest_texture_index: u32,
 }
 
 impl World {
