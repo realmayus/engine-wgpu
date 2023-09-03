@@ -350,6 +350,12 @@ impl StateCallable for GlobalState {
     }
 
     fn update(&mut self) {
+        for material in self.materials.as_slice() {
+            let dirty = { material.borrow().dirty() };
+            if dirty {
+                material.borrow_mut().update();
+            }
+        }
         for scene in self.scenes.as_mut_slice() {
             for model in scene.models.as_mut_slice() {
                 for mesh in model.meshes.as_mut_slice() {
@@ -362,12 +368,6 @@ impl StateCallable for GlobalState {
                         light.update();
                     }
                 }
-            }
-        }
-        for material in self.materials.as_slice() {
-            let dirty = { material.borrow().dirty() };
-            if dirty {
-                material.borrow_mut().update();
             }
         }
     }

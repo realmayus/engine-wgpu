@@ -27,14 +27,10 @@ layout(set = 2, binding = 0) buffer MaterialUniform {
     MUStruct mat;
 } materials[];
 
-struct MeshStruct {
+layout(set = 3, binding = 0) buffer MeshInfo {
     uint mat_id;
     mat4 model_transform;
-};
-
-layout(set = 3, binding = 0) buffer MeshInfo {
-    MeshStruct meshes[];
-};
+} meshes[];
 
 struct Light {
     mat4 transform;
@@ -55,8 +51,7 @@ float geometry_schlick(float NdotV, float roughness);
 float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness);
 
 void main() {
-    MeshStruct mesh = meshes[index];
-    uint mat_id = mesh.mat_id;
+    uint mat_id = meshes[index].mat_id;
     MUStruct material = materials[mat_id].mat;
 
     // load material values, if index 0, value will be 1 because of white default texture
