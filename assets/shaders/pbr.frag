@@ -127,7 +127,7 @@ void main() {
 
 // Fresnel-Schlick approximation
 // F0: base surface-reflectivity at 0 incidence (reflectivity when looking directly at it)
-// cosTheta: result of the dot product of the surface normal and the halfway direction
+// cosTheta: result of the dot product of the view direction and the halfway direction
 // Calculates how much the surface reflects vs refracts (basically specular vs diffuse)
 vec3 fresnel(float cosTheta, vec3 F0) {
     // clamp to avoid black spots

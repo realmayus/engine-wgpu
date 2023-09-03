@@ -127,6 +127,7 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
         ui.label(format!("Eye: {}", &render_state.camera.eye));
         ui.label(format!("Target: {}", &render_state.camera.target));
         ui.label(format!("Up: {}", &render_state.camera.up));
+        ui.label(format!("Orientation: {}", &render_state.camera.direction));
         ui.add(egui::Slider::new(&mut render_state.camera.speed, 0.03..=0.3).text("Speed"));
         ui.add(
             egui::Slider::new(&mut render_state.camera.fovy, 0.0..=(std::f32::consts::PI))
