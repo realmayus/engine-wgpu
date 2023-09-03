@@ -27,9 +27,11 @@ use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::{Dirtyable, VertexBuffer};
 use renderer::camera::Camera;
+use renderer::initialization::init_renderer;
 use renderer::pipelines::line_pipeline::LinePipeline;
 use renderer::pipelines::pbr_pipeline::PBRPipeline;
-use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable};
+use renderer::renderer::start_renderer;
+use renderer::{PartialRenderState, RenderState, StateCallable};
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
 
