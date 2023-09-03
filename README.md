@@ -16,7 +16,7 @@ The working directory can be set using the ` WORKING_DIR` environment variable.
 - [x] gamma correction (for pbr)
 - [ ] Instancing
 - [x] Physically based Rendering
-- [ ] Normal/Bump maps
+- [x] Normal/Bump maps
 - [ ] Shadows
 - [ ] Anti-Aliasing
 - [ ] face culling
