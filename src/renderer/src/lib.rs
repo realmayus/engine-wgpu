@@ -28,7 +28,7 @@ use winit::window::Window;
 use lib::VertexBuffer;
 
 use crate::camera::Camera;
-use crate::pipelines::PipelineProvider;
+use crate::pipelines::{PipelineKind, PipelineProvider};
 
 pub mod camera;
 pub mod initialization;
@@ -67,24 +67,25 @@ pub struct PartialRenderState<'a> {
     pub queue_family_index: u32,
 }
 
-// unified communication interface between renderer lib and implementation, to avoid revealing the scene complexity to the lib
+// unified communication interface between renderer lib and implementation, to avoid revealing the scene complexity to the renderer
 pub trait StateCallable {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
     fn update(&mut self);
     fn cleanup(&self);
 
     /**
-    Should return a copy of vertex buffers, normal buffers, UV buffers, and index buffers for use in render passes
+    Should return a copy of vertex buffers, normal buffers, UV buffers, and index buffers to be drawn by specified pipeline
      */
     fn get_subbuffers(
         &mut self,
         memory_allocator: &StandardMemoryAllocator,
-    ) -> VecDeque<(
+        pipeline_kind: PipelineKind,
+    ) -> (
         Vec<VertexBuffer>,
         Vec<VertexBuffer>,
         Vec<VertexBuffer>,
         Vec<Subbuffer<[u32]>>,
-    )>;
+    );
 }
 
 fn select_physical_device(
@@ -194,12 +195,13 @@ fn get_finalized_render_passes(
                 )
                 .unwrap();
 
-            let mut pipeline_subbuffers = callable.get_subbuffers(allocator);
-
             for i in 0..pipeline_providers.len() {
-                debug!("Render pass for pipeline {}", pipeline_providers[i].name());
+                debug!(
+                    "Render pass for pipeline {}",
+                    pipeline_providers[i].kind().name()
+                );
                 let (vertex_buffers, normal_buffers, uv_buffers, index_buffers) =
-                    pipeline_subbuffers.pop_front().unwrap();
+                    callable.get_subbuffers(allocator, pipeline_providers[i].kind());
                 pipeline_providers[i].render_pass(
                     &mut builder,
                     pipelines[i].clone(),

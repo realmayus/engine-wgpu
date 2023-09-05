@@ -19,7 +19,7 @@ use vulkano::shader::ShaderModule;
 use lib::shader_types::{CameraUniform, MyVertex};
 use lib::VertexBuffer;
 
-use crate::pipelines::PipelineProvider;
+use crate::pipelines::{PipelineKind, PipelineProvider};
 
 mod vs {
     vulkano_shaders::shader! {
@@ -91,8 +91,8 @@ impl LinePipeline {
 }
 
 impl PipelineProvider for LinePipeline {
-    fn name(&self) -> String {
-        "Line Pipeline".to_string()
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::LINE
     }
 
     fn get_pipeline(&self) -> Arc<GraphicsPipeline> {

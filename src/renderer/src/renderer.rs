@@ -44,24 +44,26 @@ pub fn start_renderer(
         depth_buffer,
     );
 
-    let mut pipelines = vec![];
-    for mut provider in pipeline_providers.as_mut_slice() {
-        let pipeline = provider.get_pipeline();
-        provider.init_descriptor_sets(
-            pipeline.layout().set_layouts(),
-            &state.init_state.descriptor_set_allocator,
-        );
-        pipelines.push(pipeline);
-    }
-    let mut command_buffers = get_finalized_render_passes(
-        framebuffers,
-        &state.init_state.memory_allocator,
-        &state.init_state.cmd_buf_allocator,
-        state.init_state.queue.queue_family_index(),
-        pipeline_providers.as_mut_slice(),
-        pipelines,
-        &mut callable,
-    );
+    let mut command_buffers = {
+        let mut pipelines = vec![];
+        for provider in pipeline_providers.as_mut_slice() {
+            let pipeline = provider.get_pipeline();
+            provider.init_descriptor_sets(
+                pipeline.layout().set_layouts(),
+                &state.init_state.descriptor_set_allocator,
+            );
+            pipelines.push(pipeline);
+        }
+        get_finalized_render_passes(
+            framebuffers,
+            &state.init_state.memory_allocator,
+            &state.init_state.cmd_buf_allocator,
+            state.init_state.queue.queue_family_index(),
+            pipeline_providers.as_mut_slice(),
+            pipelines,
+            &mut callable,
+        )
+    };
 
     let mut window_resized = false;
     let mut recreate_swapchain = false;
@@ -221,25 +223,28 @@ pub fn start_renderer(
                     window_resized = false;
 
                     state.viewport.dimensions = new_dimensions.into();
-                    let mut new_pipelines = vec![];
-                    for provider in pipeline_providers.as_mut_slice() {
-                        let pipeline = provider.get_pipeline();
-                        provider.init_descriptor_sets(
-                            pipeline.layout().set_layouts(),
-                            &state.init_state.descriptor_set_allocator,
-                        );
-                        provider.set_viewport(state.viewport.clone());
-                        new_pipelines.push(pipeline);
-                    }
-                    command_buffers = get_finalized_render_passes(
-                        new_framebuffers.clone(),
-                        &state.init_state.memory_allocator,
-                        &state.init_state.cmd_buf_allocator,
-                        state.init_state.queue.queue_family_index(),
-                        pipeline_providers.as_mut_slice(),
-                        new_pipelines,
-                        &mut callable,
-                    );
+                    command_buffers = {
+                        let mut pipelines = vec![];
+                        for provider in pipeline_providers.as_mut_slice() {
+                            let pipeline = provider.get_pipeline();
+                            provider.init_descriptor_sets(
+                                pipeline.layout().set_layouts(),
+                                &state.init_state.descriptor_set_allocator,
+                            );
+                            provider.set_viewport(state.viewport.clone());
+                            pipelines.push(pipeline);
+                        }
+                        get_finalized_render_passes(
+                            new_framebuffers.clone(),
+                            &state.init_state.memory_allocator,
+                            &state.init_state.cmd_buf_allocator,
+                            state.init_state.queue.queue_family_index(),
+                            pipeline_providers.as_mut_slice(),
+                            pipelines,
+                            &mut callable,
+                        )
+                    };
+
                     state
                         .camera
                         .update_aspect(state.viewport.dimensions[0], state.viewport.dimensions[1]);

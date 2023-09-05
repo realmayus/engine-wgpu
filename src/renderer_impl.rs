@@ -10,7 +10,7 @@ use glam::Mat4;
 use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
-use log::info;
+use log::{debug, info};
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
@@ -30,6 +30,7 @@ use renderer::camera::Camera;
 use renderer::initialization::init_renderer;
 use renderer::pipelines::line_pipeline::LinePipeline;
 use renderer::pipelines::pbr_pipeline::PBRPipeline;
+use renderer::pipelines::PipelineKind;
 use renderer::renderer::start_renderer;
 use renderer::{PartialRenderState, RenderState, StateCallable};
 use systems::io::gltf_loader::load_gltf;
@@ -49,6 +50,7 @@ impl StateCallable for GlobalState {
     }
 
     fn update(&mut self) {
+        debug!("Start updating state...");
         for scene in self.world.scenes.as_mut_slice() {
             for model in scene.models.as_mut_slice() {
                 for mesh in model.meshes.as_mut_slice() {
@@ -64,6 +66,7 @@ impl StateCallable for GlobalState {
                 material.borrow_mut().update();
             }
         }
+        debug!("Finished updating state");
     }
 
     fn cleanup(&self) {
@@ -74,14 +77,16 @@ impl StateCallable for GlobalState {
     fn get_subbuffers(
         &mut self,
         memory_allocator: &StandardMemoryAllocator,
-    ) -> VecDeque<(
+        pipeline_kind: PipelineKind,
+    ) -> (
         Vec<VertexBuffer>,
         Vec<VertexBuffer>,
         Vec<VertexBuffer>,
         Vec<Subbuffer<[u32]>>,
-    )> {
-        VecDeque::from([
-            (
+    ) {
+        match pipeline_kind {
+            PipelineKind::LINE => (self.line_vertex_buffers.clone(), vec![], vec![], vec![]),
+            PipelineKind::PBR => (
                 self.world
                     .cached_vertex_buffers
                     .clone()
@@ -99,8 +104,7 @@ impl StateCallable for GlobalState {
                     .clone()
                     .expect("Index buffers uninitialized!"),
             ),
-            (self.line_vertex_buffers.clone(), vec![], vec![], vec![]),
-        ])
+        }
     }
 }
 
@@ -257,17 +261,34 @@ pub fn start() {
 
     let device = setup_info.device.clone();
     let render_pass = setup_info.render_pass.clone();
-    let texs = global_state.world.textures.values().map(|t| {
-        (
-            t.view.clone() as Arc<dyn ImageViewAbstract>,
-            Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear()).unwrap(),
-        )
-    });
+    let texs = global_state
+        .world
+        .textures
+        .values()
+        .map(|t| {
+            (
+                t.view.clone() as Arc<dyn ImageViewAbstract>,
+                Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear()).unwrap(),
+            )
+        })
+        .collect_vec();
+    global_state
+        .world
+        .create_vertex_buffers(&setup_info.memory_allocator);
+    global_state
+        .world
+        .create_normal_buffers(&setup_info.memory_allocator);
+    global_state
+        .world
+        .create_uv_buffers(&setup_info.memory_allocator);
+    global_state
+        .world
+        .create_index_buffers(&setup_info.memory_allocator);
 
     let pbr_pipeline = PBRPipeline::new(
         device.clone(),
         camera.buffer.clone(),
-        texs,
+        texs.into_iter(),
         (vec![global_state
             .world
             .materials
@@ -319,21 +340,8 @@ pub fn start() {
         camera.buffer.clone(),
         line_info_buffers,
         viewport.clone(),
-        render_pass,
+        render_pass.clone(),
     );
-
-    global_state
-        .world
-        .create_vertex_buffers(&setup_info.memory_allocator);
-    global_state
-        .world
-        .create_normal_buffers(&setup_info.memory_allocator);
-    global_state
-        .world
-        .create_uv_buffers(&setup_info.memory_allocator);
-    global_state
-        .world
-        .create_index_buffers(&setup_info.memory_allocator);
 
     start_renderer(
         RenderState {

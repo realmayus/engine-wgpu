@@ -3,12 +3,8 @@ use std::sync::Arc;
 
 use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
 use lib::VertexBuffer;
-use vulkano::buffer::{BufferContents, Subbuffer};
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
-};
+use vulkano::buffer::Subbuffer;
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::layout::DescriptorSetLayout;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
@@ -19,11 +15,11 @@ use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
-use vulkano::render_pass::{Framebuffer, RenderPass, Subpass};
+use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
-use crate::pipelines::PipelineProvider;
+use crate::pipelines::{PipelineKind, PipelineProvider};
 
 mod vs {
     vulkano_shaders::shader! {
@@ -114,8 +110,8 @@ impl PBRPipeline {
     }
 }
 impl PipelineProvider for PBRPipeline {
-    fn name(&self) -> String {
-        "PBR Pipeline".to_string()
+    fn kind(&self) -> PipelineKind {
+        PipelineKind::PBR
     }
 
     fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
@@ -191,6 +187,8 @@ impl PipelineProvider for PBRPipeline {
             );
         }
         debug!("Binding {} vertex buffers", vertex_buffers.len());
+        assert_eq!(vertex_buffers.len(), normal_buffers.len());
+        assert_eq!(normal_buffers.len(), uv_buffers.len());
         debug!("# of index Subbuffer<[u32]>: {}", index_buffers.len());
         for i in 0..vertex_buffers.len() {
             builder
