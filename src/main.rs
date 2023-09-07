@@ -1,6 +1,5 @@
 use dotenv::dotenv;
 use log::info;
-use systems::io::clear_run_dir;
 
 mod gui;
 mod renderer_impl;

@@ -1,13 +1,13 @@
-use crate::renderer_impl::GlobalState;
 use egui_winit_vulkano::egui::Ui;
 use egui_winit_vulkano::{egui, Gui};
 use glam::Mat4;
-use lib::scene::Model;
-use lib::scene_serde::WorldSerde;
-use lib::Dirtyable;
 use log::info;
+
+use lib::scene::Model;
+use lib::Dirtyable;
 use renderer::PartialRenderState;
-use systems::io;
+
+use crate::renderer_impl::GlobalState;
 
 fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4) {
     ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
@@ -84,11 +84,11 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
         });
         if ui.button("Import glTF").clicked() {
             if let Some(paths) = rfd::FileDialog::new()
-                .add_filter("glTF scenes", &vec!["gltf", "glb"])
+                .add_filter("glTF scenes", &["gltf", "glb"])
                 .pick_files()
             {
                 for path in paths {
-                    println!("{}", path.display().to_string());
+                    println!("{}", path.display());
                 }
             }
         }
