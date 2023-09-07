@@ -200,50 +200,6 @@ fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut Globa
     });
 }
 
-fn load_preview_meshes(
-    preview_models: Vec<&str>,
-    memory_allocator: &StandardMemoryAllocator,
-    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    default_material: Rc<RefCell<Material>>,
-) -> (
-    Vec<VertexInputBuffer>,
-    Vec<VertexInputBuffer>,
-    Vec<Subbuffer<[u32]>>,
-) {
-    let mut preview_vertices: Vec<VertexInputBuffer> = vec![];
-    let mut normal_buffers: Vec<VertexInputBuffer> = vec![];
-    let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
-
-    for gltf_path in preview_models {
-        let (scenes, ..) = load_gltf(
-            gltf_path,
-            memory_allocator,
-            cmd_buf_builder,
-            default_material.clone(),
-            &mut 0,
-            &mut 0,
-        );
-        for scene in scenes {
-            for model in scene.models {
-                for mesh in model.meshes {
-                    let (vert_buf, normal_buf, _uvs, index_buf) =
-                        create_buffers(&mesh, memory_allocator);
-                    preview_vertices.push(VertexInputBuffer {
-                        subbuffer: vert_buf.into_bytes(),
-                        vertex_count: mesh.vertices.len() as u32,
-                    });
-                    normal_buffers.push(VertexInputBuffer {
-                        subbuffer: normal_buf.into_bytes(),
-                        vertex_count: mesh.vertices.len() as u32,
-                    });
-                    index_buffers.push(index_buf);
-                }
-            }
-        }
-    }
-    (preview_vertices, normal_buffers, index_buffers)
-}
-
 fn create_buffers(
     mesh: &Mesh,
     memory_allocator: &StandardMemoryAllocator,
@@ -348,12 +304,6 @@ impl StateCallable for GlobalState {
 }
 
 pub fn start(gltf_paths: Vec<&str>) {
-    let preview_models = vec![
-        "assets/models/cube.glb",
-        "assets/models/sphere.glb",
-        "assets/models/suzanne.glb",
-    ];
-
     let setup_info = init_renderer();
 
     let viewport = Viewport {
@@ -418,14 +368,6 @@ pub fn start(gltf_paths: Vec<&str>) {
             texture.clone(),
         )
     };
-
-    // Load preview meshes (for material/texture preview)
-    load_preview_meshes(
-        preview_models,
-        &setup_info.memory_allocator,
-        &mut cmd_buf_builder,
-        default_material.clone(),
-    );
 
     // Load scene
     let mut scenes: Vec<Scene> = vec![];
