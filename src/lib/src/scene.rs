@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -288,4 +289,10 @@ impl Clone for Scene {
             models: self.models.clone(),
         }
     }
+}
+
+pub struct World {
+    pub scenes: Vec<Scene>,
+    pub materials: HashMap<u32, Rc<RefCell<Material>>>,
+    pub textures: HashMap<u32, Rc<Texture>>,
 }
