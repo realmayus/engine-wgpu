@@ -29,9 +29,10 @@ use lib::texture::create_texture;
 use lib::Dirtyable;
 use renderer::camera::Camera;
 use renderer::pipelines::line_pipeline::LinePipeline;
-use renderer::pipelines::pbr_pipeline::PBRPipeline;
+use renderer::pipelines::pbr_pipeline::{DrawableVertexInputs, PBRPipeline};
 use renderer::{
-    init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable, VertexBuffer,
+    init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable,
+    VertexInputBuffer,
 };
 use systems::io;
 use systems::io::gltf_loader::load_gltf;
@@ -204,9 +205,13 @@ fn load_preview_meshes(
     memory_allocator: &StandardMemoryAllocator,
     cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     default_material: Rc<RefCell<Material>>,
-) -> (Vec<VertexBuffer>, Vec<VertexBuffer>, Vec<Subbuffer<[u32]>>) {
-    let mut preview_vertices: Vec<VertexBuffer> = vec![];
-    let mut normal_buffers: Vec<VertexBuffer> = vec![];
+) -> (
+    Vec<VertexInputBuffer>,
+    Vec<VertexInputBuffer>,
+    Vec<Subbuffer<[u32]>>,
+) {
+    let mut preview_vertices: Vec<VertexInputBuffer> = vec![];
+    let mut normal_buffers: Vec<VertexInputBuffer> = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
 
     for gltf_path in preview_models {
@@ -223,11 +228,11 @@ fn load_preview_meshes(
                 for mesh in model.meshes {
                     let (vert_buf, normal_buf, _uvs, index_buf) =
                         create_buffers(&mesh, memory_allocator);
-                    preview_vertices.push(VertexBuffer {
+                    preview_vertices.push(VertexInputBuffer {
                         subbuffer: vert_buf.into_bytes(),
                         vertex_count: mesh.vertices.len() as u32,
                     });
-                    normal_buffers.push(VertexBuffer {
+                    normal_buffers.push(VertexInputBuffer {
                         subbuffer: normal_buf.into_bytes(),
                         vertex_count: mesh.vertices.len() as u32,
                     });
@@ -454,9 +459,9 @@ pub fn start(gltf_paths: Vec<&str>) {
         materials.append(&mut material_values.clone());
     }
 
-    let mut vertex_buffers: Vec<VertexBuffer> = vec![];
-    let mut normal_buffers: Vec<VertexBuffer> = vec![];
-    let mut uv_buffers: Vec<VertexBuffer> = vec![];
+    let mut vertex_buffers: Vec<VertexInputBuffer> = vec![];
+    let mut normal_buffers: Vec<VertexInputBuffer> = vec![];
+    let mut uv_buffers: Vec<VertexInputBuffer> = vec![];
     let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
     let mut mesh_info_bufs = vec![];
     for scene in scenes.as_slice() {
@@ -464,15 +469,15 @@ pub fn start(gltf_paths: Vec<&str>) {
             for mesh in model.meshes.as_slice() {
                 let (vert_buf, normal_buf, uv_buf, index_buf) =
                     create_buffers(mesh, &setup_info.memory_allocator);
-                vertex_buffers.push(VertexBuffer {
+                vertex_buffers.push(VertexInputBuffer {
                     subbuffer: vert_buf.into_bytes(),
                     vertex_count: mesh.vertices.len() as u32,
                 });
-                normal_buffers.push(VertexBuffer {
+                normal_buffers.push(VertexInputBuffer {
                     subbuffer: normal_buf.into_bytes(),
                     vertex_count: mesh.normals.len() as u32,
                 });
-                uv_buffers.push(VertexBuffer {
+                uv_buffers.push(VertexInputBuffer {
                     subbuffer: uv_buf.into_bytes(),
                     vertex_count: mesh.uvs.len() as u32,
                 });
@@ -506,15 +511,27 @@ pub fn start(gltf_paths: Vec<&str>) {
     let material_info_bufs = global_state
         .materials
         .as_slice()
-        .into_iter()
+        .iter()
         .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
 
     let pbr_pipeline = PBRPipeline::new(
         device.clone(),
-        vertex_buffers,
-        normal_buffers,
-        uv_buffers,
-        index_buffers,
+        vertex_buffers
+            .into_iter()
+            .zip(normal_buffers.into_iter())
+            .zip(uv_buffers.into_iter())
+            .zip(index_buffers.into_iter())
+            .map(
+                |(((vertex_buffer, normal_buffer), uv_buffer), index_buffer)| {
+                    DrawableVertexInputs {
+                        vertex_buffer,
+                        normal_buffer,
+                        uv_buffer,
+                        index_buffer,
+                    }
+                },
+            )
+            .collect(),
         camera.buffer.clone(),
         texs,
         material_info_bufs,
@@ -523,9 +540,8 @@ pub fn start(gltf_paths: Vec<&str>) {
         render_pass.clone(),
     );
 
-    let line_vertex_buffers: Vec<VertexBuffer> = (0..10)
-        .into_iter()
-        .map(|_| VertexBuffer {
+    let line_vertex_buffers: Vec<VertexInputBuffer> = (0..10)
+        .map(|_| VertexInputBuffer {
             subbuffer: Buffer::from_iter(
                 &setup_info.memory_allocator,
                 BufferCreateInfo {
@@ -536,7 +552,7 @@ pub fn start(gltf_paths: Vec<&str>) {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                (0..2).into_iter().map(|_| {
+                (0..2).map(|_| {
                     [
                         rand::thread_rng().gen_range(-10f32..10f32),
                         rand::thread_rng().gen_range(-10f32..10f32),
@@ -550,7 +566,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         })
         .collect_vec();
 
-    let line_info_buffers = (0..10).into_iter().map(|i| {
+    let line_info_buffers = (0..10).map(|i| {
         Buffer::from_data(
             &setup_info.memory_allocator,
             BufferCreateInfo {

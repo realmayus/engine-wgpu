@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use lib::scene::Texture;
 use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
 use vulkano::buffer::{BufferContents, Subbuffer};
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
@@ -22,7 +23,7 @@ use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
 use crate::pipelines::PipelineProvider;
-use crate::VertexBuffer;
+use crate::VertexInputBuffer;
 
 mod vs {
     vulkano_shaders::shader! {
@@ -38,16 +39,20 @@ mod fs {
     }
 }
 
+pub struct DrawableVertexInputs {
+    pub vertex_buffer: VertexInputBuffer,
+    pub normal_buffer: VertexInputBuffer,
+    pub uv_buffer: VertexInputBuffer,
+    pub index_buffer: Subbuffer<[u32]>,
+}
+
 /**
 Pipeline for physically-based rendering
 */
 pub struct PBRPipeline {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertex_buffers: Vec<VertexBuffer>,
-    normal_buffers: Vec<VertexBuffer>,
-    uv_buffers: Vec<VertexBuffer>,
-    index_buffers: Vec<Subbuffer<[u32]>>,
+    drawables: Vec<DrawableVertexInputs>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
@@ -58,10 +63,7 @@ pub struct PBRPipeline {
 impl PBRPipeline {
     pub fn new(
         device: Arc<Device>,
-        vertex_buffers: Vec<VertexBuffer>,
-        normal_buffers: Vec<VertexBuffer>,
-        uv_buffers: Vec<VertexBuffer>,
-        index_buffers: Vec<Subbuffer<[u32]>>,
+        drawables: Vec<DrawableVertexInputs>,
         camera_buffer: Subbuffer<CameraUniform>,
         textures: impl IntoIterator<Item = (Arc<dyn ImageViewAbstract>, Arc<Sampler>)>
             + ExactSizeIterator,
@@ -107,10 +109,7 @@ impl PBRPipeline {
         Self {
             vs,
             fs,
-            vertex_buffers,
-            normal_buffers,
-            uv_buffers,
-            index_buffers,
+            drawables,
             write_descriptor_sets,
             descriptor_sets: vec![],
             viewport,
@@ -122,6 +121,18 @@ impl PBRPipeline {
                 MyUV::per_vertex(),
             ],
         }
+    }
+
+    fn update_drawables(&mut self, f: Box<dyn Fn(&mut Vec<DrawableVertexInputs>)>) {
+        f(&mut self.drawables)
+    }
+
+    fn update_descriptor_set(
+        &mut self,
+        descriptor_set_id: u32,
+        f: Box<dyn Fn() -> Arc<PersistentDescriptorSet>>,
+    ) {
+        self.descriptor_sets[descriptor_set_id as usize] = f();
     }
 }
 impl PipelineProvider for PBRPipeline {
@@ -193,18 +204,24 @@ impl PipelineProvider for PBRPipeline {
                 self.descriptor_sets[i].clone(),
             );
         }
-        for i in 0..self.vertex_buffers.len() {
+        for i in 0..self.drawables.len() {
             builder
                 .bind_vertex_buffers(
                     0,
                     (
-                        self.vertex_buffers[i].subbuffer.clone(),
-                        self.normal_buffers[i].subbuffer.clone(),
-                        self.uv_buffers[i].subbuffer.clone(),
+                        self.drawables[i].vertex_buffer.subbuffer.clone(),
+                        self.drawables[i].normal_buffer.subbuffer.clone(),
+                        self.drawables[i].uv_buffer.subbuffer.clone(),
                     ),
                 )
-                .bind_index_buffer(self.index_buffers[i].clone())
-                .draw_indexed(self.index_buffers[i].len() as u32, 1, 0, 0, i as u32)
+                .bind_index_buffer(self.drawables[i].index_buffer.clone())
+                .draw_indexed(
+                    self.drawables[i].index_buffer.len() as u32,
+                    1,
+                    0,
+                    0,
+                    i as u32,
+                )
                 .unwrap();
         }
     }

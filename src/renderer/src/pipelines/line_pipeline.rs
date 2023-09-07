@@ -1,5 +1,5 @@
 use crate::pipelines::PipelineProvider;
-use crate::VertexBuffer;
+use crate::VertexInputBuffer;
 use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
 use std::sync::Arc;
 use vulkano::buffer::Subbuffer;
@@ -42,7 +42,7 @@ Pipeline for drawing lines in 3D space, e.g. for axes
 pub struct LinePipeline {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertex_buffers: Vec<VertexBuffer>,
+    vertex_buffers: Vec<VertexInputBuffer>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
@@ -54,7 +54,7 @@ pub struct LinePipeline {
 impl LinePipeline {
     pub fn new(
         device: Arc<Device>,
-        vertex_buffers: Vec<VertexBuffer>,
+        vertex_buffers: Vec<VertexInputBuffer>,
         camera_buffer: Subbuffer<CameraUniform>,
         line_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
         viewport: Viewport,

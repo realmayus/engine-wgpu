@@ -47,7 +47,7 @@ use crate::pipelines::PipelineProvider;
 pub mod camera;
 pub mod pipelines;
 
-pub struct VertexBuffer {
+pub struct VertexInputBuffer {
     pub subbuffer: Subbuffer<[u8]>,
     pub vertex_count: u32,
 }
