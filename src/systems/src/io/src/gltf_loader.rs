@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
-use std::ops::Add;
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 use std::{fs, io};
@@ -11,20 +10,20 @@ use glam::{Mat4, Vec2, Vec3};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
-use gltf::{Error, Image, Node};
+use gltf::{Error, Node};
 use image::ImageFormat::{Jpeg, Png};
-use image::{guess_format, DynamicImage, ImageFormat};
+use image::{DynamicImage, ImageFormat};
 use log::info;
-use rand::distributions::{Alphanumeric, DistString};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
-use crate::extract_image_to_file;
 use lib::scene::{Material, Mesh, Model, Scene, Texture};
 use lib::shader_types::{MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
+
+use crate::extract_image_to_file;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where

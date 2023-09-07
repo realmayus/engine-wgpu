@@ -242,11 +242,11 @@ impl Debug for Model {
 impl Clone for Model {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             meshes: self.meshes.clone(),
             children: self.children.clone(),
             name: self.name.clone(),
-            local_transform: self.local_transform.clone(),
+            local_transform: self.local_transform,
         }
     }
 }

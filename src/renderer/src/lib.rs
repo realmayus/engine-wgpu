@@ -27,8 +27,8 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, Pipeline};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{
-    AcquireError, CompositeAlpha, Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo,
-    SwapchainCreationError, SwapchainPresentInfo,
+    AcquireError, CompositeAlpha, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
+    SwapchainPresentInfo,
 };
 use vulkano::sync::{FlushError, GpuFuture};
 use vulkano::{swapchain, sync, VulkanLibrary};
@@ -61,7 +61,6 @@ pub trait StateCallable {
 pub struct RenderInitState {
     pub device: Arc<Device>,
     surface: Arc<Surface>,
-    caps: SurfaceCapabilities,
     image_format: Format,
     event_loop: EventLoop<()>,
     dimensions: PhysicalSize<u32>,
@@ -214,7 +213,6 @@ pub fn init_renderer() -> RenderInitState {
     RenderInitState {
         device,
         surface,
-        caps,
         image_format,
         event_loop,
         dimensions,

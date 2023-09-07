@@ -1,17 +1,12 @@
 extern crate core;
 
-use image::{DynamicImage, ImageFormat};
-use lib::scene::Material;
-use log::debug;
-use rand::distributions::{Alphanumeric, DistString};
-use std::cell::RefCell;
 use std::error::Error;
 use std::fs;
-use std::ops::Add;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
-use vulkano::memory::allocator::StandardMemoryAllocator;
+
+use image::{DynamicImage, ImageFormat};
+use log::debug;
+use rand::distributions::{Alphanumeric, DistString};
 
 pub mod gltf_loader;
 pub mod world_loader;
