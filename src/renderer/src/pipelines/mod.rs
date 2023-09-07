@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use lib::scene::Texture;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::layout::DescriptorSetLayout;
-use vulkano::descriptor_set::PersistentDescriptorSet;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::GraphicsPipeline;
 

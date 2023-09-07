@@ -1,30 +1,24 @@
 use std::cell::RefCell;
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::vec::Vec;
 
-use egui_winit_vulkano::egui::Ui;
-use egui_winit_vulkano::{egui, Gui};
-use glam::{Mat4, Vec3};
+use egui_winit_vulkano::Gui;
+use glam::Mat4;
 use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::info;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::format;
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
-use crate::gui::render_gui;
-use lib::scene::{Material, Mesh, Model, Scene, Texture};
-use lib::scene_serde::WorldSerde;
+use lib::scene::{Material, Mesh, Scene, Texture};
 use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::Dirtyable;
@@ -35,9 +29,10 @@ use renderer::{
     init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable,
     VertexInputBuffer,
 };
-use systems::io;
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
+
+use crate::gui::render_gui;
 
 fn create_buffers(
     mesh: &Mesh,

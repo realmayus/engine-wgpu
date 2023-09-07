@@ -1,18 +1,19 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::shader_types::{MaterialInfo, MeshInfo};
-use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::debug;
 use rand::Rng;
 use vulkano::buffer::Subbuffer;
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
+
+use crate::shader_types::{MaterialInfo, MeshInfo};
+use crate::Dirtyable;
 
 pub struct Texture {
     pub id: u32,
