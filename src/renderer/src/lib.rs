@@ -350,7 +350,7 @@ pub fn start_renderer(
     );
 
     let mut pipelines = vec![];
-    for mut provider in pipeline_providers.as_mut_slice() {
+    for provider in pipeline_providers.as_mut_slice() {
         let pipeline = provider.get_pipeline();
         provider.init_descriptor_sets(
             pipeline.layout().set_layouts(),

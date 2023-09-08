@@ -148,42 +148,45 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
         for mat in state.inner_state.world.materials.iter() {
             let (id, name) = { (mat.borrow().id, mat.borrow().name.clone()) };
             ui.push_id(id, |ui| {
-                ui.collapsing(String::from(name.unwrap_or_default()), |ui| {
-                    if ui.button("Update").clicked() {
-                        mat.clone().borrow_mut().set_dirty(true);
-                    }
-                    ui.label(format!("Base color factors: {}", mat.borrow().base_color));
-                    ui.label(format!(
-                        "Metallic roughness factors: {}",
-                        mat.borrow().metallic_roughness_factors
-                    ));
-                    ui.label(format!(
-                        "Emissive factors: {}",
-                        mat.borrow().emissive_factors
-                    ));
-                    ui.label(format!(
-                        "Occlusion strength: {}",
-                        mat.borrow().occlusion_strength
-                    ));
-                    ui.separator();
-                    ui.label(format!(
-                        "Base color texture: {:?}",
-                        mat.borrow().base_texture
-                    ));
-                    ui.label(format!("Normal texture: {:?}", mat.borrow().normal_texture));
-                    ui.label(format!(
-                        "Metallic roughness texture: {:?}",
-                        mat.borrow().metallic_roughness_texture
-                    ));
-                    ui.label(format!(
-                        "Emissive texture: {:?}",
-                        mat.borrow().emissive_texture
-                    ));
-                    ui.label(format!(
-                        "Occlusion texture: {:?}",
-                        mat.borrow().occlusion_texture
-                    ));
-                });
+                ui.collapsing(
+                    format!("{} (id: {})", name.unwrap_or_default(), mat.borrow().id),
+                    |ui| {
+                        if ui.button("Update").clicked() {
+                            mat.clone().borrow_mut().set_dirty(true);
+                        }
+                        ui.label(format!("Base color factors: {}", mat.borrow().base_color));
+                        ui.label(format!(
+                            "Metallic roughness factors: {}",
+                            mat.borrow().metallic_roughness_factors
+                        ));
+                        ui.label(format!(
+                            "Emissive factors: {}",
+                            mat.borrow().emissive_factors
+                        ));
+                        ui.label(format!(
+                            "Occlusion strength: {}",
+                            mat.borrow().occlusion_strength
+                        ));
+                        ui.separator();
+                        ui.label(format!(
+                            "Base color texture: {:?}",
+                            mat.borrow().base_texture
+                        ));
+                        ui.label(format!("Normal texture: {:?}", mat.borrow().normal_texture));
+                        ui.label(format!(
+                            "Metallic roughness texture: {:?}",
+                            mat.borrow().metallic_roughness_texture
+                        ));
+                        ui.label(format!(
+                            "Emissive texture: {:?}",
+                            mat.borrow().emissive_texture
+                        ));
+                        ui.label(format!(
+                            "Occlusion texture: {:?}",
+                            mat.borrow().occlusion_texture
+                        ));
+                    },
+                );
             });
         }
     });

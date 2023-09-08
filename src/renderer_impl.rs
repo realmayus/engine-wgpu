@@ -8,7 +8,6 @@ use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::info;
-use rand::distributions::uniform::SampleBorrow;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{
