@@ -1,19 +1,20 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::slice::Iter;
 use std::sync::Arc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::debug;
 use rand::Rng;
-use vulkano::buffer::Subbuffer;
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 use crate::shader_types::{MaterialInfo, MeshInfo};
-use crate::Dirtyable;
+use crate::{Dirtyable, VertexInputBuffer};
 
 pub struct Texture {
     pub id: u32,
@@ -265,6 +266,9 @@ impl Scene {
             name,
         }
     }
+    pub fn iter_meshes(&self) -> impl Iterator<Item = &Mesh> {
+        self.models.iter().flat_map(|model| model.meshes.iter())
+    }
 }
 
 impl Debug for Scene {
@@ -292,8 +296,150 @@ impl Clone for Scene {
     }
 }
 
+pub struct TextureManager {
+    textures: Vec<Rc<Texture>>,
+}
+
+impl TextureManager {
+    pub fn new() -> Self {
+        Self { textures: vec![] }
+    }
+    pub fn add_texture(&mut self, mut texture: Texture) -> u32 {
+        let id = self.textures.len();
+        texture.id = id as u32;
+        self.textures.push(Rc::from(texture));
+        id as u32
+    }
+
+    pub fn get_texture(&self, id: u32) -> Rc<Texture> {
+        self.textures[id as usize].clone()
+    }
+
+    pub fn iter(&self) -> Iter<'_, Rc<Texture>> {
+        self.textures.iter()
+    }
+}
+
+pub struct MaterialManager {
+    materials: Vec<Rc<RefCell<Material>>>,
+}
+
+impl MaterialManager {
+    pub fn new() -> Self {
+        Self { materials: vec![] }
+    }
+    pub fn add_material(&mut self, mut material: Material) -> u32 {
+        let id = self.materials.len();
+        material.id = id as u32;
+        self.materials.push(Rc::new(RefCell::new(material)));
+        id as u32
+    }
+
+    pub fn get_material(&self, id: u32) -> Rc<RefCell<Material>> {
+        self.materials[id as usize].clone()
+    }
+
+    pub fn get_default_material(&self) -> Rc<RefCell<Material>> {
+        self.materials[0].clone()
+    }
+
+    pub fn iter(&self) -> Iter<'_, Rc<RefCell<Material>>> {
+        self.materials.iter()
+    }
+}
+
 pub struct World {
     pub scenes: Vec<Scene>,
-    pub materials: HashMap<u32, Rc<RefCell<Material>>>,
-    pub textures: HashMap<u32, Rc<Texture>>,
+    pub active_scene: usize,
+    pub materials: MaterialManager,
+    pub textures: TextureManager,
+}
+
+impl World {
+    pub fn get_active_scene(&self) -> &Scene {
+        self.scenes.get(self.active_scene).unwrap()
+    }
+}
+
+pub struct DrawableVertexInputs {
+    pub vertex_buffer: VertexInputBuffer,
+    pub normal_buffer: VertexInputBuffer,
+    pub uv_buffer: VertexInputBuffer,
+    pub index_buffer: Subbuffer<[u32]>,
+}
+
+impl DrawableVertexInputs {
+    pub fn from_mesh(mesh: &Mesh, memory_allocator: &StandardMemoryAllocator) -> Self {
+        let vertex_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.vertices.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate vertex buffer");
+
+        let normal_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.vertices.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate normal buffer");
+
+        let uv_buffer: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.uvs.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate UV buffer");
+
+        let index_buffer = Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::INDEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.indices.clone(),
+        )
+        .expect("Couldn't allocate index buffer");
+
+        Self {
+            vertex_buffer: VertexInputBuffer {
+                subbuffer: vertex_buffer.into_bytes(),
+                vertex_count: mesh.vertices.len() as u32,
+            },
+            normal_buffer: VertexInputBuffer {
+                subbuffer: normal_buffer.into_bytes(),
+                vertex_count: mesh.normals.len() as u32,
+            },
+            uv_buffer: VertexInputBuffer {
+                subbuffer: uv_buffer.into_bytes(),
+                vertex_count: mesh.uvs.len() as u32,
+            },
+            index_buffer,
+        }
+    }
 }

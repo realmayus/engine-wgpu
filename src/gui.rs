@@ -7,30 +7,53 @@ use lib::scene::Model;
 use lib::Dirtyable;
 use renderer::PartialRenderState;
 
-use crate::renderer_impl::GlobalState;
+use crate::renderer_impl::{Command, DeleteModelCommand, GlobalState, UpdateModelCommand};
 
-fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4) {
+fn draw_model_collapsing(
+    ui: &mut Ui,
+    model: &Model,
+    parent_transform: Mat4,
+    commands: &mut Vec<Box<dyn Command>>,
+) {
     ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
+        if ui.button("Remove").clicked() {
+            commands.push(Box::new(DeleteModelCommand {
+                to_delete: model.id,
+            }));
+        }
         ui.label("Translation:");
+        let mut local_transform = model.local_transform;
         if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.x, -10.0..=10.0).text("X"))
+            .add(egui::Slider::new(&mut local_transform.w_axis.x, -10.0..=10.0).text("X"))
             .changed()
         {
-            model.update_transforms(parent_transform);
+            commands.push(Box::new(UpdateModelCommand {
+                to_update: model.id,
+                parent_transform,
+                local_transform,
+            }));
         }
 
         if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.y, -10.0..=10.0).text("Y"))
+            .add(egui::Slider::new(&mut local_transform.w_axis.y, -10.0..=10.0).text("Y"))
             .changed()
         {
-            model.update_transforms(parent_transform);
+            commands.push(Box::new(UpdateModelCommand {
+                to_update: model.id,
+                parent_transform,
+                local_transform,
+            }));
         }
 
         if ui
-            .add(egui::Slider::new(&mut model.local_transform.w_axis.z, -10.0..=10.0).text("Z"))
+            .add(egui::Slider::new(&mut local_transform.w_axis.z, -10.0..=10.0).text("Z"))
             .changed()
         {
-            model.update_transforms(parent_transform);
+            commands.push(Box::new(UpdateModelCommand {
+                to_update: model.id,
+                parent_transform,
+                local_transform,
+            }));
         }
 
         ui.label("Meshes:");
@@ -57,8 +80,13 @@ fn draw_model_collapsing(ui: &mut Ui, model: &mut Model, parent_transform: Mat4)
         }
         ui.separator();
         ui.label("Children:");
-        for child in model.children.as_mut_slice() {
-            draw_model_collapsing(ui, child, parent_transform * model.local_transform);
+        for child in model.children.as_slice() {
+            draw_model_collapsing(
+                ui,
+                child,
+                parent_transform * model.local_transform,
+                commands,
+            );
         }
     });
 }
@@ -93,12 +121,12 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
             }
         }
         ui.label("Loaded models:");
-        for scene in state.scenes.as_mut_slice() {
+        for scene in state.inner_state.world.scenes.as_slice() {
             ui.push_id(scene.id, |ui| {
                 ui.collapsing(String::from(scene.name.clone().unwrap_or_default()), |ui| {
                     ui.label(format!("# of models: {}", scene.models.len()));
-                    for model in scene.models.as_mut_slice() {
-                        draw_model_collapsing(ui, model, Mat4::default());
+                    for model in scene.models.as_slice() {
+                        draw_model_collapsing(ui, model, Mat4::default(), &mut state.commands);
                     }
                 });
             });
@@ -117,7 +145,7 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
     });
 
     egui::Window::new("Materials").show(&ctx, |ui| {
-        for mat in state.materials.as_slice() {
+        for mat in state.inner_state.world.materials.iter() {
             let (id, name) = { (mat.borrow().id, mat.borrow().name.clone()) };
             ui.push_id(id, |ui| {
                 ui.collapsing(String::from(name.unwrap_or_default()), |ui| {
@@ -161,7 +189,7 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
     });
 
     egui::Window::new("Textures").show(&ctx, |ui| {
-        for tex in state.textures.as_slice() {
+        for tex in state.inner_state.world.textures.iter() {
             ui.label(format!("Id: {}", tex.id));
             ui.label(format!(
                 "Name: {}",

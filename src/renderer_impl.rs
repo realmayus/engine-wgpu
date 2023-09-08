@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec::Vec;
 
@@ -9,103 +8,81 @@ use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::info;
+use rand::distributions::uniform::SampleBorrow;
 use rand::Rng;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use vulkano::command_buffer::{
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+};
 use vulkano::format;
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
-use lib::scene::{Material, Mesh, Scene, Texture};
+use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
 use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
-use lib::Dirtyable;
+use lib::{Dirtyable, VertexInputBuffer};
 use renderer::camera::Camera;
 use renderer::pipelines::line_pipeline::LinePipeline;
-use renderer::pipelines::pbr_pipeline::{DrawableVertexInputs, PBRPipeline};
-use renderer::{
-    init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable,
-    VertexInputBuffer,
-};
+use renderer::pipelines::pbr_pipeline::PBRPipeline;
+use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable};
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
 
 use crate::gui::render_gui;
 
-fn create_buffers(
-    mesh: &Mesh,
-    memory_allocator: &StandardMemoryAllocator,
-) -> (
-    Subbuffer<[[f32; 3]]>,
-    Subbuffer<[[f32; 3]]>,
-    Subbuffer<[[f32; 2]]>,
-    Subbuffer<[u32]>,
-) {
-    let vert_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.vertices.iter().map(|v| v.to_array()),
-    )
-    .expect("Couldn't allocate vertex buffer");
-
-    let normal_buf: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.vertices.iter().map(|v| v.to_array()),
-    )
-    .expect("Couldn't allocate normal buffer");
-
-    let uv_buf: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.uvs.iter().map(|v| v.to_array()),
-    )
-    .expect("Couldn't allocate UV buffer");
-
-    let index_buf = Buffer::from_iter(
-        memory_allocator,
-        BufferCreateInfo {
-            usage: BufferUsage::INDEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            usage: MemoryUsage::Upload,
-            ..Default::default()
-        },
-        mesh.indices.clone(),
-    )
-    .expect("Couldn't allocate index buffer");
-
-    (vert_buf, normal_buf, uv_buf, index_buf)
+pub(crate) struct InnerState {
+    pub(crate) world: World,
+    pub(crate) opened_file: Option<PathBuf>,
+}
+pub(crate) struct GlobalState {
+    pub(crate) inner_state: InnerState,
+    pub(crate) commands: Vec<Box<dyn Command>>,
 }
 
-pub(crate) struct GlobalState {
-    pub(crate) scenes: Vec<Scene>,
-    pub(crate) materials: Vec<Rc<RefCell<Material>>>,
-    pub(crate) textures: Vec<Rc<Texture>>,
+pub(crate) trait Command {
+    fn execute(&self, state: &mut InnerState);
+}
+
+pub(crate) struct DeleteModelCommand {
+    pub(crate) to_delete: u32,
+}
+
+impl Command for DeleteModelCommand {
+    fn execute(&self, inner_state: &mut InnerState) {
+        for scene in inner_state.world.scenes.as_mut_slice() {
+            let mut models = vec![];
+            for m in scene.models.clone() {
+                //TODO get rid of this clone
+                if m.id != self.to_delete {
+                    models.push(m);
+                    break;
+                }
+            }
+            scene.models = models;
+        }
+    }
+}
+
+pub(crate) struct UpdateModelCommand {
+    pub(crate) to_update: u32,
+    pub(crate) parent_transform: Mat4,
+    pub(crate) local_transform: Mat4,
+}
+
+impl Command for UpdateModelCommand {
+    fn execute(&self, inner_state: &mut InnerState) {
+        for scene in inner_state.world.scenes.as_mut_slice() {
+            for m in scene.models.as_mut_slice() {
+                if m.id == self.to_update {
+                    m.local_transform = self.local_transform;
+                    m.update_transforms(self.parent_transform);
+                }
+            }
+        }
+    }
 }
 
 impl StateCallable for GlobalState {
@@ -114,7 +91,12 @@ impl StateCallable for GlobalState {
     }
 
     fn update(&mut self) {
-        for scene in self.scenes.as_mut_slice() {
+        for command in self.commands.as_slice() {
+            command.execute(&mut self.inner_state);
+        }
+        self.commands.clear();
+
+        for scene in self.inner_state.world.scenes.as_mut_slice() {
             for model in scene.models.as_mut_slice() {
                 for mesh in model.meshes.as_mut_slice() {
                     if mesh.dirty() {
@@ -123,7 +105,7 @@ impl StateCallable for GlobalState {
                 }
             }
         }
-        for material in self.materials.as_slice() {
+        for material in self.inner_state.world.materials.iter() {
             let dirty = { material.borrow().dirty() };
             if dirty {
                 material.borrow_mut().update();
@@ -134,6 +116,30 @@ impl StateCallable for GlobalState {
     fn cleanup(&self) {
         info!("Cleaning up...");
         clear_run_dir();
+    }
+}
+
+fn load_default_world(
+    mut texture_manager: TextureManager,
+    mut material_manager: MaterialManager,
+    memory_allocator: &StandardMemoryAllocator,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+) -> World {
+    let cube = load_gltf(
+        PathBuf::from("assets")
+            .join("models")
+            .join("cube.glb")
+            .as_path(),
+        memory_allocator,
+        cmd_buf_builder,
+        &mut texture_manager,
+        &mut material_manager,
+    );
+    World {
+        textures: texture_manager,
+        materials: material_manager,
+        scenes: cube,
+        active_scene: 0,
     }
 }
 
@@ -153,7 +159,9 @@ pub fn start(gltf_paths: Vec<&str>) {
     )
     .unwrap();
 
-    let (default_material, default_texture) = {
+    let mut texture_manager = TextureManager::new();
+    let mut material_manager = MaterialManager::new();
+    {
         let img = image::open("assets/textures/no_texture.png")
             .expect("Couldn't load default texture")
             .to_rgba8();
@@ -172,96 +180,31 @@ pub fn start(gltf_paths: Vec<&str>) {
             &mut cmd_buf_builder,
         );
 
-        let texture = Rc::new(Texture::from(
-            tex,
-            Some(Box::from("Default texture")),
-            0,
-            path,
-        ));
+        let texture = Texture::from(tex, Some(Box::from("Default texture")), 0, path);
+        texture_manager.add_texture(texture);
 
-        (
-            Rc::new(RefCell::new(Material::from_default(
-                Some(texture.clone()),
-                Buffer::from_data(
-                    &setup_info.memory_allocator,
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        usage: MemoryUsage::Upload,
-                        ..Default::default()
-                    },
-                    MaterialInfo {
-                        base_color: [1.0, 1.0, 1.0, 1.0],
-                        base_texture: 0,
-                    },
-                )
-                .expect("Couldn't allocate MaterialInfo uniform"),
-            ))),
-            texture.clone(),
-        )
-    };
-
-    // Load scene
-    let mut scenes: Vec<Scene> = vec![];
-    let mut textures: Vec<Rc<Texture>> = vec![default_texture];
-    let mut materials: Vec<Rc<RefCell<Material>>> = vec![default_material.clone()];
-    let mut tex_i = 1; // 0 reserved for default tex, mat
-    let mut mat_i = 1;
-    for gltf_path in gltf_paths {
-        let (mut gltf_scenes, gltf_textures, gltf_materials) = load_gltf(
-            gltf_path,
-            &setup_info.memory_allocator,
-            &mut cmd_buf_builder,
-            default_material.clone(),
-            &mut tex_i,
-            &mut mat_i,
+        let material = Material::from_default(
+            Some(texture_manager.get_texture(0)),
+            Buffer::from_data(
+                &setup_info.memory_allocator,
+                BufferCreateInfo {
+                    usage: BufferUsage::STORAGE_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    usage: MemoryUsage::Upload,
+                    ..Default::default()
+                },
+                MaterialInfo {
+                    base_color: [1.0, 1.0, 1.0, 1.0],
+                    base_texture: 0,
+                },
+            )
+            .expect("Couldn't allocate MaterialInfo uniform"),
         );
-        scenes.append(&mut gltf_scenes);
-        let texture_values: Vec<Rc<Texture>> = gltf_textures
-            .into_iter()
-            .sorted_by_key(|x| x.0)
-            .map(|x| x.1)
-            .collect_vec();
 
-        textures.append(&mut texture_values.clone()); //TODO investigate if this is too performance-heavy?
-        let material_values: Vec<Rc<RefCell<Material>>> = gltf_materials
-            .into_iter()
-            .sorted_by_key(|x| x.0)
-            .map(|x| x.1)
-            .collect_vec();
-
-        materials.append(&mut material_values.clone());
-    }
-
-    let mut vertex_buffers: Vec<VertexInputBuffer> = vec![];
-    let mut normal_buffers: Vec<VertexInputBuffer> = vec![];
-    let mut uv_buffers: Vec<VertexInputBuffer> = vec![];
-    let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
-    let mut mesh_info_bufs = vec![];
-    for scene in scenes.as_slice() {
-        for model in scene.models.as_slice() {
-            for mesh in model.meshes.as_slice() {
-                let (vert_buf, normal_buf, uv_buf, index_buf) =
-                    create_buffers(mesh, &setup_info.memory_allocator);
-                vertex_buffers.push(VertexInputBuffer {
-                    subbuffer: vert_buf.into_bytes(),
-                    vertex_count: mesh.vertices.len() as u32,
-                });
-                normal_buffers.push(VertexInputBuffer {
-                    subbuffer: normal_buf.into_bytes(),
-                    vertex_count: mesh.normals.len() as u32,
-                });
-                uv_buffers.push(VertexInputBuffer {
-                    subbuffer: uv_buf.into_bytes(),
-                    vertex_count: mesh.uvs.len() as u32,
-                });
-                index_buffers.push(index_buf);
-                mesh_info_bufs.push(mesh.buffer.clone());
-            }
-        }
-    }
+        material_manager.add_material(material);
+    };
 
     let camera = Camera::new_default(
         viewport.dimensions[0],
@@ -269,15 +212,24 @@ pub fn start(gltf_paths: Vec<&str>) {
         &setup_info.memory_allocator,
     );
 
+    let world = load_default_world(
+        texture_manager,
+        material_manager,
+        &setup_info.memory_allocator,
+        &mut cmd_buf_builder,
+    );
+
     let global_state = GlobalState {
-        scenes,
-        materials,
-        textures,
+        inner_state: InnerState {
+            world,
+            opened_file: None,
+        },
+        commands: vec![],
     };
 
     let device = setup_info.device.clone();
     let render_pass = setup_info.render_pass.clone();
-    let texs = global_state.textures.iter().map(|t| {
+    let texs = global_state.inner_state.world.textures.iter().map(|t| {
         (
             t.view.clone() as Arc<dyn ImageViewAbstract>,
             Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear()).unwrap(),
@@ -285,33 +237,34 @@ pub fn start(gltf_paths: Vec<&str>) {
     });
 
     let material_info_bufs = global_state
+        .inner_state
+        .world
         .materials
-        .as_slice()
         .iter()
         .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
 
+    let mesh_info_bufs = global_state
+        .inner_state
+        .world
+        .get_active_scene()
+        .iter_meshes()
+        .map(|mesh| mesh.buffer.clone())
+        .collect_vec()
+        .into_iter();
+
     let pbr_pipeline = PBRPipeline::new(
         device.clone(),
-        vertex_buffers
-            .into_iter()
-            .zip(normal_buffers.into_iter())
-            .zip(uv_buffers.into_iter())
-            .zip(index_buffers.into_iter())
-            .map(
-                |(((vertex_buffer, normal_buffer), uv_buffer), index_buffer)| {
-                    DrawableVertexInputs {
-                        vertex_buffer,
-                        normal_buffer,
-                        uv_buffer,
-                        index_buffer,
-                    }
-                },
-            )
-            .collect(),
+        global_state
+            .inner_state
+            .world
+            .get_active_scene()
+            .iter_meshes()
+            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, &setup_info.memory_allocator))
+            .collect_vec(),
         camera.buffer.clone(),
         texs,
         material_info_bufs,
-        mesh_info_bufs.into_iter(),
+        mesh_info_bufs,
         viewport.clone(),
         render_pass.clone(),
     );

@@ -19,7 +19,7 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer
 use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
-use lib::scene::{Material, Mesh, Model, Scene, Texture};
+use lib::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
 use lib::shader_types::{MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 
@@ -236,25 +236,19 @@ fn load_image(
 }
 
 pub fn load_gltf(
-    path: &str,
+    path: &Path,
     allocator: &StandardMemoryAllocator,
     cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    default_material: Rc<RefCell<Material>>,
-    tex_i: &mut u32,
-    mat_i: &mut u32,
-) -> (
-    Vec<Scene>,
-    HashMap<usize, Rc<Texture>>,
-    HashMap<usize, Rc<RefCell<Material>>>,
-) {
+    texture_manager: &mut TextureManager,
+    material_manager: &mut MaterialManager,
+) -> Vec<Scene> {
     let (gltf, buffers, _) = gltf::import(path).unwrap(); // todo skip loading of images on gltf lib side
 
     info!("GLTF has {:?} scenes", gltf.scenes().len());
 
     let mut scenes: Vec<Scene> = vec![];
-    let mut textures: HashMap<usize, Rc<Texture>> = HashMap::new();
-    let mut materials: HashMap<usize, Rc<RefCell<Material>>> = HashMap::new();
-
+    let mut local_textures: Vec<Rc<Texture>> = vec![]; // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
+    let mut local_materials: Vec<Rc<RefCell<Material>>> = vec![]; // same thing with materials
     let mut images: HashMap<u32, (DynamicImage, u32, u32, Format, ImageFormat)> =
         HashMap::with_capacity(gltf.images().len());
     for image in gltf.images() {
@@ -303,24 +297,29 @@ pub fn load_gltf(
             allocator,
             cmd_buf_builder,
         );
-        //TODO extract image data from gltf, save it somewhere and pass path into Texture::from for serde
-        let texture = Texture::from(vk_texture, gltf_texture.name().map(Box::from), *tex_i, path);
-        *tex_i += 1;
-        textures.insert(gltf_texture.index(), Rc::from(texture));
+
+        let texture = Texture::from(
+            vk_texture,
+            gltf_texture.name().map(Box::from),
+            gltf_texture.index() as u32,
+            path,
+        );
+        let global_id = texture_manager.add_texture(texture);
+        local_textures.insert(gltf_texture.index(), texture_manager.get_texture(global_id));
     }
     for gltf_mat in gltf.materials() {
         if let Some(index) = gltf_mat.index() {
             let mat = Material {
                 dirty: true, // must get updated upon start in order to prime the uniform
-                id: *mat_i,
+                id: 0, // will get overwritten by call to MaterialManager::add_material() below
                 name: gltf_mat.name().map(Box::from),
                 base_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .base_color_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
-                        textures
-                            .get(&id)
+                        local_textures
+                            .get(id)
                             .expect("Couldn't find base texture")
                             .clone()
                     }),
@@ -330,8 +329,8 @@ pub fn load_gltf(
                     .metallic_roughness_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
-                        textures
-                            .get(&id)
+                        local_textures
+                            .get(id)
                             .expect("Couldn't find metallic roughness texture")
                             .clone()
                     }),
@@ -343,8 +342,8 @@ pub fn load_gltf(
                     .normal_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
-                        textures
-                            .get(&id)
+                        local_textures
+                            .get(id)
                             .expect("Couldn't find normal texture")
                             .clone()
                     }),
@@ -352,8 +351,8 @@ pub fn load_gltf(
                     .occlusion_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
-                        textures
-                            .get(&id)
+                        local_textures
+                            .get(id)
                             .expect("Couldn't find occlusion texture")
                             .clone()
                     }),
@@ -362,8 +361,8 @@ pub fn load_gltf(
                     .emissive_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
-                        textures
-                            .get(&id)
+                        local_textures
+                            .get(id)
                             .expect("Couldn't find emissive texture")
                             .clone()
                     }),
@@ -382,8 +381,8 @@ pub fn load_gltf(
                 )
                 .expect("Couldn't allocate MaterialInfo uniform"),
             };
-            *mat_i += 1;
-            materials.insert(index, Rc::new(RefCell::new(mat)));
+            let global_id = material_manager.add_material(mat);
+            local_materials.insert(index, material_manager.get_material(global_id));
         }
     }
 
@@ -396,23 +395,22 @@ pub fn load_gltf(
                 load_node(
                     &n,
                     &buffers,
-                    &materials,
+                    &local_materials,
                     allocator,
-                    default_material.clone(),
+                    material_manager.get_default_material(),
                     Mat4::default(),
                 )
             })
             .collect();
         scenes.push(Scene::from(models, scene.name().map(Box::from)));
     }
-
-    (scenes, textures, materials)
+    scenes
 }
 
 fn load_node(
     node: &Node,
     buffers: &Vec<Data>,
-    materials: &HashMap<usize, Rc<RefCell<Material>>>,
+    materials: &Vec<Rc<RefCell<Material>>>,
     allocator: &StandardMemoryAllocator,
     default_material: Rc<RefCell<Material>>,
     parent_transform: Mat4,
@@ -433,55 +431,52 @@ fn load_node(
     global_transform.y_axis *= -1.0;
 
     let mut meshes: Vec<Mesh> = vec![];
-    match node.mesh() {
-        Some(x) => {
-            for gltf_primitive in x.primitives() {
-                let mut positions: Vec<Vec3> = vec![];
-                let mut indices: Vec<u32> = vec![];
-                let mut normals: Vec<Vec3> = vec![];
-                let mut uvs: Vec<Vec2> = vec![];
-                let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-                if let Some(iter) = reader.read_tex_coords(0) {
-                    uvs = iter.into_f32().map(|arr| Vec2::from(arr)).collect();
-                }
-                if let Some(iter) = reader.read_positions() {
-                    positions = iter.map(|p| Vec3::from(p)).collect();
-                }
-                if let Some(iter) = reader.read_indices() {
-                    indices = iter.into_u32().collect();
-                }
-                if let Some(iter) = reader.read_normals() {
-                    normals = iter.map(|n| Vec3::from(n)).collect();
-                }
-
-                let mat = gltf_primitive
-                    .material()
-                    .index()
-                    .map(|i| materials.get(&i).expect("Couldn't find material").clone());
-                meshes.push(Mesh::from(
-                    positions,
-                    indices,
-                    normals,
-                    mat.unwrap_or(default_material.clone()),
-                    uvs,
-                    global_transform,
-                    Buffer::from_data(
-                        allocator,
-                        BufferCreateInfo {
-                            usage: BufferUsage::STORAGE_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            usage: MemoryUsage::Upload,
-                            ..Default::default()
-                        },
-                        MeshInfo::default(),
-                    )
-                    .expect("Couldn't allocate MeshInfo uniform"),
-                ));
+    if let Some(x) = node.mesh() {
+        for gltf_primitive in x.primitives() {
+            let mut positions: Vec<Vec3> = vec![];
+            let mut indices: Vec<u32> = vec![];
+            let mut normals: Vec<Vec3> = vec![];
+            let mut uvs: Vec<Vec2> = vec![];
+            let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+            if let Some(iter) = reader.read_tex_coords(0) {
+                uvs = iter.into_f32().map(|arr| Vec2::from(arr)).collect();
             }
+            if let Some(iter) = reader.read_positions() {
+                positions = iter.map(|p| Vec3::from(p)).collect();
+            }
+            if let Some(iter) = reader.read_indices() {
+                indices = iter.into_u32().collect();
+            }
+            if let Some(iter) = reader.read_normals() {
+                normals = iter.map(|n| Vec3::from(n)).collect();
+            }
+
+            let mat = gltf_primitive
+                .material()
+                .index()
+                .map(|i| materials.get(i).expect("Couldn't find material").clone());
+            meshes.push(Mesh::from(
+                positions,
+                indices,
+                normals,
+                mat.unwrap_or(default_material.clone()),
+                uvs,
+                global_transform,
+                Buffer::from_data(
+                    allocator,
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        usage: MemoryUsage::Upload,
+                        ..Default::default()
+                    },
+                    MeshInfo::default(),
+                )
+                .expect("Couldn't allocate MeshInfo uniform"),
+            ));
         }
-        _ => {}
     }
     Model::from(
         meshes,

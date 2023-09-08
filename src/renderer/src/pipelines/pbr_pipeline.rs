@@ -16,10 +16,10 @@ use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
+use lib::scene::DrawableVertexInputs;
 use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
 
 use crate::pipelines::PipelineProvider;
-use crate::VertexInputBuffer;
 
 mod vs {
     vulkano_shaders::shader! {
@@ -35,20 +35,13 @@ mod fs {
     }
 }
 
-pub struct DrawableVertexInputs {
-    pub vertex_buffer: VertexInputBuffer,
-    pub normal_buffer: VertexInputBuffer,
-    pub uv_buffer: VertexInputBuffer,
-    pub index_buffer: Subbuffer<[u32]>,
-}
-
 /**
 Pipeline for physically-based rendering
 */
 pub struct PBRPipeline {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    drawables: Vec<DrawableVertexInputs>,
+    cached_vertex_input_buffers: Vec<DrawableVertexInputs>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
@@ -105,7 +98,7 @@ impl PBRPipeline {
         Self {
             vs,
             fs,
-            drawables,
+            cached_vertex_input_buffers: drawables,
             write_descriptor_sets,
             descriptor_sets: vec![],
             viewport,
@@ -120,7 +113,7 @@ impl PBRPipeline {
     }
 
     fn update_drawables(&mut self, f: Box<dyn Fn(&mut Vec<DrawableVertexInputs>)>) {
-        f(&mut self.drawables)
+        f(&mut self.cached_vertex_input_buffers)
     }
 
     fn update_descriptor_set(
@@ -200,24 +193,18 @@ impl PipelineProvider for PBRPipeline {
                 self.descriptor_sets[i].clone(),
             );
         }
-        for i in 0..self.drawables.len() {
+        for (i, vertex_input) in self.cached_vertex_input_buffers.iter().enumerate() {
             builder
                 .bind_vertex_buffers(
                     0,
                     (
-                        self.drawables[i].vertex_buffer.subbuffer.clone(),
-                        self.drawables[i].normal_buffer.subbuffer.clone(),
-                        self.drawables[i].uv_buffer.subbuffer.clone(),
+                        vertex_input.vertex_buffer.subbuffer.clone(),
+                        vertex_input.normal_buffer.subbuffer.clone(),
+                        vertex_input.uv_buffer.subbuffer.clone(),
                     ),
                 )
-                .bind_index_buffer(self.drawables[i].index_buffer.clone())
-                .draw_indexed(
-                    self.drawables[i].index_buffer.len() as u32,
-                    1,
-                    0,
-                    0,
-                    i as u32,
-                )
+                .bind_index_buffer(vertex_input.index_buffer.clone())
+                .draw_indexed(vertex_input.index_buffer.len() as u32, 1, 0, 0, i as u32)
                 .unwrap();
         }
     }

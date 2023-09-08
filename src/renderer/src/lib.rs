@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
 use log::{debug, error, info};
-use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
@@ -46,11 +45,6 @@ use crate::pipelines::PipelineProvider;
 
 pub mod camera;
 pub mod pipelines;
-
-pub struct VertexInputBuffer {
-    pub subbuffer: Subbuffer<[u8]>,
-    pub vertex_count: u32,
-}
 
 pub trait StateCallable {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
