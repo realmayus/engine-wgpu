@@ -23,7 +23,7 @@ use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline, Pipeline};
+use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{
     AcquireError, CompositeAlpha, Surface, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
@@ -41,14 +41,14 @@ use winit::window::WindowBuilder;
 use lib::Dirtyable;
 
 use crate::camera::Camera;
-use crate::pipelines::PipelineProvider;
+use crate::pipelines::{PipelineProvider, PipelineProviderKind};
 
 pub mod camera;
 pub mod pipelines;
 
 pub trait StateCallable {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
-    fn update(&mut self);
+    fn update(&mut self, pipeline_providers: &mut [PipelineProviderKind]);
     fn cleanup(&self);
 }
 
@@ -276,8 +276,7 @@ fn get_finalized_render_passes(
     framebuffers: Vec<Arc<Framebuffer>>,
     cmd_buf_allocator: &StandardCommandBufferAllocator,
     queue_family_index: u32,
-    pipeline_providers: &mut [Box<dyn PipelineProvider>],
-    pipelines: Vec<Arc<GraphicsPipeline>>,
+    pipeline_providers: &mut [PipelineProviderKind],
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -299,8 +298,8 @@ fn get_finalized_render_passes(
                 )
                 .unwrap();
 
-            for i in 0..pipeline_providers.len() {
-                pipeline_providers[i].render_pass(&mut builder, pipelines[i].clone());
+            for pipeline_provider in &mut *pipeline_providers {
+                pipeline_provider.render_pass(&mut builder);
             }
 
             builder.end_render_pass().unwrap();
@@ -323,7 +322,7 @@ pub struct PartialRenderState<'a> {
 
 pub fn start_renderer(
     mut state: RenderState,
-    mut pipeline_providers: Vec<Box<dyn PipelineProvider + 'static>>,
+    mut pipeline_providers: Vec<PipelineProviderKind>,
     mut callable: impl StateCallable + 'static,
 ) {
     info!(
@@ -349,21 +348,15 @@ pub fn start_renderer(
         depth_buffer,
     );
 
-    let mut pipelines = vec![];
     for provider in pipeline_providers.as_mut_slice() {
-        let pipeline = provider.get_pipeline();
-        provider.init_descriptor_sets(
-            pipeline.layout().set_layouts(),
-            &state.init_state.descriptor_set_allocator,
-        );
-        pipelines.push(pipeline);
+        provider.create_pipeline();
+        provider.init_descriptor_sets(&state.init_state.descriptor_set_allocator);
     }
     let mut command_buffers = get_finalized_render_passes(
         framebuffers,
         &state.init_state.cmd_buf_allocator,
         state.init_state.queue.queue_family_index(),
         pipeline_providers.as_mut_slice(),
-        pipelines,
     );
 
     let mut window_resized = false;
@@ -524,22 +517,16 @@ pub fn start_renderer(
                     window_resized = false;
 
                     state.viewport.dimensions = new_dimensions.into();
-                    let mut new_pipelines = vec![];
                     for mut provider in pipeline_providers.as_mut_slice() {
-                        let pipeline = provider.get_pipeline();
-                        provider.init_descriptor_sets(
-                            pipeline.layout().set_layouts(),
-                            &state.init_state.descriptor_set_allocator,
-                        );
+                        provider.create_pipeline();
+                        provider.init_descriptor_sets(&state.init_state.descriptor_set_allocator);
                         provider.set_viewport(state.viewport.clone());
-                        new_pipelines.push(pipeline);
                     }
                     command_buffers = get_finalized_render_passes(
                         new_framebuffers.clone(),
                         &state.init_state.cmd_buf_allocator,
                         state.init_state.queue.queue_family_index(),
                         pipeline_providers.as_mut_slice(),
-                        new_pipelines,
                     );
                     state
                         .camera
@@ -573,7 +560,7 @@ pub fn start_renderer(
             }
             acquire_future.wait(None).unwrap();
             state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
-            callable.update();
+            callable.update(pipeline_providers.as_mut_slice());
             let main_drawings = sync::now(state.init_state.device.clone())
                 .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                 .then_execute(

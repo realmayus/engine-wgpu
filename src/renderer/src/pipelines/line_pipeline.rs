@@ -3,7 +3,6 @@ use std::sync::Arc;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::layout::DescriptorSetLayout;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::ImageViewAbstract;
@@ -37,7 +36,7 @@ mod fs {
 /**
 Pipeline for drawing lines in 3D space, e.g. for axes
  */
-pub struct LinePipeline {
+pub struct LinePipelineProvider {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     vertex_buffers: Vec<VertexInputBuffer>,
@@ -47,9 +46,10 @@ pub struct LinePipeline {
     render_pass: Arc<RenderPass>,
     device: Arc<Device>,
     vertex_input_state: Vec<VertexBufferDescription>,
+    pipeline: Option<Arc<GraphicsPipeline>>,
 }
 
-impl LinePipeline {
+impl LinePipelineProvider {
     pub fn new(
         device: Arc<Device>,
         vertex_buffers: Vec<VertexInputBuffer>,
@@ -88,44 +88,53 @@ impl LinePipeline {
             render_pass,
             device,
             vertex_input_state: vec![MyVertex::per_vertex()],
+            pipeline: None,
         }
     }
 }
 
-impl PipelineProvider for LinePipeline {
-    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
-        GraphicsPipeline::start()
-            .vertex_input_state(self.vertex_input_state.clone()) // describes layout of vertex input
-            .vertex_shader(self.vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-            .input_assembly_state(InputAssemblyState::new().topology(PrimitiveTopology::LineList)) //Indicate type of primitives (default is list of triangles)
-            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([self
-                .viewport
-                .clone()])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
-            .fragment_shader(self.fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
-            .depth_stencil_state(DepthStencilState::simple_depth_test())
-            .render_pass(Subpass::from(self.render_pass.clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
-            .with_auto_layout(self.device.clone(), |x| {
-                let binding = x[1].bindings.get_mut(&0).unwrap();
-                binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128;
-            })
-            .unwrap()
+impl PipelineProvider for LinePipelineProvider {
+    fn create_pipeline(&mut self) {
+        self.pipeline = Some(
+            GraphicsPipeline::start()
+                .vertex_input_state(self.vertex_input_state.clone()) // describes layout of vertex input
+                .vertex_shader(self.vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
+                .input_assembly_state(
+                    InputAssemblyState::new().topology(PrimitiveTopology::LineList),
+                ) //Indicate type of primitives (default is list of triangles)
+                .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([self
+                    .viewport
+                    .clone()])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
+                .fragment_shader(self.fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
+                .depth_stencil_state(DepthStencilState::simple_depth_test())
+                .render_pass(Subpass::from(self.render_pass.clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
+                .with_auto_layout(self.device.clone(), |x| {
+                    let binding = x[1].bindings.get_mut(&0).unwrap();
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128;
+                })
+                .unwrap(),
+        );
     }
 
     fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
     }
 
-    fn init_descriptor_sets(
-        &mut self,
-        set_layouts: &[Arc<DescriptorSetLayout>],
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) {
+    fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator) {
         let mut temp = vec![];
         std::mem::swap(&mut self.write_descriptor_sets, &mut temp);
 
         for (i, (var_count, write_desc_set)) in temp.into_iter().enumerate() {
-            let descriptor_set_layout = set_layouts.get(i).unwrap().clone();
+            let descriptor_set_layout = self
+                .pipeline
+                .clone()
+                .unwrap()
+                .layout()
+                .set_layouts()
+                .get(i)
+                .unwrap()
+                .clone();
             self.descriptor_sets.push(
                 PersistentDescriptorSet::new_variable(
                     descriptor_set_allocator,
@@ -138,17 +147,13 @@ impl PipelineProvider for LinePipeline {
         }
     }
 
-    fn render_pass(
-        &self,
-        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        pipeline: Arc<GraphicsPipeline>,
-    ) {
-        builder.bind_pipeline_graphics(pipeline.clone());
+    fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
+        builder.bind_pipeline_graphics(self.pipeline.clone().unwrap().clone());
 
         for i in 0..self.descriptor_sets.len() {
             builder.bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                pipeline.layout().clone(),
+                self.pipeline.clone().unwrap().layout().clone(),
                 i as u32,
                 self.descriptor_sets[i].clone(),
             );

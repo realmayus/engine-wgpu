@@ -24,8 +24,9 @@ use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::{Dirtyable, VertexInputBuffer};
 use renderer::camera::Camera;
-use renderer::pipelines::line_pipeline::LinePipeline;
-use renderer::pipelines::pbr_pipeline::PBRPipeline;
+use renderer::pipelines::line_pipeline::LinePipelineProvider;
+use renderer::pipelines::pbr_pipeline::PBRPipelineProvider;
+use renderer::pipelines::PipelineProviderKind;
 use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable};
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
@@ -42,7 +43,7 @@ pub(crate) struct GlobalState {
 }
 
 pub(crate) trait Command {
-    fn execute(&self, state: &mut InnerState);
+    fn execute(&self, state: &mut InnerState, pipeline_providers: &mut [PipelineProviderKind]);
 }
 
 pub(crate) struct DeleteModelCommand {
@@ -50,8 +51,8 @@ pub(crate) struct DeleteModelCommand {
 }
 
 impl Command for DeleteModelCommand {
-    fn execute(&self, inner_state: &mut InnerState) {
-        for scene in inner_state.world.scenes.as_mut_slice() {
+    fn execute(&self, state: &mut InnerState, pipeline_providers: &mut [PipelineProviderKind]) {
+        for scene in state.world.scenes.as_mut_slice() {
             let mut models = vec![];
             for m in scene.models.clone() {
                 //TODO get rid of this clone
@@ -62,6 +63,7 @@ impl Command for DeleteModelCommand {
             }
             scene.models = models;
         }
+        for pipeline_provider in pipeline_providers {}
     }
 }
 
@@ -72,8 +74,8 @@ pub(crate) struct UpdateModelCommand {
 }
 
 impl Command for UpdateModelCommand {
-    fn execute(&self, inner_state: &mut InnerState) {
-        for scene in inner_state.world.scenes.as_mut_slice() {
+    fn execute(&self, state: &mut InnerState, pipeline_providers: &mut [PipelineProviderKind]) {
+        for scene in state.world.scenes.as_mut_slice() {
             for m in scene.models.as_mut_slice() {
                 if m.id == self.to_update {
                     m.local_transform = self.local_transform;
@@ -89,9 +91,9 @@ impl StateCallable for GlobalState {
         render_gui(gui, render_state, self);
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, pipeline_providers: &mut [PipelineProviderKind]) {
         for command in self.commands.as_slice() {
-            command.execute(&mut self.inner_state);
+            command.execute(&mut self.inner_state, pipeline_providers);
         }
         self.commands.clear();
 
@@ -251,7 +253,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         .collect_vec()
         .into_iter();
 
-    let pbr_pipeline = PBRPipeline::new(
+    let pbr_pipeline = PBRPipelineProvider::new(
         device.clone(),
         global_state
             .inner_state
@@ -319,7 +321,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         .into_bytes()
     });
 
-    let line_pipeline = LinePipeline::new(
+    let line_pipeline = LinePipelineProvider::new(
         device.clone(),
         line_vertex_buffers,
         camera.buffer.clone(),
@@ -335,7 +337,10 @@ pub fn start(gltf_paths: Vec<&str>) {
             cmd_buf_builder,
             camera,
         },
-        vec![Box::from(pbr_pipeline), Box::from(line_pipeline)],
+        vec![
+            PipelineProviderKind::PBR(pbr_pipeline),
+            PipelineProviderKind::LINE(line_pipeline),
+        ],
         global_state,
     );
 }
