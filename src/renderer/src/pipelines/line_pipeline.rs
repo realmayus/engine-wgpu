@@ -165,4 +165,8 @@ impl PipelineProvider for LinePipelineProvider {
                 .unwrap();
         }
     }
+
+    fn must_recreate_render_passes(&mut self) -> bool {
+        false
+    }
 }

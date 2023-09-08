@@ -13,6 +13,8 @@ pub trait PipelineProvider {
     fn set_viewport(&mut self, viewport: Viewport);
     fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator);
     fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>);
+
+    fn must_recreate_render_passes(&mut self) -> bool;
 }
 
 pub enum PipelineProviderKind {
@@ -51,5 +53,19 @@ impl PipelineProvider for PipelineProviderKind {
             PipelineProviderKind::LINE(line_pipeline) => line_pipeline.render_pass(builder),
             PipelineProviderKind::PBR(pbr_pipeline) => pbr_pipeline.render_pass(builder),
         }
+    }
+
+    fn must_recreate_render_passes(&mut self) -> bool {
+        let mut result = false;
+        match self {
+            PipelineProviderKind::LINE(line_pipeline) => {
+                result = line_pipeline.must_recreate_render_passes(); // TODO set recreate_render_passes to false if line pipeline ever allows updating
+            }
+            PipelineProviderKind::PBR(pbr_pipeline) => {
+                result = pbr_pipeline.must_recreate_render_passes();
+                pbr_pipeline.recreate_render_passes = false;
+            }
+        };
+        result
     }
 }

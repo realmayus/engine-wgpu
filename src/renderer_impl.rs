@@ -43,7 +43,12 @@ pub(crate) struct GlobalState {
 }
 
 pub(crate) trait Command {
-    fn execute(&self, state: &mut InnerState, pipeline_providers: &mut [PipelineProviderKind]);
+    fn execute(
+        &self,
+        state: &mut InnerState,
+        pipeline_providers: &mut [PipelineProviderKind],
+        allocator: &StandardMemoryAllocator,
+    );
 }
 
 pub(crate) struct DeleteModelCommand {
@@ -51,7 +56,12 @@ pub(crate) struct DeleteModelCommand {
 }
 
 impl Command for DeleteModelCommand {
-    fn execute(&self, state: &mut InnerState, pipeline_providers: &mut [PipelineProviderKind]) {
+    fn execute(
+        &self,
+        state: &mut InnerState,
+        pipeline_providers: &mut [PipelineProviderKind],
+        allocator: &StandardMemoryAllocator,
+    ) {
         for scene in state.world.scenes.as_mut_slice() {
             let mut models = vec![];
             for m in scene.models.clone() {
@@ -63,7 +73,23 @@ impl Command for DeleteModelCommand {
             }
             scene.models = models;
         }
-        for pipeline_provider in pipeline_providers {}
+        for pipeline_provider in pipeline_providers {
+            //TODO don't assume there's only one instance of a provider
+            match pipeline_provider {
+                PipelineProviderKind::LINE(_) => {}
+                PipelineProviderKind::PBR(pbr) => {
+                    pbr.update_drawables(
+                        state
+                            .world
+                            .get_active_scene()
+                            .iter_meshes()
+                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
+                            .collect_vec(),
+                    );
+                    pbr.recreate_render_passes = true;
+                }
+            }
+        }
     }
 }
 
@@ -74,7 +100,12 @@ pub(crate) struct UpdateModelCommand {
 }
 
 impl Command for UpdateModelCommand {
-    fn execute(&self, state: &mut InnerState, pipeline_providers: &mut [PipelineProviderKind]) {
+    fn execute(
+        &self,
+        state: &mut InnerState,
+        pipeline_providers: &mut [PipelineProviderKind],
+        allocator: &StandardMemoryAllocator,
+    ) {
         for scene in state.world.scenes.as_mut_slice() {
             for m in scene.models.as_mut_slice() {
                 if m.id == self.to_update {
@@ -91,9 +122,13 @@ impl StateCallable for GlobalState {
         render_gui(gui, render_state, self);
     }
 
-    fn update(&mut self, pipeline_providers: &mut [PipelineProviderKind]) {
+    fn update(
+        &mut self,
+        pipeline_providers: &mut [PipelineProviderKind],
+        allocator: &StandardMemoryAllocator,
+    ) {
         for command in self.commands.as_slice() {
-            command.execute(&mut self.inner_state, pipeline_providers);
+            command.execute(&mut self.inner_state, pipeline_providers, allocator);
         }
         self.commands.clear();
 

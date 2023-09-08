@@ -48,7 +48,11 @@ pub mod pipelines;
 
 pub trait StateCallable {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
-    fn update(&mut self, pipeline_providers: &mut [PipelineProviderKind]);
+    fn update(
+        &mut self,
+        pipeline_providers: &mut [PipelineProviderKind],
+        allocator: &StandardMemoryAllocator,
+    );
     fn cleanup(&self);
 }
 
@@ -359,7 +363,7 @@ pub fn start_renderer(
         pipeline_providers.as_mut_slice(),
     );
 
-    let mut window_resized = false;
+    let mut recreate_render_passes = false;
     let mut recreate_swapchain = false;
 
     let cmd_buf = state.cmd_buf_builder.build().unwrap();
@@ -402,7 +406,7 @@ pub fn start_renderer(
             event: WindowEvent::Resized(_),
             ..
         } => {
-            window_resized = true;
+            recreate_render_passes = true;
         }
         Event::WindowEvent {
             event:
@@ -476,11 +480,11 @@ pub fn start_renderer(
         }
         Event::RedrawEventsCleared => {
             // TODO: Optimization: Implement Frames in Flight
-            if window_resized || recreate_swapchain {
+            if recreate_render_passes || recreate_swapchain {
                 recreate_swapchain = false;
                 info!(
                     "Partial reinitialization due to {}",
-                    if (window_resized) {
+                    if (recreate_render_passes) {
                         "window resize"
                     } else {
                         "request to recreate swapchain"
@@ -513,8 +517,8 @@ pub fn start_renderer(
                     depth_buffer.clone(),
                 );
                 image_views = new_image_views;
-                if window_resized {
-                    window_resized = false;
+                if recreate_render_passes {
+                    recreate_render_passes = false;
 
                     state.viewport.dimensions = new_dimensions.into();
                     for mut provider in pipeline_providers.as_mut_slice() {
@@ -560,7 +564,15 @@ pub fn start_renderer(
             }
             acquire_future.wait(None).unwrap();
             state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
-            callable.update(pipeline_providers.as_mut_slice());
+            callable.update(
+                pipeline_providers.as_mut_slice(),
+                &state.init_state.memory_allocator,
+            );
+            for provider in pipeline_providers.as_mut_slice() {
+                recreate_render_passes =
+                    recreate_render_passes || provider.must_recreate_render_passes()
+            }
+
             let main_drawings = sync::now(state.init_state.device.clone())
                 .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                 .then_execute(

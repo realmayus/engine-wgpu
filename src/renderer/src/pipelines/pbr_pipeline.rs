@@ -48,6 +48,7 @@ pub struct PBRPipelineProvider {
     device: Arc<Device>,
     vertex_input_state: Vec<VertexBufferDescription>,
     pipeline: Option<Arc<GraphicsPipeline>>,
+    pub recreate_render_passes: bool,
 }
 
 impl PBRPipelineProvider {
@@ -111,14 +112,15 @@ impl PBRPipelineProvider {
                 MyUV::per_vertex(),
             ],
             pipeline: None,
+            recreate_render_passes: false,
         }
     }
 
-    fn update_drawables(&mut self, f: Box<dyn Fn(&mut Vec<DrawableVertexInputs>)>) {
-        f(&mut self.cached_vertex_input_buffers)
+    pub fn update_drawables(&mut self, new_inputs: Vec<DrawableVertexInputs>) {
+        self.cached_vertex_input_buffers = new_inputs;
     }
 
-    fn update_descriptor_set(
+    pub fn update_descriptor_set(
         &mut self,
         descriptor_set_id: u32,
         f: Box<dyn Fn() -> Arc<PersistentDescriptorSet>>,
@@ -212,5 +214,9 @@ impl PipelineProvider for PBRPipelineProvider {
                 .draw_indexed(vertex_input.index_buffer.len() as u32, 1, 0, 0, i as u32)
                 .unwrap();
         }
+    }
+
+    fn must_recreate_render_passes(&mut self) -> bool {
+        self.recreate_render_passes
     }
 }
