@@ -25,10 +25,12 @@ use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::{Dirtyable, VertexInputBuffer};
 use renderer::camera::Camera;
+use renderer::initialization::init_renderer;
 use renderer::pipelines::line_pipeline::LinePipelineProvider;
 use renderer::pipelines::pbr_pipeline::PBRPipelineProvider;
 use renderer::pipelines::PipelineProviderKind;
-use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, StateCallable};
+use renderer::render_loop::start_renderer;
+use renderer::{PartialRenderState, RenderState, StateCallable};
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
 
