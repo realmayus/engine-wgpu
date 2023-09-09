@@ -18,7 +18,7 @@ use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
-use vulkano::render_pass::{Framebuffer, RenderPass, Subpass};
+use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 use vulkano::DeviceSize;
@@ -104,7 +104,6 @@ impl PBRPipeline {
             ),
             ({
                 let m_len = mesh_info_buffers.len() as u32;
-                let l_len = light_buffer.len() as u32;
                 (
                     m_len,
                     vec![
@@ -122,6 +121,7 @@ impl PBRPipeline {
                     WriteDescriptorSet::buffer_array(0, 0, light_buffer),
                 ],
             ),
+            // (0, vec![WriteDescriptorSet::buffer(0, light_buffer.0)]),
         ];
 
         Self {
@@ -168,7 +168,7 @@ impl PipelineProvider for PBRPipeline {
                 // textures
                 let binding = x[1].bindings.get_mut(&0).unwrap();
                 binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
+                binding.descriptor_count = 128; // TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
                 // material info
                 let binding = x[2].bindings.get_mut(&0).unwrap();

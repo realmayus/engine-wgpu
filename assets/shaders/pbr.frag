@@ -12,9 +12,9 @@ layout(location = 0) out vec4 frag_color;
 layout(set = 1, binding = 0) uniform sampler2D[] texs;
 
 struct MUStruct {
-    vec4 base_color;
+    vec4 albedo;
     vec2 metal_roughness_factors;
-    uint base_texture;
+    uint albedo_texture;
     uint metal_roughness_texture;
     vec3 emission_factors;
     uint emission_texture;
@@ -40,9 +40,12 @@ struct Light {
     float range;
 };
 
+//layout(set = 5, binding = 0) buffer LightCount {
+//    uint light_count;
+//};
 layout(set = 4, binding = 0) buffer LightInfo {
-    Light lights[];
-};
+    Light light;
+} lights[];
 
 const float PI = 3.14159265359;
 vec3 fresnel(float cosTheta, vec3 F0);
@@ -55,7 +58,7 @@ void main() {
     MUStruct material = materials[mat_id].mat;
 
     // load material values, if index 0, value will be 1 because of white default texture
-    vec4 albedo = texture(nonuniformEXT(texs[material.base_texture]), tex_coords);
+    vec4 albedo = texture(nonuniformEXT(texs[material.albedo_texture]), tex_coords) * material.albedo;
     vec3 normal = texture(nonuniformEXT(texs[material.normal_texture]), tex_coords).rgb;
     // transform normal vector from [0,1] to range [-1,1]
     normal = normalize(normal * 2.0 - 1.0);  // this normal is in tangent space
@@ -77,17 +80,19 @@ void main() {
     F0 = mix(F0, albedo.rgb, metallic);
 
     vec3 Lo = vec3(0.0);
-    // contribution of each light,
-    for (int i = 0; i < 1; i++) {
-        Light light = lights[i];
+    // this sucks if lights.len() == 0
+    uint light_amount = lights[0].light.amount;
+    // contribution of each light
+    for (int i = 0; i < light_amount; i++) {
+        Light light = lights[i].light;
         // convert to tangent space
-        vec3 lightPos_tan = TBN * light.transform[3].xyz;
+        vec3 lightPos_tan = TBN * (light.transform[3]).xyz;
         vec3 light_dir = normalize(lightPos_tan - fragPos_tan);
         vec3 half_vec = normalize(view_dir + light_dir); // \|/
 
         float dist = length(lightPos_tan - fragPos_tan);
         float attenuation = 1.0 / (dist * dist);
-        vec3 radiance = light.color * attenuation;
+        vec3 radiance = light.color * 5. * attenuation;
 
         // Fresnel equation F of DFG which is the specular part of BRDF
         vec3 reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), F0);
@@ -107,6 +112,7 @@ void main() {
 
         float normal_dot_light = max(dot(normal, light_dir), 0.0);
         Lo += (k_diffuse * albedo.rgb / PI + specular) * radiance * normal_dot_light;
+        //frag_color = vec4(specular, 1.0);
     }
 
     vec3 ambient = vec3(0.001) * albedo.rgb * ao;
@@ -117,7 +123,7 @@ void main() {
     // gamma correction
     color = pow(color, vec3(1.0/2.2));
 
-    frag_color = vec4(color, albedo.a);
+    frag_color = vec4(color, 1.0);
 }
 
 // Fresnel-Schlick approximation

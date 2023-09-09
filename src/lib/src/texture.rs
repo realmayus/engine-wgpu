@@ -7,6 +7,7 @@ use vulkano::image::view::ImageView;
 use vulkano::image::{ImageDimensions, ImmutableImage, MipmapsCount};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
+/// Creates an ImageView for an ImmutableImage
 pub fn create_texture(
     pixels: Vec<u8>,
     format: format::Format,

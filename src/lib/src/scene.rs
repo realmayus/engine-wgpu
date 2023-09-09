@@ -212,6 +212,8 @@ pub struct PointLight {
     pub intensity: f32,
     pub range: Option<f32>,
     pub buffer: Subbuffer<LightInfo>,
+    // TODO pass as set but fuck that right now
+    pub amount: u32,
 }
 impl Dirtyable for PointLight {
     fn dirty(&self) -> bool {
@@ -230,6 +232,7 @@ impl Dirtyable for PointLight {
         mapping.color = self.color.to_array();
         mapping.light = self.index as u32;
         mapping.intensity = self.intensity;
+        mapping.amount = self.amount;
         mapping.range = self.range.unwrap_or(1.0);
     }
 }

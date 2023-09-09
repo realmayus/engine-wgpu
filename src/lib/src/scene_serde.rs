@@ -213,6 +213,7 @@ pub struct PointLightSerde {
     pub color: Vec3,
     pub intensity: f32,
     pub range: Option<f32>,
+    pub amount: u32,
 }
 
 impl From<PointLight> for PointLightSerde {
@@ -223,6 +224,7 @@ impl From<PointLight> for PointLightSerde {
             color: value.color,
             intensity: value.intensity,
             range: value.range,
+            amount: value.amount,
         }
     }
 }
@@ -236,6 +238,7 @@ impl PointLight {
             color: value.color,
             intensity: value.intensity,
             range: value.range,
+            amount: value.amount,
             buffer: Buffer::from_data(
                 allocator,
                 BufferCreateInfo {
