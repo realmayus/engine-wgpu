@@ -1,8 +1,9 @@
 use glam::{Mat4, Vec3, Vec4};
-use lib::shader_types::CameraUniform;
 use log::debug;
-use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+
+use lib::shader_types::CameraUniform;
 
 pub struct Camera {
     pub eye: Vec3,
