@@ -488,7 +488,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     let mut tex_i = 2; // 0 reserved for default texture, 1 reserved for default normal texture
     let mut mat_i = 1;
     for gltf_path in gltf_paths {
-        let (mut gltf_scenes, gltf_textures, gltf_materials) = load_gltf(
+        let (mut gltf_scenes, gltf_textures, gltf_materials, exr) = load_gltf(
             gltf_path,
             &setup_info.memory_allocator,
             &mut cmd_buf_builder,
@@ -582,7 +582,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         .materials
         .as_slice()
         .iter()
-        .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); //TODO so many clones!
+        .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); // TODO so many clones!
 
     println!("# of materialUniforms: {}", material_info_bufs.len());
 

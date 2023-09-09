@@ -162,8 +162,7 @@ impl LightInfo {
 
 #[derive(BufferContents, Debug, Default)]
 #[repr(C)]
-pub struct Info2D {
+pub struct LineInfo {
     pub model_transform: [[f32; 4]; 4],
     pub color: [f32; 4],
-    pub texture: u32,
 }
