@@ -4,10 +4,13 @@ use glam::Mat4;
 use log::info;
 
 use lib::scene::Model;
+use lib::scene_serde::WorldSerde;
 use lib::Dirtyable;
 use renderer::PartialRenderState;
+use systems::io;
 
-use crate::renderer_impl::{Command, DeleteModelCommand, GlobalState, UpdateModelCommand};
+use crate::commands::{Command, DeleteModelCommand, ImportGltfCommand, UpdateModelCommand};
+use crate::renderer_impl::GlobalState;
 
 fn draw_model_collapsing(
     ui: &mut Ui,
@@ -97,17 +100,17 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
         ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
             if ui.button("Load world").clicked() {}
             if ui.button("Save world").clicked() {
-                // if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                //     io::world_saver::save(
-                //         path.as_path(),
-                //         WorldSerde::from(
-                //             state.textures.clone(),
-                //             state.materials.clone(),
-                //             state.scenes.clone(),
-                //         ),
-                //     )
-                //         .expect("Couldn't save world");
-                // }
+                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    io::world_saver::save(
+                        path.as_path(),
+                        WorldSerde::from(
+                            &state.inner_state.world.textures,
+                            &state.inner_state.world.materials,
+                            state.inner_state.world.scenes.clone(),
+                        ),
+                    )
+                    .expect("Couldn't save world");
+                }
             }
         });
         if ui.button("Import glTF").clicked() {
@@ -116,7 +119,7 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
                 .pick_files()
             {
                 for path in paths {
-                    println!("{}", path.display());
+                    state.commands.push(Box::new(ImportGltfCommand { path }));
                 }
             }
         }

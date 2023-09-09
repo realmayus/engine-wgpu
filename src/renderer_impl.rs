@@ -10,6 +10,7 @@ use itertools::Itertools;
 use log::info;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
@@ -31,6 +32,7 @@ use renderer::{init_renderer, start_renderer, PartialRenderState, RenderState, S
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
 
+use crate::commands::Command;
 use crate::gui::render_gui;
 
 pub(crate) struct InnerState {
@@ -42,81 +44,6 @@ pub(crate) struct GlobalState {
     pub(crate) commands: Vec<Box<dyn Command>>,
 }
 
-pub(crate) trait Command {
-    fn execute(
-        &self,
-        state: &mut InnerState,
-        pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-    );
-}
-
-pub(crate) struct DeleteModelCommand {
-    pub(crate) to_delete: u32,
-}
-
-impl Command for DeleteModelCommand {
-    fn execute(
-        &self,
-        state: &mut InnerState,
-        pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-    ) {
-        for scene in state.world.scenes.as_mut_slice() {
-            let mut models = vec![];
-            for m in scene.models.clone() {
-                //TODO get rid of this clone
-                if m.id != self.to_delete {
-                    models.push(m);
-                    break;
-                }
-            }
-            scene.models = models;
-        }
-        for pipeline_provider in pipeline_providers {
-            //TODO don't assume there's only one instance of a provider
-            match pipeline_provider {
-                PipelineProviderKind::LINE(_) => {}
-                PipelineProviderKind::PBR(pbr) => {
-                    pbr.update_drawables(
-                        state
-                            .world
-                            .get_active_scene()
-                            .iter_meshes()
-                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
-                            .collect_vec(),
-                    );
-                    pbr.recreate_render_passes = true;
-                }
-            }
-        }
-    }
-}
-
-pub(crate) struct UpdateModelCommand {
-    pub(crate) to_update: u32,
-    pub(crate) parent_transform: Mat4,
-    pub(crate) local_transform: Mat4,
-}
-
-impl Command for UpdateModelCommand {
-    fn execute(
-        &self,
-        state: &mut InnerState,
-        pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-    ) {
-        for scene in state.world.scenes.as_mut_slice() {
-            for m in scene.models.as_mut_slice() {
-                if m.id == self.to_update {
-                    m.local_transform = self.local_transform;
-                    m.update_transforms(self.parent_transform);
-                }
-            }
-        }
-    }
-}
-
 impl StateCallable for GlobalState {
     fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState) {
         render_gui(gui, render_state, self);
@@ -126,10 +53,25 @@ impl StateCallable for GlobalState {
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
-    ) {
+        cmd_buf_allocator: &StandardCommandBufferAllocator,
+        queue_family_index: u32,
+    ) -> Option<PrimaryAutoCommandBuffer> {
+        let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
+            //TODO would it make sense to only use builder if a command requests it?
+            cmd_buf_allocator,
+            queue_family_index,
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
         for command in self.commands.as_slice() {
-            command.execute(&mut self.inner_state, pipeline_providers, allocator);
+            command.execute(
+                &mut self.inner_state,
+                pipeline_providers,
+                allocator,
+                &mut cmd_buf_builder,
+            );
         }
+
         self.commands.clear();
 
         for scene in self.inner_state.world.scenes.as_mut_slice() {
@@ -147,6 +89,8 @@ impl StateCallable for GlobalState {
                 material.borrow_mut().update();
             }
         }
+
+        Some(cmd_buf_builder.build().unwrap())
     }
 
     fn cleanup(&self) {

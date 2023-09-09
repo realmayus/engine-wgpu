@@ -10,7 +10,7 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer
 use vulkano::format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
-use crate::scene::{Material, Mesh, Model, Scene, Texture};
+use crate::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
 use crate::shader_types::{MaterialInfo, MeshInfo};
 use crate::texture::create_texture;
 
@@ -287,21 +287,53 @@ impl Scene {
 
 #[derive(Serialize, Deserialize)]
 pub struct WorldSerde {
-    pub textures: Vec<TextureSerde>,
-    pub materials: Vec<MaterialSerde>,
+    pub textures: TextureManagerSerde,
+    pub materials: MaterialManagerSerde,
     pub scenes: Vec<SceneSerde>,
 }
 
 impl WorldSerde {
     pub fn from(
-        textures: Vec<Rc<Texture>>,
-        materials: Vec<Rc<RefCell<Material>>>,
+        textures: &TextureManager,
+        materials: &MaterialManager,
         scenes: Vec<Scene>,
     ) -> Self {
         Self {
-            textures: textures.into_iter().map(TextureSerde::from).collect(),
-            materials: materials.into_iter().map(MaterialSerde::from).collect(),
+            textures: TextureManagerSerde::from(textures),
+            materials: MaterialManagerSerde::from(materials),
             scenes: scenes.into_iter().map(SceneSerde::from).collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TextureManagerSerde {
+    pub textures: Vec<TextureSerde>,
+}
+
+impl From<&TextureManager> for TextureManagerSerde {
+    fn from(value: &TextureManager) -> Self {
+        Self {
+            textures: value
+                .iter()
+                .map(|tex| TextureSerde::from(tex.clone()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MaterialManagerSerde {
+    pub materials: Vec<MaterialSerde>,
+}
+
+impl From<&MaterialManager> for MaterialManagerSerde {
+    fn from(value: &MaterialManager) -> Self {
+        Self {
+            materials: value
+                .iter()
+                .map(|mat| MaterialSerde::from(mat.clone()))
+                .collect(),
         }
     }
 }

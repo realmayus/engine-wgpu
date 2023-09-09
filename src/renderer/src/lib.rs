@@ -4,7 +4,8 @@ use std::sync::Arc;
 use egui_winit_vulkano::{Gui, GuiConfig};
 use log::{debug, error, info};
 use vulkano::command_buffer::allocator::{
-    StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
+    CommandBufferAllocator, StandardCommandBufferAllocator,
+    StandardCommandBufferAllocatorCreateInfo,
 };
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -52,7 +53,9 @@ pub trait StateCallable {
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
-    );
+        cmd_buf_allocator: &StandardCommandBufferAllocator,
+        queue_family_index: u32,
+    ) -> Option<PrimaryAutoCommandBuffer>;
     fn cleanup(&self);
 }
 
@@ -564,9 +567,11 @@ pub fn start_renderer(
             }
             acquire_future.wait(None).unwrap();
             state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
-            callable.update(
+            let update_cmd_buffer = callable.update(
                 pipeline_providers.as_mut_slice(),
                 &state.init_state.memory_allocator,
+                &state.init_state.cmd_buf_allocator,
+                state.init_state.queue.queue_family_index(),
             );
             for provider in pipeline_providers.as_mut_slice() {
                 recreate_render_passes =
@@ -579,6 +584,8 @@ pub fn start_renderer(
                     state.init_state.queue.clone(),
                     command_buffers[image_i as usize].clone(),
                 ) // execute cmd buf which is selected based on image index
+                .unwrap()
+                .then_execute(state.init_state.queue.clone(), update_cmd_buffer.unwrap())
                 .unwrap();
 
             let after_egui =

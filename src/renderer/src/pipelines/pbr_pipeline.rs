@@ -127,6 +127,35 @@ impl PBRPipelineProvider {
     ) {
         self.descriptor_sets[descriptor_set_id as usize] = f();
     }
+
+    pub fn set_descriptor_set_at(
+        &mut self,
+        index: u32,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        var_count: u32,
+        descriptor_writes: Vec<WriteDescriptorSet>,
+    ) {
+        let descriptor_set_layout = self
+            .pipeline
+            .clone()
+            .unwrap()
+            .layout()
+            .set_layouts()
+            .get(index as usize)
+            .unwrap()
+            .clone();
+
+        self.descriptor_sets.insert(
+            index as usize,
+            PersistentDescriptorSet::new_variable(
+                descriptor_set_allocator,
+                descriptor_set_layout,
+                var_count,
+                descriptor_writes,
+            )
+            .unwrap(),
+        );
+    }
 }
 
 impl PipelineProvider for PBRPipelineProvider {
@@ -168,23 +197,11 @@ impl PipelineProvider for PBRPipelineProvider {
         std::mem::swap(&mut self.write_descriptor_sets, &mut temp);
 
         for (i, (var_count, write_desc_set)) in temp.into_iter().enumerate() {
-            let descriptor_set_layout = self
-                .pipeline
-                .clone()
-                .unwrap()
-                .layout()
-                .set_layouts()
-                .get(i)
-                .unwrap()
-                .clone();
-            self.descriptor_sets.push(
-                PersistentDescriptorSet::new_variable(
-                    descriptor_set_allocator,
-                    descriptor_set_layout,
-                    var_count,
-                    write_desc_set,
-                )
-                .unwrap(),
+            self.set_descriptor_set_at(
+                i as u32,
+                descriptor_set_allocator,
+                var_count,
+                write_desc_set,
             );
         }
     }
