@@ -38,6 +38,7 @@ struct Light {
     uint light;
     float intensity;
     float range;
+    uint amount;
 };
 
 //layout(set = 5, binding = 0) buffer LightCount {
