@@ -6,7 +6,7 @@ use std::slice::Iter;
 use std::sync::Arc;
 
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use crate::Dirtyable;
+use crate::{Dirtyable, VertexInputBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::{debug, info};
 use rand::Rng;
@@ -14,9 +14,6 @@ use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
-
-use crate::shader_types::{MaterialInfo, MeshInfo};
-use crate::{Dirtyable, VertexInputBuffer};
 
 pub struct Texture {
     pub id: u32,
@@ -428,6 +425,7 @@ impl World {
 pub struct DrawableVertexInputs {
     pub vertex_buffer: VertexInputBuffer,
     pub normal_buffer: VertexInputBuffer,
+    pub tangent_buffer: VertexInputBuffer,
     pub uv_buffer: VertexInputBuffer,
     pub index_buffer: Subbuffer<[u32]>,
 }
@@ -458,9 +456,23 @@ impl DrawableVertexInputs {
                 usage: MemoryUsage::Upload,
                 ..Default::default()
             },
-            mesh.vertices.iter().map(|v| v.to_array()),
+            mesh.normals.iter().map(|v| v.to_array()),
         )
         .expect("Couldn't allocate normal buffer");
+
+        let tangent_buffer: Subbuffer<[[f32; 4]]> = Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            mesh.tangents.iter().map(|v| v.to_array()),
+        )
+        .expect("Couldn't allocate tangent buffer");
 
         let uv_buffer: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
             memory_allocator,
@@ -498,6 +510,10 @@ impl DrawableVertexInputs {
             normal_buffer: VertexInputBuffer {
                 subbuffer: normal_buffer.into_bytes(),
                 vertex_count: mesh.normals.len() as u32,
+            },
+            tangent_buffer: VertexInputBuffer {
+                subbuffer: tangent_buffer.into_bytes(),
+                vertex_count: mesh.tangents.len() as u32,
             },
             uv_buffer: VertexInputBuffer {
                 subbuffer: uv_buffer.into_bytes(),

@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::vec::Vec;
 
@@ -9,8 +7,8 @@ use glam::Mat4;
 use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
-use log::{error, info};
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use log::info;
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
@@ -20,11 +18,8 @@ use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemo
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
-use lib::scene::{
-    DrawableVertexInputs, Material, MaterialManager, Mesh, Model, PointLight, Scene, Texture,
-    TextureManager, World,
-};
-use lib::scene_serde::WorldSerde;
+use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
+
 use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::{Dirtyable, VertexInputBuffer};
@@ -257,91 +252,12 @@ pub fn start(gltf_paths: Vec<&str>) {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                MaterialInfo {
-                    base_color: [1.0, 1.0, 1.0, 1.0],
-                    base_texture: 0,
-                },
+                MaterialInfo::default(),
             )
             .expect("Couldn't allocate MaterialInfo uniform"),
         );
-        material_manager.add_material(mat)
+        material_manager.add_material(material)
     };
-
-    // Load scene
-    let mut scenes: Vec<Scene> = vec![];
-    let mut textures: Vec<Rc<Texture>> = vec![default_texture, default_normal];
-    let mut materials: Vec<Rc<RefCell<Material>>> = vec![default_material.clone()];
-    let mut tex_i = 2; // 0 reserved for default texture, 1 reserved for default normal texture
-    let mut mat_i = 1;
-    for gltf_path in gltf_paths {
-        let (mut gltf_scenes, gltf_textures, gltf_materials, exr) = load_gltf(
-            gltf_path,
-            &setup_info.memory_allocator,
-            &mut cmd_buf_builder,
-            default_material.clone(),
-            &mut tex_i,
-            &mut mat_i,
-        );
-        scenes.append(&mut gltf_scenes);
-
-        let mut texture_values: Vec<Rc<Texture>> = gltf_textures
-            .into_iter()
-            .sorted_by_key(|x| x.0)
-            .map(|x| x.1)
-            .collect_vec();
-
-        textures.append(&mut texture_values); // TODO investigate if this is too performance-heavy?
-
-        let mut material_values: Vec<Rc<RefCell<Material>>> = gltf_materials
-            .into_iter()
-            .sorted_by_key(|x| x.0)
-            .map(|x| x.1)
-            .collect_vec();
-
-        materials.append(&mut material_values);
-    }
-
-    let mut vertex_buffers: Vec<VertexBuffer> = vec![];
-    let mut normal_buffers: Vec<VertexBuffer> = vec![];
-    let mut tangent_buffers: Vec<VertexBuffer> = vec![];
-    let mut uv_buffers: Vec<VertexBuffer> = vec![];
-    let mut index_buffers: Vec<Subbuffer<[u32]>> = vec![];
-    let mut mesh_info_bufs = vec![];
-    let mut lights_buffer: Vec<PointLight> = vec![];
-
-    for scene in scenes.as_slice() {
-        println!("{:?}", scene);
-        for model in scene.models.as_slice() {
-            println!("{:?}", model);
-
-            if let Some(point_light) = model.light.clone() {
-                lights_buffer.push(point_light);
-            }
-
-            for mesh in model.meshes.as_slice() {
-                println!("{:?}", mesh);
-                let buffers = create_buffers(mesh, &setup_info.memory_allocator);
-                vertex_buffers.push(VertexBuffer {
-                    subbuffer: buffers.vert_buf.into_bytes(),
-                    vertex_count: mesh.vertices.len() as u32,
-                });
-                normal_buffers.push(VertexBuffer {
-                    subbuffer: buffers.normal_buf.into_bytes(),
-                    vertex_count: mesh.normals.len() as u32,
-                });
-                tangent_buffers.push(VertexBuffer {
-                    subbuffer: buffers.tangent_buf.into_bytes(),
-                    vertex_count: mesh.tangents.len() as u32,
-                });
-                uv_buffers.push(VertexBuffer {
-                    subbuffer: buffers.uv_buf.into_bytes(),
-                    vertex_count: mesh.uvs.len() as u32,
-                });
-                index_buffers.push(buffers.index_buf);
-                mesh_info_bufs.push(mesh.buffer.clone());
-            }
-        }
-    }
 
     let camera = Camera::new_default(
         viewport.dimensions[0],
@@ -380,7 +296,15 @@ pub fn start(gltf_paths: Vec<&str>) {
         .iter()
         .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); // TODO so many clones!
 
-    let lights_buffer = lights_buffer.into_iter().map(|light| light.buffer.clone());
+    let mut lights_buffer = vec![];
+    let _ = global_state.inner_state.world.scenes.iter().map(|scene| {
+        // TODO clone necessary?
+        for model in scene.models.clone() {
+            if let Some(ref light) = model.light {
+                lights_buffer.push(light.buffer.clone());
+            }
+        }
+    });
 
     let mesh_info_bufs = global_state
         .inner_state
@@ -403,11 +327,10 @@ pub fn start(gltf_paths: Vec<&str>) {
         camera.buffer.clone(),
         texs,
         material_info_bufs,
-        mesh_info_bufs,
         mesh_info_bufs
             .into_iter()
             .map(|mesh_info| (mesh_info.clone(), 0..mesh_info.size())),
-        lights_buffer,
+        lights_buffer.into_iter(),
         viewport.clone(),
         render_pass.clone(),
     );
