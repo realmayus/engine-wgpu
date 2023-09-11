@@ -1,8 +1,9 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
-use lib::shader_types::CameraUniform;
 use log::debug;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+
+use lib::shader_types::CameraUniform;
 
 const GLOBAL_X: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 const GLOBAL_Y: [f32; 4] = [0.0, -1.0, 0.0, 1.0];

@@ -2,11 +2,12 @@ use crate::scene::{Material, Mesh, Model, PointLight, Scene, Texture};
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use crate::texture::create_texture;
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
+
+use serde::{Deserialize, Serialize};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format;

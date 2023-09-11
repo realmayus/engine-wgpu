@@ -1,6 +1,7 @@
 use dotenv::dotenv;
 use log::info;
 
+mod gui;
 mod renderer_impl;
 
 fn main() {
