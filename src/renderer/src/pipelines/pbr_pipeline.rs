@@ -1,6 +1,8 @@
+use std::ops::Range;
 use std::sync::Arc;
 
-use vulkano::buffer::{BufferContents, Subbuffer};
+use lib::shader_types::{CameraUniform, MyNormal, MyTangent, MyUV, MyVertex};
+use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
@@ -14,9 +16,9 @@ use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
+use vulkano::DeviceSize;
 
 use lib::scene::DrawableVertexInputs;
-use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
 
 use crate::pipelines::PipelineProvider;
 
@@ -58,8 +60,11 @@ impl PBRPipelineProvider {
         camera_buffer: Subbuffer<CameraUniform>,
         textures: impl IntoIterator<Item = (Arc<dyn ImageViewAbstract>, Arc<Sampler>)>
             + ExactSizeIterator,
-        material_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
-        mesh_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
+        material_info_buffers: impl IntoIterator<Item = (Subbuffer<impl ?Sized>, Range<DeviceSize>)>
+            + ExactSizeIterator,
+        mesh_info_buffers: impl IntoIterator<Item = (Subbuffer<impl ?Sized>, Range<DeviceSize>)>
+            + ExactSizeIterator,
+        light_buffer: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Self {
@@ -85,16 +90,29 @@ impl PBRPipelineProvider {
                 material_info_buffers.len() as u32,
                 vec![
                     // Level 2: Pipeline-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, material_info_buffers),
+                    WriteDescriptorSet::buffer_with_range_array(0, 0, material_info_buffers),
                 ],
             ),
+            ({
+                let m_len = mesh_info_buffers.len() as u32;
+                (
+                    m_len,
+                    vec![
+                        // Level 3: Model-specific uniforms
+                        WriteDescriptorSet::buffer_with_range_array(0, 0, mesh_info_buffers),
+                        // gives error: InvalidBinding { binding: 1 }
+                        // WriteDescriptorSet::buffer_array(1,  m_len, light_buffer),
+                    ],
+                )
+            }),
             (
-                mesh_info_buffers.len() as u32,
+                light_buffer.len() as u32,
                 vec![
                     // Level 3: Model-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, mesh_info_buffers),
+                    WriteDescriptorSet::buffer_array(0, 0, light_buffer),
                 ],
             ),
+            // (0, vec![WriteDescriptorSet::buffer(0, light_buffer.0)]),
         ];
 
         Self {
@@ -109,6 +127,7 @@ impl PBRPipelineProvider {
             vertex_input_state: vec![
                 MyVertex::per_vertex(),
                 MyNormal::per_vertex(),
+                MyTangent::per_vertex(),
                 MyUV::per_vertex(),
             ],
             pipeline: None,
@@ -147,13 +166,20 @@ impl PipelineProvider for PBRPipelineProvider {
                     binding.variable_descriptor_count = true;
                     binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
+                    // material info
                     let binding = x[2].bindings.get_mut(&0).unwrap();
                     binding.variable_descriptor_count = true;
                     binding.descriptor_count = 128;
 
-                    let binding = x[3].bindings.get_mut(&0).unwrap(); // MeshInfo
+                    // MeshInfo
+                    let binding = x[3].bindings.get_mut(&0).unwrap();
                     binding.variable_descriptor_count = true;
-                    binding.descriptor_count = 128
+                    binding.descriptor_count = 128;
+
+                    // LightInfo
+                    let binding = x[4].bindings.get_mut(&0).unwrap();
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128;
                 })
                 .unwrap(),
         );
@@ -207,6 +233,7 @@ impl PipelineProvider for PBRPipelineProvider {
                     (
                         vertex_input.vertex_buffer.subbuffer.clone(),
                         vertex_input.normal_buffer.subbuffer.clone(),
+                        vertex_input.tangent_buffer.subbuffer.clone(),
                         vertex_input.uv_buffer.subbuffer.clone(),
                     ),
                 )

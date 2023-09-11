@@ -1,12 +1,13 @@
+use log::debug;
 use std::sync::Arc;
 
-use log::debug;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{ImageDimensions, ImmutableImage, MipmapsCount};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
+/// Creates an ImageView for an ImmutableImage
 pub fn create_texture(
     pixels: Vec<u8>,
     format: format::Format,
@@ -25,7 +26,7 @@ pub fn create_texture(
             array_layers: 1, // images can be arrays of layers
         },
         MipmapsCount::One,
-        format::Format::R8G8B8A8_UNORM,
+        format,
         cmd_buf_builder,
     )
     .expect("Couldn't create image");

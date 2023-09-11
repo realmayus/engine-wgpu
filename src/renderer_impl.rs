@@ -8,8 +8,7 @@ use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::info;
-use rand::Rng;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
@@ -20,6 +19,7 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
 use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
+
 use lib::shader_types::{LineInfo, MaterialInfo};
 use lib::texture::create_texture;
 use lib::{Dirtyable, VertexInputBuffer};
@@ -198,14 +198,14 @@ pub fn start(gltf_paths: Vec<&str>) {
     let mut texture_manager = TextureManager::new();
     let mut material_manager = MaterialManager::new();
     {
-        let img = image::open("assets/textures/no_texture.png")
+        let img = image::open("assets/textures/default.png")
             .expect("Couldn't load default texture")
             .to_rgba8();
         let width = img.width();
         let height = img.height();
         let dyn_img = DynamicImage::from(img);
 
-        let path = extract_image_to_file("no_texture", &dyn_img, Png);
+        let path = extract_image_to_file("default", &dyn_img, Png);
 
         let tex = create_texture(
             dyn_img.into_bytes(),
@@ -219,6 +219,27 @@ pub fn start(gltf_paths: Vec<&str>) {
         let texture = Texture::from(tex, Some(Box::from("Default texture")), 0, path);
         texture_manager.add_texture(texture);
 
+        // default normal texture
+        let img = image::open("assets/textures/default_normal.png")
+            .expect("Couldn't load default normal texture")
+            .to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        let dyn_img = DynamicImage::from(img);
+
+        let path = extract_image_to_file("default_normal", &dyn_img, Png);
+
+        let tex = create_texture(
+            dyn_img.into_bytes(),
+            format::Format::R8G8B8A8_UNORM,
+            width,
+            height,
+            &setup_info.memory_allocator,
+            &mut cmd_buf_builder,
+        );
+        let texture_normal = Texture::from(tex, Some(Box::from("Default texture")), 1, path);
+        texture_manager.add_texture(texture_normal);
+
         let material = Material::from_default(
             Some(texture_manager.get_texture(0)),
             Buffer::from_data(
@@ -231,15 +252,11 @@ pub fn start(gltf_paths: Vec<&str>) {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                MaterialInfo {
-                    base_color: [1.0, 1.0, 1.0, 1.0],
-                    base_texture: 0,
-                },
+                MaterialInfo::default(),
             )
             .expect("Couldn't allocate MaterialInfo uniform"),
         );
-
-        material_manager.add_material(material);
+        material_manager.add_material(material)
     };
 
     let camera = Camera::new_default(
@@ -277,7 +294,17 @@ pub fn start(gltf_paths: Vec<&str>) {
         .world
         .materials
         .iter()
-        .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
+        .map(|mat| (mat.borrow().buffer.clone(), 0..mat.borrow().buffer.size())); // TODO so many clones!
+
+    let mut lights_buffer = vec![];
+    let _ = global_state.inner_state.world.scenes.iter().map(|scene| {
+        // TODO clone necessary?
+        for model in scene.models.clone() {
+            if let Some(ref light) = model.light {
+                lights_buffer.push(light.buffer.clone());
+            }
+        }
+    });
 
     let mesh_info_bufs = global_state
         .inner_state
@@ -300,13 +327,16 @@ pub fn start(gltf_paths: Vec<&str>) {
         camera.buffer.clone(),
         texs,
         material_info_bufs,
-        mesh_info_bufs,
+        mesh_info_bufs
+            .into_iter()
+            .map(|mesh_info| (mesh_info.clone(), 0..mesh_info.size())),
+        lights_buffer.into_iter(),
         viewport.clone(),
         render_pass.clone(),
     );
 
-    let line_vertex_buffers: Vec<VertexInputBuffer> = (0..10)
-        .map(|_| VertexInputBuffer {
+    let line_vertex_buffers: Vec<VertexInputBuffer> = (0..3)
+        .map(|axis| VertexInputBuffer {
             subbuffer: Buffer::from_iter(
                 &setup_info.memory_allocator,
                 BufferCreateInfo {
@@ -317,12 +347,14 @@ pub fn start(gltf_paths: Vec<&str>) {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                (0..2).map(|_| {
-                    [
-                        rand::thread_rng().gen_range(-10f32..10f32),
-                        rand::thread_rng().gen_range(-10f32..10f32),
-                        rand::thread_rng().gen_range(-10f32..10f32),
-                    ]
+                (0..2).map(|vert| {
+                    let sign = if vert == 0 { 1. } else { -1. };
+                    match axis {
+                        0 => [sign * 1000.0, 0.0, 0.0],
+                        1 => [0.0, sign * 1000.0, 0.0],
+                        2 => [0.0, 0.0, sign * 1000.0],
+                        _ => [0.0, 0.0, 0.0],
+                    }
                 }),
             )
             .expect("Couldn't allocate vertex buffer")
@@ -331,7 +363,7 @@ pub fn start(gltf_paths: Vec<&str>) {
         })
         .collect_vec();
 
-    let line_info_buffers = (0..10).map(|i| {
+    let line_info_buffers = (0..3).map(|i| {
         Buffer::from_data(
             &setup_info.memory_allocator,
             BufferCreateInfo {
@@ -344,12 +376,12 @@ pub fn start(gltf_paths: Vec<&str>) {
             },
             LineInfo {
                 model_transform: Mat4::default().to_cols_array_2d(),
-                color: [
-                    1.0 / (i as f32 + 1.0),
-                    1.0 / (i as f32 + 1.0),
-                    1.0 / (i as f32 + 1.0),
-                    1.0,
-                ],
+                color: match i {
+                    0 => [1.0, 0.0, 0.0, 1.0],
+                    1 => [0.0, 1.0, 0.0, 1.0],
+                    2 => [0.0, 0.0, 1.0, 1.0],
+                    _ => [1.0, 1.0, 1.0, 1.0],
+                },
             },
         )
         .expect("Couldn't allocate vertex buffer")

@@ -1,27 +1,26 @@
-use std::fmt::Display;
 use std::sync::Arc;
+use std::time::Instant;
 
 use egui_winit_vulkano::{Gui, GuiConfig};
+use glam::Vec2;
 use log::{debug, error, info};
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
 };
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-    PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
+    SubpassContents,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::DescriptorSetsCollection;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
     Device, DeviceCreateInfo, DeviceExtensions, Features, Queue, QueueCreateInfo, QueueFlags,
 };
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageUsage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
@@ -33,14 +32,12 @@ use vulkano::sync::{FlushError, GpuFuture};
 use vulkano::{swapchain, sync, VulkanLibrary};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 use winit::window::WindowBuilder;
 
-use lib::Dirtyable;
-
-use crate::camera::Camera;
+use crate::camera::{Camera, KeyState};
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
 
 pub mod camera;
@@ -272,7 +269,6 @@ fn get_framebuffers(
                 view.clone(),
             )
         })
-        .into_iter()
         .unzip()
 }
 
@@ -385,13 +381,18 @@ pub fn start_renderer(
         },
     );
 
-    let mut is_left_pressed = false;
-    let mut is_right_pressed = false;
-    let mut is_up_pressed = false;
-    let mut is_down_pressed = false;
+    let mut keys = KeyState::default();
+    let mut cursor_pos = Vec2::default();
+    let mut cursor_delta = Vec2::default();
+
+    let mut delta_time = 0.01;
+
     let mut gui_catch = false;
 
     let event_loop = state.init_state.event_loop;
+
+    //state.init_state.window.set_maximized(true);
+    //window_resized = true;
 
     // blocks main thread forever and calls closure whenever the event loop receives an event
     event_loop.run(move |event, _, control_flow| match event {
@@ -403,7 +404,7 @@ pub fn start_renderer(
             *control_flow = ControlFlow::Exit;
         }
         Event::WindowEvent {
-            event: WindowEvent::Resized(_),
+            event: WindowEvent::Resized(position),
             ..
         } => {
             recreate_render_passes = true;
@@ -424,16 +425,16 @@ pub fn start_renderer(
             let is_pressed = state == ElementState::Pressed;
             match keycode {
                 VirtualKeyCode::W | VirtualKeyCode::Up => {
-                    is_up_pressed = is_pressed;
+                    keys.up_pressed = is_pressed;
                 }
                 VirtualKeyCode::A | VirtualKeyCode::Left => {
-                    is_left_pressed = is_pressed;
+                    keys.left_pressed = is_pressed;
                 }
                 VirtualKeyCode::S | VirtualKeyCode::Down => {
-                    is_down_pressed = is_pressed;
+                    keys.down_pressed = is_pressed;
                 }
                 VirtualKeyCode::D | VirtualKeyCode::Right => {
-                    is_right_pressed = is_pressed;
+                    keys.right_pressed = is_pressed;
                 }
                 _ => {}
             }
@@ -461,36 +462,76 @@ pub fn start_renderer(
                         .window
                         .set_title("Engine Playground - Press ESC to release controls");
                 }
-                debug!(
-                    "Gui catch is now: {}",
+                info!(
+                    "Gui catch is {}.",
                     if gui_catch { "enabled" } else { "disabled" }
                 );
             }
         }
-        Event::WindowEvent { event, .. } => {
-            gui.update(&event);
+        Event::WindowEvent {
+            event:
+                WindowEvent::MouseInput {
+                    state,
+                    button: MouseButton::Middle,
+                    ..
+                },
+            ..
+        } => keys.middle_pressed = state == ElementState::Pressed,
+        // for zooming
+        // Event::WindowEvent {
+        //     event:
+        //         WindowEvent::MouseWheel {
+        //             delta: MouseScrollDelta::LineDelta(x, y),
+        //             ..
+        //         },
+        //     ..
+        // } => {
+        //     if x >= 0. || y >= 0. {
+        //         is_down_pressed = false;
+        //         is_up_pressed = true;
+        //     } else {
+        //         is_up_pressed = false;
+        //         is_down_pressed = true;
+        //     }
+        // }
+        Event::WindowEvent {
+            event: WindowEvent::ModifiersChanged(mods),
+            ..
+        } => {
+            keys.shift_pressed = mods.shift();
         }
+        Event::WindowEvent { event, .. } => match event {
+            WindowEvent::CursorMoved { position: pos, .. } => {
+                let x = pos.x as f32 / state.viewport.dimensions[0];
+                let y = pos.y as f32 / state.viewport.dimensions[1];
+                cursor_delta.x = cursor_pos.x - x;
+                cursor_delta.y = cursor_pos.y - y;
+                cursor_pos = Vec2::from((x, y));
+                gui.update(&event);
+            }
+            _ => {
+                gui.update(&event);
+            }
+        },
         Event::MainEventsCleared => {
-            state.camera.recv_input(
-                is_up_pressed,
-                is_down_pressed,
-                is_left_pressed,
-                is_right_pressed,
-            );
+            state.camera.recv_input(&keys, cursor_delta, delta_time);
+            cursor_delta = Vec2::default();
         }
         Event::RedrawEventsCleared => {
+            let time = Instant::now();
             // TODO: Optimization: Implement Frames in Flight
             if recreate_render_passes || recreate_swapchain {
                 recreate_swapchain = false;
                 info!(
                     "Partial reinitialization due to {}",
-                    if (recreate_render_passes) {
+                    if recreate_render_passes {
                         "window resize"
                     } else {
                         "request to recreate swapchain"
                     }
                 );
                 let new_dimensions = state.init_state.window.inner_size();
+                debug!("new: {},{}", new_dimensions.width, new_dimensions.height);
 
                 let (new_swapchain, new_images) =
                     match state.init_state.swapchain.recreate(SwapchainCreateInfo {
@@ -498,7 +539,10 @@ pub fn start_renderer(
                         ..state.init_state.swapchain.create_info()
                     }) {
                         Ok(r) => r,
-                        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
+                        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => {
+                            debug!("ImageExtentNotSupported!");
+                            return;
+                        }
                         Err(e) => panic!("failed to recreate swapchain: {e}"),
                     };
                 state.init_state.swapchain = new_swapchain;
@@ -531,6 +575,10 @@ pub fn start_renderer(
                         &state.init_state.cmd_buf_allocator,
                         state.init_state.queue.queue_family_index(),
                         pipeline_providers.as_mut_slice(),
+                    );
+                    debug!(
+                        "dim: {},{}",
+                        state.viewport.dimensions[0], state.viewport.dimensions[1]
                     );
                     state
                         .camera
@@ -604,6 +652,8 @@ pub fn start_renderer(
                     error!("Failed to flush future: {e}");
                 }
             }
+            let elapsed = time.elapsed().as_micros() as f32;
+            delta_time = elapsed / 1_000_000.0;
         }
         _ => {}
     });

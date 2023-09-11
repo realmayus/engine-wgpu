@@ -20,11 +20,11 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 ### Renderer
 - [x] egui [17.08.23]
 - [ ] dynamic asset loading
-- [ ] point lights
-- [ ] gamma correction
+- [x] point lights
+- [x] gamma correction (for pbr)
 - [ ] Instancing
-- [ ] Physically based Rendering
-- [ ] Normal/Bump maps
+- [x] Physically based Rendering
+- [x] Normal/Bump maps
 - [ ] Shadows
 - [ ] Anti-Aliasing
 - [ ] face culling
@@ -45,13 +45,13 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 - [ ] deferred shading
 - [ ] area lights
 - [ ] Image-based lighting
-- [ ] HDR, Tone Mapping
+- [x] HDR, Tone Mapping (for pbr)
 - [ ] mip maps
 
 ### I/O
 - [x] world (de-)serialization [25.08.23]
 - [ ] investigate https://github.com/google/flatbuffers
-- [ ] multi-threaded asset loading
+- [ ] multithreaded asset loading
 
 ### ECS
 - [ ] Implement
@@ -63,4 +63,3 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 - [ ] Implement basic particle system
 ### UI
 - [ ] Asset drag & drop
-
