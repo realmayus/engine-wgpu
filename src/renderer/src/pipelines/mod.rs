@@ -87,7 +87,7 @@ impl PipelineProvider for PipelineProviderKind {
     }
 
     fn must_recreate_render_passes(&mut self) -> bool {
-        let mut result = false;
+        let result;
         match self {
             PipelineProviderKind::LINE(line_pipeline) => {
                 result = line_pipeline.must_recreate_render_passes(); // TODO set recreate_render_passes to false if line pipeline ever allows updating

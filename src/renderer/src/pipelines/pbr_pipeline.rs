@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use vulkano::buffer::{BufferContents, Subbuffer};
+use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::Device;

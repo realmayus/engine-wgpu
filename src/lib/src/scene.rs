@@ -298,6 +298,7 @@ impl Clone for Scene {
     }
 }
 
+#[derive(Default)]
 pub struct TextureManager {
     textures: Vec<Rc<Texture>>,
 }
@@ -338,6 +339,7 @@ impl TextureManager {
     }
 }
 
+#[derive(Default)]
 pub struct MaterialManager {
     materials: Vec<Rc<RefCell<Material>>>,
 }

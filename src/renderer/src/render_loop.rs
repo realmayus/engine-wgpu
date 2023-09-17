@@ -182,7 +182,7 @@ pub fn start_renderer(
                 recreate_swapchain = false;
                 info!(
                     "Partial reinitialization due to {}",
-                    if (recreate_render_passes) {
+                    if recreate_render_passes {
                         "window resize"
                     } else {
                         "request to recreate swapchain"

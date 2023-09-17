@@ -126,10 +126,7 @@ pub fn init_renderer() -> RenderInitState {
     RenderInitState {
         device,
         surface,
-        image_format,
         event_loop,
-        dimensions,
-        composite_alpha,
         window,
         memory_allocator: Arc::new(memory_allocator),
         queue,

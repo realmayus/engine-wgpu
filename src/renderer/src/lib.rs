@@ -1,36 +1,28 @@
-use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::Gui;
 use vulkano::buffer::Subbuffer;
-use vulkano::command_buffer::allocator::{CommandBufferAllocator, StandardCommandBufferAllocator};
+use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-    PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
+    SubpassContents,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::DescriptorSetsCollection;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{Device, DeviceExtensions, Queue, QueueFlags};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageViewAbstract, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageViewAbstract, SwapchainImage};
 use vulkano::instance::Instance;
 use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::sampler::Sampler;
-use vulkano::swapchain::{CompositeAlpha, Surface, Swapchain};
-use vulkano::sync::GpuFuture;
-use vulkano_win::VkSurfaceBuild;
-use winit::dpi::PhysicalSize;
+use vulkano::swapchain::{Surface, Swapchain};
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
 use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo};
-use lib::Dirtyable;
 
 use crate::camera::Camera;
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
@@ -76,10 +68,7 @@ pub trait StateCallable {
 pub struct RenderInitState {
     pub device: Arc<Device>,
     surface: Arc<Surface>,
-    image_format: Format,
     event_loop: EventLoop<()>,
-    dimensions: PhysicalSize<u32>,
-    composite_alpha: CompositeAlpha,
     pub window: Arc<Window>,
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub queue: Arc<Queue>,
@@ -165,7 +154,6 @@ fn get_framebuffers(
                 view.clone(),
             )
         })
-        .into_iter()
         .unzip()
 }
 

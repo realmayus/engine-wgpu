@@ -125,10 +125,10 @@ impl PipelineProvider for LinePipelineProvider {
     fn init_descriptor_sets(
         &mut self,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        camera: Subbuffer<CameraUniform>,
-        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
-        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
-        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+        _camera: Subbuffer<CameraUniform>,
+        _textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        _material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+        _mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
     ) {
         let mut temp = vec![];
         std::mem::swap(&mut self.write_descriptor_sets, &mut temp);
