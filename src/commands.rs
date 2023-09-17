@@ -36,9 +36,9 @@ impl Command for DeleteModelCommand {
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        device: Arc<Device>,
+        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        _cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        _device: Arc<Device>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
             let mut models = vec![];
@@ -81,11 +81,11 @@ impl Command for UpdateModelCommand {
     fn execute(
         &self,
         state: &mut InnerState,
-        pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        device: Arc<Device>,
+        _pipeline_providers: &mut [PipelineProviderKind],
+        _allocator: &StandardMemoryAllocator,
+        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        _cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        _device: Arc<Device>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
             for m in scene.models.as_mut_slice() {
@@ -108,9 +108,9 @@ impl Command for ImportGltfCommand {
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        device: Arc<Device>,
+        _device: Arc<Device>,
     ) {
         let gltf_scenes = load_gltf(
             self.path.as_path(),

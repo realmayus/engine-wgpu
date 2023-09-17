@@ -187,7 +187,7 @@ fn load_default_world(
     }
 }
 
-pub fn start(gltf_paths: Vec<&str>) {
+pub fn start() {
     let setup_info = init_renderer();
 
     let viewport = Viewport {
