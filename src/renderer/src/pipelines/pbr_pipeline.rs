@@ -41,8 +41,7 @@ pub struct PBRPipelineProvider {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     cached_vertex_input_buffers: Vec<DrawableVertexInputs>,
-    write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
-    descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
+    descriptor_sets: Vec<Arc<PersistentDescriptorSet>>,
     viewport: Viewport,
     render_pass: Arc<RenderPass>,
     device: Arc<Device>,
@@ -66,42 +65,10 @@ impl PBRPipelineProvider {
         let vs = vs::load(device.clone()).expect("failed to create vertex shader module");
         let fs = fs::load(device.clone()).expect("failed to create fragment shader module");
 
-        let write_descriptor_sets = vec![
-            (
-                0,
-                vec![
-                    // Level 0: Scene-global uniforms
-                    WriteDescriptorSet::buffer(0, camera_buffer),
-                ],
-            ),
-            (
-                textures.len() as u32,
-                vec![
-                    // Level 1: Pipeline-specific uniforms
-                    WriteDescriptorSet::image_view_sampler_array(0, 0, textures),
-                ],
-            ),
-            (
-                material_info_buffers.len() as u32,
-                vec![
-                    // Level 2: Pipeline-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, material_info_buffers),
-                ],
-            ),
-            (
-                mesh_info_buffers.len() as u32,
-                vec![
-                    // Level 3: Model-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, mesh_info_buffers),
-                ],
-            ),
-        ];
-
         Self {
             vs,
             fs,
             cached_vertex_input_buffers: drawables,
-            write_descriptor_sets,
             descriptor_sets: vec![],
             viewport,
             render_pass,
@@ -170,7 +137,7 @@ impl PipelineProvider for PBRPipelineProvider {
                     .clone()])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
                 .fragment_shader(self.fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
                 .depth_stencil_state(DepthStencilState::simple_depth_test())
-                .render_pass(Subpass::from((&self.render_pass).clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
+                .render_pass(Subpass::from(self.render_pass.clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
                 .with_auto_layout(self.device.clone(), |x| {
                     let binding = x[1].bindings.get_mut(&0).unwrap();
                     binding.variable_descriptor_count = true;
@@ -193,8 +160,36 @@ impl PipelineProvider for PBRPipelineProvider {
     }
 
     fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator) {
-        let mut temp = vec![];
-        std::mem::swap(&mut self.write_descriptor_sets, &mut temp);
+        let write_descriptor_sets = vec![
+            (
+                0,
+                vec![
+                    // Level 0: Scene-global uniforms
+                    WriteDescriptorSet::buffer(0, camera_buffer),
+                ],
+            ),
+            (
+                textures.len() as u32,
+                vec![
+                    // Level 1: Pipeline-specific uniforms
+                    WriteDescriptorSet::image_view_sampler_array(0, 0, textures),
+                ],
+            ),
+            (
+                material_info_buffers.len() as u32,
+                vec![
+                    // Level 2: Pipeline-specific uniforms
+                    WriteDescriptorSet::buffer_array(0, 0, material_info_buffers),
+                ],
+            ),
+            (
+                mesh_info_buffers.len() as u32,
+                vec![
+                    // Level 3: Model-specific uniforms
+                    WriteDescriptorSet::buffer_array(0, 0, mesh_info_buffers),
+                ],
+            ),
+        ];
 
         for (i, (var_count, write_desc_set)) in temp.into_iter().enumerate() {
             self.set_descriptor_set_at(

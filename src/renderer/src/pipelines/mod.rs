@@ -5,6 +5,7 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use crate::pipelines::line_pipeline::LinePipelineProvider;
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 
+mod descriptor_set_abstraction;
 pub mod line_pipeline;
 pub mod pbr_pipeline;
 
