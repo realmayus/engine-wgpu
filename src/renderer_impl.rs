@@ -25,6 +25,7 @@ use vulkano::sampler::Sampler;
 use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
 use lib::shader_types::{CameraUniform, LineInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
+use lib::util::extract_image_to_file;
 use lib::{Dirtyable, VertexInputBuffer};
 use renderer::camera::Camera;
 use renderer::initialization::init_renderer;
@@ -33,8 +34,8 @@ use renderer::pipelines::pbr_pipeline::PBRPipelineProvider;
 use renderer::pipelines::PipelineProviderKind;
 use renderer::render_loop::start_renderer;
 use renderer::{RenderState, StateCallable};
+use systems::io::clear_run_dir;
 use systems::io::gltf_loader::load_gltf;
-use systems::io::{clear_run_dir, extract_image_to_file};
 
 use crate::commands::Command;
 use crate::gui::render_gui;

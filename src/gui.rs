@@ -8,7 +8,9 @@ use lib::scene_serde::WorldSerde;
 use lib::Dirtyable;
 use systems::io;
 
-use crate::commands::{Command, DeleteModelCommand, ImportGltfCommand, UpdateModelCommand};
+use crate::commands::{
+    Command, DeleteModelCommand, ImportGltfCommand, LoadWorldCommand, UpdateModelCommand,
+};
 use crate::renderer_impl::GlobalState;
 
 fn draw_model_collapsing(
@@ -97,8 +99,18 @@ pub(crate) fn render_gui(gui: &mut Gui, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
-            if ui.button("Load world").clicked() {}
-            if ui.button("Save world").clicked() {
+            if ui.button("Load").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("World file", &["json"])
+                    .pick_file()
+                {
+                    state
+                        .commands
+                        .push(Box::new(LoadWorldCommand { path: path.clone() }));
+                    state.inner_state.opened_file = Some(path);
+                }
+            }
+            if ui.button("Save as…").clicked() {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
                     io::world_saver::save(
                         path.as_path(),
@@ -110,6 +122,30 @@ pub(crate) fn render_gui(gui: &mut Gui, state: &mut GlobalState) {
                     )
                     .expect("Couldn't save world");
                 }
+            }
+            if ui
+                .add_enabled(
+                    state.inner_state.opened_file.is_some(),
+                    egui::Button::new("Save"),
+                )
+                .clicked()
+            {
+                io::world_saver::save(
+                    state
+                        .inner_state
+                        .opened_file
+                        .as_ref()
+                        .unwrap()
+                        .as_path()
+                        .parent()
+                        .unwrap(),
+                    WorldSerde::from(
+                        &state.inner_state.world.textures,
+                        &state.inner_state.world.materials,
+                        state.inner_state.world.scenes.clone(),
+                    ),
+                )
+                .expect("Couldn't save world");
             }
         });
         if ui.button("Import glTF").clicked() {

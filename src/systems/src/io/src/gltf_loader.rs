@@ -22,8 +22,7 @@ use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemo
 use lib::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
 use lib::shader_types::{MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
-
-use crate::extract_image_to_file;
+use lib::util::extract_image_to_file;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where
