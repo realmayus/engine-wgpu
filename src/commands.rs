@@ -138,28 +138,6 @@ impl Command for ImportGltfCommand {
                             .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator))
                             .collect_vec(),
                     );
-
-                    // pbr.update_descriptor_sets(|controller| {
-                    //     controller.update_textures(|textures| {
-                    //         let _ = mem::replace(textures, state.world.textures.get_view_sampler_array(device.clone()));
-                    //     }, descriptor_set_allocator);
-                    //     controller.update_material_infos(|material_infos| {
-                    //         let _ = mem::replace(material_infos, state.world.materials.get_buffer_array());
-                    //     }, descriptor_set_allocator);
-                    //     controller.update_mesh_infos(
-                    //         |mesh_infos| {
-                    //             let new_infos = state
-                    //                 .world
-                    //                 .get_active_scene()
-                    //                 .iter_meshes()
-                    //                 .map(|mesh| mesh.buffer.clone())
-                    //                 .collect_vec();
-                    //             debug!("Replacing previous mesh infos (size: {}) with new mesh infos (size: {})", mesh_infos.len(), new_infos.len());
-                    //             let _ = mem::replace(mesh_infos, new_infos);
-                    //         },
-                    //         descriptor_set_allocator,
-                    //     );
-                    // });
                     pbr.recreate_render_passes = true;
                 }
             }

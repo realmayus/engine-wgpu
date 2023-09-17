@@ -82,19 +82,6 @@ impl DescriptorSetController {
         )
         .unwrap()
     }
-    pub fn update_camera(
-        &mut self,
-        update_fn: Box<dyn Fn(&mut Subbuffer<CameraUniform>)>,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) {
-        update_fn(&mut self.camera);
-        self.descriptor_sets[0] = Self::get_camera_descriptor_set(
-            descriptor_set_allocator,
-            self.pipeline_layout.clone(),
-            self.camera.clone(),
-        );
-    }
-
     fn get_textures_descriptor_set(
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         pipeline_layout: Arc<PipelineLayout>,
@@ -108,21 +95,6 @@ impl DescriptorSetController {
         )
         .unwrap()
     }
-    pub fn update_textures<F>(
-        &mut self,
-        update_fn: F,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) where
-        F: Fn(&mut Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>),
-    {
-        update_fn(&mut self.textures);
-        self.descriptor_sets[1] = Self::get_textures_descriptor_set(
-            descriptor_set_allocator,
-            self.pipeline_layout.clone(),
-            self.textures.clone(),
-        );
-    }
-
     fn get_materials_descriptor_set(
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         pipeline_layout: Arc<PipelineLayout>,
@@ -135,20 +107,6 @@ impl DescriptorSetController {
             [WriteDescriptorSet::buffer_array(0, 0, array)],
         )
         .unwrap()
-    }
-    pub fn update_material_infos<F>(
-        &mut self,
-        update_fn: F,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) where
-        F: Fn(&mut Vec<Subbuffer<MaterialInfo>>),
-    {
-        update_fn(&mut self.material_info_buffers);
-        self.descriptor_sets[2] = Self::get_materials_descriptor_set(
-            descriptor_set_allocator,
-            self.pipeline_layout.clone(),
-            self.material_info_buffers.clone(),
-        )
     }
 
     fn get_meshes_descriptor_set(
@@ -163,19 +121,5 @@ impl DescriptorSetController {
             [WriteDescriptorSet::buffer_array(0, 0, array)],
         )
         .unwrap()
-    }
-    pub fn update_mesh_infos<F>(
-        &mut self,
-        update_fn: F,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) where
-        F: Fn(&mut Vec<Subbuffer<MeshInfo>>) -> (),
-    {
-        update_fn(&mut self.mesh_info_buffers);
-        self.descriptor_sets[3] = Self::get_meshes_descriptor_set(
-            descriptor_set_allocator,
-            self.pipeline_layout.clone(),
-            self.mesh_info_buffers.clone(),
-        );
     }
 }
