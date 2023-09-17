@@ -12,9 +12,7 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::ControlFlow;
 
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
-use crate::{
-    get_finalized_render_passes, get_framebuffers, PartialRenderState, RenderState, StateCallable,
-};
+use crate::{get_finalized_render_passes, get_framebuffers, RenderState, StateCallable};
 
 pub fn start_renderer(
     mut state: RenderState,
@@ -44,9 +42,17 @@ pub fn start_renderer(
         depth_buffer,
     );
 
+    let (camera, textures, material_infos, mesh_infos) =
+        callable.get_buffers(state.init_state.device.clone());
     for provider in pipeline_providers.as_mut_slice() {
         provider.create_pipeline();
-        provider.init_descriptor_sets(&state.init_state.descriptor_set_allocator);
+        provider.init_descriptor_sets(
+            &state.init_state.descriptor_set_allocator,
+            camera.clone(),
+            textures.clone(),
+            material_infos.clone(),
+            mesh_infos.clone(),
+        );
     }
     let mut command_buffers = get_finalized_render_passes(
         framebuffers,
@@ -163,7 +169,7 @@ pub fn start_renderer(
             gui.update(&event);
         }
         Event::MainEventsCleared => {
-            state.camera.recv_input(
+            callable.recv_input(
                 is_up_pressed,
                 is_down_pressed,
                 is_left_pressed,
@@ -213,9 +219,17 @@ pub fn start_renderer(
                     recreate_render_passes = false;
 
                     state.viewport.dimensions = new_dimensions.into();
+                    let (camera, textures, material_infos, mesh_infos) =
+                        callable.get_buffers(state.init_state.device.clone());
                     for provider in pipeline_providers.as_mut_slice() {
                         provider.create_pipeline();
-                        provider.init_descriptor_sets(&state.init_state.descriptor_set_allocator);
+                        provider.init_descriptor_sets(
+                            &state.init_state.descriptor_set_allocator,
+                            camera.clone(),
+                            textures.clone(),
+                            material_infos.clone(),
+                            mesh_infos.clone(),
+                        );
                         provider.set_viewport(state.viewport.clone());
                     }
                     command_buffers = get_finalized_render_passes(
@@ -224,20 +238,10 @@ pub fn start_renderer(
                         state.init_state.queue.queue_family_index(),
                         pipeline_providers.as_mut_slice(),
                     );
-                    state
-                        .camera
-                        .update_aspect(state.viewport.dimensions[0], state.viewport.dimensions[1]);
                 }
             }
 
-            gui.immediate_ui(|gui| {
-                callable.setup_gui(
-                    gui,
-                    PartialRenderState {
-                        camera: &mut state.camera,
-                    },
-                )
-            });
+            gui.immediate_ui(|gui| callable.setup_gui(gui));
 
             // acquire_next_image gives us the image index on which we are allowed to draw and a future indicating when the GPU will gain access to that image
             // suboptimal: the acquired image is still usable, but the swapchain should be recreated as the surface's properties no longer match the swapchain.
@@ -255,13 +259,14 @@ pub fn start_renderer(
                 recreate_swapchain = true;
             }
             acquire_future.wait(None).unwrap();
-            state.camera.update_view(); // TODO optimization: only update camera uniform if dirty
             let update_cmd_buffer = callable.update(
                 pipeline_providers.as_mut_slice(),
                 &state.init_state.memory_allocator,
                 &state.init_state.descriptor_set_allocator,
                 &state.init_state.cmd_buf_allocator,
                 state.init_state.queue.queue_family_index(),
+                state.init_state.device.clone(),
+                state.viewport.clone(),
             );
             for provider in pipeline_providers.as_mut_slice() {
                 recreate_render_passes =

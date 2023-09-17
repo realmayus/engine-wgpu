@@ -49,20 +49,12 @@ pub struct PBRPipelineProvider {
     pub recreate_render_passes: bool,
     descriptor_set_controller: Option<DescriptorSetController>,
     // will get initialized later
-    camera: Subbuffer<CameraUniform>,
-    textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
-    material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
-    mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
 }
 
 impl PBRPipelineProvider {
     pub fn new(
         device: Arc<Device>,
         drawables: Vec<DrawableVertexInputs>,
-        camera: Subbuffer<CameraUniform>,
-        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
-        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
-        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Self {
@@ -84,10 +76,6 @@ impl PBRPipelineProvider {
             pipeline: None,
             recreate_render_passes: false,
             descriptor_set_controller: None,
-            camera,
-            textures,
-            material_info_buffers,
-            mesh_info_buffers,
         }
     }
 
@@ -137,12 +125,19 @@ impl PipelineProvider for PBRPipelineProvider {
         self.viewport = viewport;
     }
 
-    fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator) {
+    fn init_descriptor_sets(
+        &mut self,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        camera: Subbuffer<CameraUniform>,
+        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+    ) {
         self.descriptor_set_controller = Some(DescriptorSetController::init(
-            self.camera.clone(),
-            self.textures.clone(),
-            self.material_info_buffers.clone(),
-            self.mesh_info_buffers.clone(),
+            camera,
+            textures,
+            material_info_buffers,
+            mesh_info_buffers,
             descriptor_set_allocator,
             self.pipeline.clone().unwrap().layout().clone(),
         ));

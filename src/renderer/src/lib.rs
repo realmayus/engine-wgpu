@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use egui_winit_vulkano::Gui;
+use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::{CommandBufferAllocator, StandardCommandBufferAllocator};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
@@ -13,13 +14,14 @@ use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{Device, DeviceExtensions, Queue, QueueFlags};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageAccess, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageAccess, ImageViewAbstract, SwapchainImage};
 use vulkano::instance::Instance;
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::vertex_input::VertexBuffersCollection;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
+use vulkano::sampler::Sampler;
 use vulkano::swapchain::{CompositeAlpha, Surface, Swapchain};
 use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
@@ -27,6 +29,7 @@ use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
+use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo};
 use lib::Dirtyable;
 
 use crate::camera::Camera;
@@ -38,7 +41,7 @@ pub mod pipelines;
 pub mod render_loop;
 
 pub trait StateCallable {
-    fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState);
+    fn setup_gui(&mut self, gui: &mut Gui);
     fn update(
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
@@ -46,8 +49,28 @@ pub trait StateCallable {
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_allocator: &StandardCommandBufferAllocator,
         queue_family_index: u32,
+        device: Arc<Device>,
+        viewport: Viewport,
     ) -> Option<PrimaryAutoCommandBuffer>;
     fn cleanup(&self);
+
+    fn get_buffers(
+        &self,
+        device: Arc<Device>,
+    ) -> (
+        Subbuffer<CameraUniform>,
+        Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        Vec<Subbuffer<MaterialInfo>>,
+        Vec<Subbuffer<MeshInfo>>,
+    );
+
+    fn recv_input(
+        &mut self,
+        is_up_pressed: bool,
+        is_down_pressed: bool,
+        is_left_pressed: bool,
+        is_right_pressed: bool,
+    );
 }
 
 pub struct RenderInitState {
@@ -187,7 +210,6 @@ pub struct RenderState {
     pub init_state: RenderInitState,
     pub viewport: Viewport,
     pub cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    pub camera: Camera,
 }
 
 pub struct PartialRenderState<'a> {

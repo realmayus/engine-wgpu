@@ -9,20 +9,21 @@ use image::ImageFormat::Png;
 use itertools::Itertools;
 use log::info;
 use rand::Rng;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
+use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
+use vulkano::device::Device;
 use vulkano::format;
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::sampler::{Sampler, SamplerCreateInfo};
+use vulkano::sampler::Sampler;
 
 use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
-use lib::shader_types::{LineInfo, MaterialInfo};
+use lib::shader_types::{CameraUniform, LineInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 use lib::{Dirtyable, VertexInputBuffer};
 use renderer::camera::Camera;
@@ -31,7 +32,7 @@ use renderer::pipelines::line_pipeline::LinePipelineProvider;
 use renderer::pipelines::pbr_pipeline::PBRPipelineProvider;
 use renderer::pipelines::PipelineProviderKind;
 use renderer::render_loop::start_renderer;
-use renderer::{PartialRenderState, RenderState, StateCallable};
+use renderer::{RenderState, StateCallable};
 use systems::io::gltf_loader::load_gltf;
 use systems::io::{clear_run_dir, extract_image_to_file};
 
@@ -41,6 +42,7 @@ use crate::gui::render_gui;
 pub(crate) struct InnerState {
     pub(crate) world: World,
     pub(crate) opened_file: Option<PathBuf>,
+    pub(crate) camera: Camera,
 }
 pub(crate) struct GlobalState {
     pub(crate) inner_state: InnerState,
@@ -48,8 +50,8 @@ pub(crate) struct GlobalState {
 }
 
 impl StateCallable for GlobalState {
-    fn setup_gui(&mut self, gui: &mut Gui, render_state: PartialRenderState) {
-        render_gui(gui, render_state, self);
+    fn setup_gui(&mut self, gui: &mut Gui) {
+        render_gui(gui, self);
     }
 
     fn update(
@@ -59,6 +61,8 @@ impl StateCallable for GlobalState {
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_allocator: &StandardCommandBufferAllocator,
         queue_family_index: u32,
+        device: Arc<Device>,
+        viewport: Viewport,
     ) -> Option<PrimaryAutoCommandBuffer> {
         let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
             //TODO would it make sense to only use builder if a command requests it?
@@ -74,6 +78,7 @@ impl StateCallable for GlobalState {
                 allocator,
                 descriptor_set_allocator,
                 &mut cmd_buf_builder,
+                device.clone(),
             );
         }
 
@@ -95,12 +100,66 @@ impl StateCallable for GlobalState {
             }
         }
 
+        self.inner_state
+            .camera
+            .update_aspect(viewport.dimensions[0], viewport.dimensions[1]);
+        self.inner_state.camera.update_view();
+
         Some(cmd_buf_builder.build().unwrap())
     }
 
     fn cleanup(&self) {
         info!("Cleaning up...");
         clear_run_dir();
+    }
+
+    fn get_buffers(
+        &self,
+        device: Arc<Device>,
+    ) -> (
+        Subbuffer<CameraUniform>,
+        Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        Vec<Subbuffer<MaterialInfo>>,
+        Vec<Subbuffer<MeshInfo>>,
+    ) {
+        let texs = self
+            .inner_state
+            .world
+            .textures
+            .get_view_sampler_array(device.clone());
+
+        let material_info_bufs = self.inner_state.world.materials.get_buffer_array();
+
+        let mesh_info_bufs = self
+            .inner_state
+            .world
+            .get_active_scene()
+            .iter_meshes()
+            .map(|mesh| mesh.buffer.clone())
+            .collect_vec()
+            .into_iter();
+
+        (
+            self.inner_state.camera.buffer.clone(),
+            texs,
+            material_info_bufs,
+            mesh_info_bufs.collect_vec(),
+        )
+    }
+
+    fn recv_input(
+        &mut self,
+        is_up_pressed: bool,
+        is_down_pressed: bool,
+        is_left_pressed: bool,
+        is_right_pressed: bool,
+    ) {
+        self.inner_state.camera.recv_input(
+            is_up_pressed,
+            is_down_pressed,
+            is_left_pressed,
+            is_right_pressed,
+        );
     }
 }
 
@@ -208,34 +267,13 @@ pub fn start(gltf_paths: Vec<&str>) {
         inner_state: InnerState {
             world,
             opened_file: None,
+            camera,
         },
         commands: vec![],
     };
 
     let device = setup_info.device.clone();
     let render_pass = setup_info.render_pass.clone();
-    let texs = global_state.inner_state.world.textures.iter().map(|t| {
-        (
-            t.view.clone() as Arc<dyn ImageViewAbstract>,
-            Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear()).unwrap(),
-        )
-    });
-
-    let material_info_bufs = global_state
-        .inner_state
-        .world
-        .materials
-        .iter()
-        .map(|mat| mat.borrow().buffer.clone()); //TODO so many clones!
-
-    let mesh_info_bufs = global_state
-        .inner_state
-        .world
-        .get_active_scene()
-        .iter_meshes()
-        .map(|mesh| mesh.buffer.clone())
-        .collect_vec()
-        .into_iter();
 
     let pbr_pipeline = PBRPipelineProvider::new(
         device.clone(),
@@ -246,10 +284,6 @@ pub fn start(gltf_paths: Vec<&str>) {
             .iter_meshes()
             .map(|mesh| DrawableVertexInputs::from_mesh(mesh, &setup_info.memory_allocator))
             .collect_vec(),
-        camera.buffer.clone(),
-        texs.collect_vec(),
-        material_info_bufs.collect_vec(),
-        mesh_info_bufs.collect_vec(),
         viewport.clone(),
         render_pass.clone(),
     );
@@ -308,7 +342,7 @@ pub fn start(gltf_paths: Vec<&str>) {
     let line_pipeline = LinePipelineProvider::new(
         device.clone(),
         line_vertex_buffers,
-        camera.buffer.clone(),
+        global_state.inner_state.camera.buffer.clone(),
         line_info_buffers,
         viewport.clone(),
         render_pass,
@@ -319,7 +353,6 @@ pub fn start(gltf_paths: Vec<&str>) {
             init_state: setup_info,
             viewport,
             cmd_buf_builder,
-            camera,
         },
         vec![
             PipelineProviderKind::PBR(pbr_pipeline),

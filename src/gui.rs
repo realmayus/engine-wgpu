@@ -6,7 +6,6 @@ use log::info;
 use lib::scene::Model;
 use lib::scene_serde::WorldSerde;
 use lib::Dirtyable;
-use renderer::PartialRenderState;
 use systems::io;
 
 use crate::commands::{Command, DeleteModelCommand, ImportGltfCommand, UpdateModelCommand};
@@ -94,7 +93,7 @@ fn draw_model_collapsing(
     });
 }
 
-pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
+pub(crate) fn render_gui(gui: &mut Gui, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
@@ -137,13 +136,16 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
     });
 
     egui::Window::new("Camera").show(&ctx, |ui| {
-        ui.label(format!("Eye: {}", &render_state.camera.eye));
-        ui.label(format!("Target: {}", &render_state.camera.target));
-        ui.label(format!("Up: {}", &render_state.camera.up));
-        ui.add(egui::Slider::new(&mut render_state.camera.speed, 0.03..=0.3).text("Speed"));
-        ui.add(egui::Slider::new(&mut render_state.camera.fovy, 0.0..=180.0).text("Field of view"));
+        ui.label(format!("Eye: {}", &state.inner_state.camera.eye));
+        ui.label(format!("Target: {}", &state.inner_state.camera.target));
+        ui.label(format!("Up: {}", &state.inner_state.camera.up));
+        ui.add(egui::Slider::new(&mut state.inner_state.camera.speed, 0.03..=0.3).text("Speed"));
+        ui.add(
+            egui::Slider::new(&mut state.inner_state.camera.fovy, 0.0..=180.0)
+                .text("Field of view"),
+        );
         if ui.button("Reset").clicked() {
-            render_state.camera.reset();
+            state.inner_state.camera.reset();
         }
     });
 

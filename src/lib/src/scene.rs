@@ -9,9 +9,11 @@ use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::debug;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
+use vulkano::device::Device;
 use vulkano::image::view::ImageView;
-use vulkano::image::ImmutableImage;
+use vulkano::image::{ImageViewAbstract, ImmutableImage};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
 use crate::shader_types::{MaterialInfo, MeshInfo};
 use crate::{Dirtyable, VertexInputBuffer};
@@ -318,6 +320,22 @@ impl TextureManager {
     pub fn iter(&self) -> Iter<'_, Rc<Texture>> {
         self.textures.iter()
     }
+
+    pub fn get_view_sampler_array(
+        &self,
+        device: Arc<Device>,
+    ) -> Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)> {
+        //TODO Optimization: work out if we really need to enforce Vec everywhere or if slices are sufficient
+        self.iter()
+            .map(|t| {
+                (
+                    t.view.clone() as Arc<dyn ImageViewAbstract>,
+                    Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())
+                        .unwrap(),
+                )
+            })
+            .collect()
+    }
 }
 
 pub struct MaterialManager {
@@ -346,6 +364,10 @@ impl MaterialManager {
     pub fn iter(&self) -> Iter<'_, Rc<RefCell<Material>>> {
         self.materials.iter()
     }
+
+    pub fn get_buffer_array(&self) -> Vec<Subbuffer<MaterialInfo>> {
+        self.iter().map(|mat| mat.borrow().buffer.clone()).collect()
+    }
 }
 
 pub struct World {
@@ -358,6 +380,10 @@ pub struct World {
 impl World {
     pub fn get_active_scene(&self) -> &Scene {
         self.scenes.get(self.active_scene).unwrap()
+    }
+
+    pub fn get_active_scene_mut(&mut self) -> &mut Scene {
+        self.scenes.get_mut(self.active_scene).unwrap()
     }
 }
 

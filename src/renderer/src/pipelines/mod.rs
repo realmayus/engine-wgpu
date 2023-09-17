@@ -1,6 +1,13 @@
+use std::sync::Arc;
+
+use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
+use vulkano::image::ImageViewAbstract;
 use vulkano::pipeline::graphics::viewport::Viewport;
+use vulkano::sampler::Sampler;
+
+use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo};
 
 use crate::pipelines::line_pipeline::LinePipelineProvider;
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
@@ -13,7 +20,14 @@ pub trait PipelineProvider {
     fn create_pipeline(&mut self);
     fn set_viewport(&mut self, viewport: Viewport);
 
-    fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator);
+    fn init_descriptor_sets(
+        &mut self,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        camera: Subbuffer<CameraUniform>,
+        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+    );
     fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>);
 
     fn must_recreate_render_passes(&mut self) -> bool;
@@ -39,14 +53,29 @@ impl PipelineProvider for PipelineProviderKind {
         }
     }
 
-    fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator) {
+    fn init_descriptor_sets(
+        &mut self,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        camera: Subbuffer<CameraUniform>,
+        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+    ) {
         match self {
-            PipelineProviderKind::LINE(line_pipeline) => {
-                line_pipeline.init_descriptor_sets(descriptor_set_allocator)
-            }
-            PipelineProviderKind::PBR(pbr_pipeline) => {
-                pbr_pipeline.init_descriptor_sets(descriptor_set_allocator)
-            }
+            PipelineProviderKind::LINE(line_pipeline) => line_pipeline.init_descriptor_sets(
+                descriptor_set_allocator,
+                camera,
+                textures,
+                material_info_buffers,
+                mesh_info_buffers,
+            ),
+            PipelineProviderKind::PBR(pbr_pipeline) => pbr_pipeline.init_descriptor_sets(
+                descriptor_set_allocator,
+                camera,
+                textures,
+                material_info_buffers,
+                mesh_info_buffers,
+            ),
         }
     }
 

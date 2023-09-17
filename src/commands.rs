@@ -1,9 +1,11 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use glam::Mat4;
 use itertools::Itertools;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
+use vulkano::device::Device;
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
 use lib::scene::DrawableVertexInputs;
@@ -20,6 +22,7 @@ pub(crate) trait Command {
         allocator: &StandardMemoryAllocator,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        device: Arc<Device>,
     );
 }
 
@@ -35,6 +38,7 @@ impl Command for DeleteModelCommand {
         allocator: &StandardMemoryAllocator,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        device: Arc<Device>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
             let mut models = vec![];
@@ -81,6 +85,7 @@ impl Command for UpdateModelCommand {
         allocator: &StandardMemoryAllocator,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        device: Arc<Device>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
             for m in scene.models.as_mut_slice() {
@@ -105,6 +110,7 @@ impl Command for ImportGltfCommand {
         allocator: &StandardMemoryAllocator,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        device: Arc<Device>,
     ) {
         let gltf_scenes = load_gltf(
             self.path.as_path(),
@@ -113,7 +119,11 @@ impl Command for ImportGltfCommand {
             &mut state.world.textures,
             &mut state.world.materials,
         );
-        state.world.scenes.extend(gltf_scenes);
+        state
+            .world
+            .get_active_scene_mut()
+            .models
+            .extend(gltf_scenes.iter().flat_map(|s| s.models.clone()));
 
         for pipeline_provider in pipeline_providers {
             //TODO don't assume there's only one instance of a provider
@@ -125,22 +135,31 @@ impl Command for ImportGltfCommand {
                             .world
                             .get_active_scene()
                             .iter_meshes()
-                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
+                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator))
                             .collect_vec(),
                     );
-                    pbr.update_descriptor_sets(|controller| {
-                        controller.update_mesh_infos(
-                            |mesh_infos| {
-                                let new_infos = &state
-                                    .world
-                                    .get_active_scene()
-                                    .iter_meshes()
-                                    .map(|mesh| mesh.buffer.clone())
-                                    .collect_vec();
-                            },
-                            descriptor_set_allocator,
-                        );
-                    });
+
+                    // pbr.update_descriptor_sets(|controller| {
+                    //     controller.update_textures(|textures| {
+                    //         let _ = mem::replace(textures, state.world.textures.get_view_sampler_array(device.clone()));
+                    //     }, descriptor_set_allocator);
+                    //     controller.update_material_infos(|material_infos| {
+                    //         let _ = mem::replace(material_infos, state.world.materials.get_buffer_array());
+                    //     }, descriptor_set_allocator);
+                    //     controller.update_mesh_infos(
+                    //         |mesh_infos| {
+                    //             let new_infos = state
+                    //                 .world
+                    //                 .get_active_scene()
+                    //                 .iter_meshes()
+                    //                 .map(|mesh| mesh.buffer.clone())
+                    //                 .collect_vec();
+                    //             debug!("Replacing previous mesh infos (size: {}) with new mesh infos (size: {})", mesh_infos.len(), new_infos.len());
+                    //             let _ = mem::replace(mesh_infos, new_infos);
+                    //         },
+                    //         descriptor_set_allocator,
+                    //     );
+                    // });
                     pbr.recreate_render_passes = true;
                 }
             }

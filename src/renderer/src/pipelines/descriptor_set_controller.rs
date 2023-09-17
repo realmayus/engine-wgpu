@@ -108,11 +108,13 @@ impl DescriptorSetController {
         )
         .unwrap()
     }
-    pub fn update_textures(
+    pub fn update_textures<F>(
         &mut self,
-        update_fn: Box<dyn Fn(&mut Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>)>,
+        update_fn: F,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) {
+    ) where
+        F: Fn(&mut Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>),
+    {
         update_fn(&mut self.textures);
         self.descriptor_sets[1] = Self::get_textures_descriptor_set(
             descriptor_set_allocator,
@@ -134,11 +136,13 @@ impl DescriptorSetController {
         )
         .unwrap()
     }
-    pub fn update_material_infos(
+    pub fn update_material_infos<F>(
         &mut self,
-        update_fn: Box<dyn Fn(&mut Vec<Subbuffer<MaterialInfo>>)>,
+        update_fn: F,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) {
+    ) where
+        F: Fn(&mut Vec<Subbuffer<MaterialInfo>>),
+    {
         update_fn(&mut self.material_info_buffers);
         self.descriptor_sets[2] = Self::get_materials_descriptor_set(
             descriptor_set_allocator,
