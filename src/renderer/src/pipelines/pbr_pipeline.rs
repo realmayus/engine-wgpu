@@ -3,21 +3,21 @@ use std::sync::Arc;
 use vulkano::buffer::{BufferContents, Subbuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::ImageViewAbstract;
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
+use vulkano::pipeline::{GraphicsPipeline, Pipeline};
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
 use lib::scene::DrawableVertexInputs;
-use lib::shader_types::{CameraUniform, MyNormal, MyUV, MyVertex};
+use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo, MyNormal, MyUV, MyVertex};
 
+use crate::pipelines::descriptor_set_controller::DescriptorSetController;
 use crate::pipelines::PipelineProvider;
 
 mod vs {
@@ -41,24 +41,28 @@ pub struct PBRPipelineProvider {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     cached_vertex_input_buffers: Vec<DrawableVertexInputs>,
-    descriptor_sets: Vec<Arc<PersistentDescriptorSet>>,
     viewport: Viewport,
     render_pass: Arc<RenderPass>,
     device: Arc<Device>,
     vertex_input_state: Vec<VertexBufferDescription>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     pub recreate_render_passes: bool,
+    descriptor_set_controller: Option<DescriptorSetController>,
+    // will get initialized later
+    camera: Subbuffer<CameraUniform>,
+    textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+    material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+    mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
 }
 
 impl PBRPipelineProvider {
     pub fn new(
         device: Arc<Device>,
         drawables: Vec<DrawableVertexInputs>,
-        camera_buffer: Subbuffer<CameraUniform>,
-        textures: impl IntoIterator<Item = (Arc<dyn ImageViewAbstract>, Arc<Sampler>)>
-            + ExactSizeIterator,
-        material_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
-        mesh_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
+        camera: Subbuffer<CameraUniform>,
+        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
         viewport: Viewport,
         render_pass: Arc<RenderPass>,
     ) -> Self {
@@ -69,7 +73,6 @@ impl PBRPipelineProvider {
             vs,
             fs,
             cached_vertex_input_buffers: drawables,
-            descriptor_sets: vec![],
             viewport,
             render_pass,
             device,
@@ -80,6 +83,11 @@ impl PBRPipelineProvider {
             ],
             pipeline: None,
             recreate_render_passes: false,
+            descriptor_set_controller: None,
+            camera,
+            textures,
+            material_info_buffers,
+            mesh_info_buffers,
         }
     }
 
@@ -87,41 +95,11 @@ impl PBRPipelineProvider {
         self.cached_vertex_input_buffers = new_inputs;
     }
 
-    pub fn update_descriptor_set(
-        &mut self,
-        descriptor_set_id: u32,
-        f: Box<dyn Fn() -> Arc<PersistentDescriptorSet>>,
-    ) {
-        self.descriptor_sets[descriptor_set_id as usize] = f();
-    }
-
-    pub fn set_descriptor_set_at(
-        &mut self,
-        index: u32,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        var_count: u32,
-        descriptor_writes: Vec<WriteDescriptorSet>,
-    ) {
-        let descriptor_set_layout = self
-            .pipeline
-            .clone()
-            .unwrap()
-            .layout()
-            .set_layouts()
-            .get(index as usize)
-            .unwrap()
-            .clone();
-
-        self.descriptor_sets.insert(
-            index as usize,
-            PersistentDescriptorSet::new_variable(
-                descriptor_set_allocator,
-                descriptor_set_layout,
-                var_count,
-                descriptor_writes,
-            )
-            .unwrap(),
-        );
+    pub fn update_descriptor_sets<F>(&mut self, f: F)
+    where
+        F: Fn(&mut DescriptorSetController),
+    {
+        f(self.descriptor_set_controller.as_mut().unwrap());
     }
 }
 
@@ -160,58 +138,24 @@ impl PipelineProvider for PBRPipelineProvider {
     }
 
     fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator) {
-        let write_descriptor_sets = vec![
-            (
-                0,
-                vec![
-                    // Level 0: Scene-global uniforms
-                    WriteDescriptorSet::buffer(0, camera_buffer),
-                ],
-            ),
-            (
-                textures.len() as u32,
-                vec![
-                    // Level 1: Pipeline-specific uniforms
-                    WriteDescriptorSet::image_view_sampler_array(0, 0, textures),
-                ],
-            ),
-            (
-                material_info_buffers.len() as u32,
-                vec![
-                    // Level 2: Pipeline-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, material_info_buffers),
-                ],
-            ),
-            (
-                mesh_info_buffers.len() as u32,
-                vec![
-                    // Level 3: Model-specific uniforms
-                    WriteDescriptorSet::buffer_array(0, 0, mesh_info_buffers),
-                ],
-            ),
-        ];
-
-        for (i, (var_count, write_desc_set)) in temp.into_iter().enumerate() {
-            self.set_descriptor_set_at(
-                i as u32,
-                descriptor_set_allocator,
-                var_count,
-                write_desc_set,
-            );
-        }
+        self.descriptor_set_controller = Some(DescriptorSetController::init(
+            self.camera.clone(),
+            self.textures.clone(),
+            self.material_info_buffers.clone(),
+            self.mesh_info_buffers.clone(),
+            descriptor_set_allocator,
+            self.pipeline.clone().unwrap().layout().clone(),
+        ));
     }
 
     fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
         builder.bind_pipeline_graphics(self.pipeline.clone().unwrap().clone());
 
-        for i in 0..self.descriptor_sets.len() {
-            builder.bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                self.pipeline.clone().unwrap().layout().clone(),
-                i as u32,
-                self.descriptor_sets[i].clone(),
-            );
-        }
+        self.descriptor_set_controller
+            .as_ref()
+            .unwrap()
+            .bind(builder);
+
         for (i, vertex_input) in self.cached_vertex_input_buffers.iter().enumerate() {
             builder
                 .bind_vertex_buffers(

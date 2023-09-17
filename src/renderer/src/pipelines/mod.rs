@@ -5,13 +5,14 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use crate::pipelines::line_pipeline::LinePipelineProvider;
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 
-mod descriptor_set_abstraction;
+mod descriptor_set_controller;
 pub mod line_pipeline;
 pub mod pbr_pipeline;
 
 pub trait PipelineProvider {
     fn create_pipeline(&mut self);
     fn set_viewport(&mut self, viewport: Viewport);
+
     fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator);
     fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>);
 

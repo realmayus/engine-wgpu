@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use glam::Mat4;
 use itertools::Itertools;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
+use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
 use lib::scene::DrawableVertexInputs;
@@ -17,6 +18,7 @@ pub(crate) trait Command {
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     );
 }
@@ -31,6 +33,7 @@ impl Command for DeleteModelCommand {
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
@@ -76,6 +79,7 @@ impl Command for UpdateModelCommand {
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
@@ -99,6 +103,7 @@ impl Command for ImportGltfCommand {
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) {
         let gltf_scenes = load_gltf(
@@ -123,7 +128,19 @@ impl Command for ImportGltfCommand {
                             .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
                             .collect_vec(),
                     );
-                    pbr.set_descriptor_set_at()
+                    pbr.update_descriptor_sets(|controller| {
+                        controller.update_mesh_infos(
+                            |mesh_infos| {
+                                let new_infos = &state
+                                    .world
+                                    .get_active_scene()
+                                    .iter_meshes()
+                                    .map(|mesh| mesh.buffer.clone())
+                                    .collect_vec();
+                            },
+                            descriptor_set_allocator,
+                        );
+                    });
                     pbr.recreate_render_passes = true;
                 }
             }

@@ -14,6 +14,7 @@ use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
 };
+use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::format;
 use vulkano::image::ImageViewAbstract;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
@@ -55,6 +56,7 @@ impl StateCallable for GlobalState {
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_allocator: &StandardCommandBufferAllocator,
         queue_family_index: u32,
     ) -> Option<PrimaryAutoCommandBuffer> {
@@ -70,6 +72,7 @@ impl StateCallable for GlobalState {
                 &mut self.inner_state,
                 pipeline_providers,
                 allocator,
+                descriptor_set_allocator,
                 &mut cmd_buf_builder,
             );
         }
@@ -244,9 +247,9 @@ pub fn start(gltf_paths: Vec<&str>) {
             .map(|mesh| DrawableVertexInputs::from_mesh(mesh, &setup_info.memory_allocator))
             .collect_vec(),
         camera.buffer.clone(),
-        texs,
-        material_info_bufs,
-        mesh_info_bufs,
+        texs.collect_vec(),
+        material_info_bufs.collect_vec(),
+        mesh_info_bufs.collect_vec(),
         viewport.clone(),
         render_pass.clone(),
     );

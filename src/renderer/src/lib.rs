@@ -43,6 +43,7 @@ pub trait StateCallable {
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
         allocator: &StandardMemoryAllocator,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_allocator: &StandardCommandBufferAllocator,
         queue_family_index: u32,
     ) -> Option<PrimaryAutoCommandBuffer>;

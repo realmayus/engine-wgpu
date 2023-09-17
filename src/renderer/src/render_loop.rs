@@ -259,6 +259,7 @@ pub fn start_renderer(
             let update_cmd_buffer = callable.update(
                 pipeline_providers.as_mut_slice(),
                 &state.init_state.memory_allocator,
+                &state.init_state.descriptor_set_allocator,
                 &state.init_state.cmd_buf_allocator,
                 state.init_state.queue.queue_family_index(),
             );
