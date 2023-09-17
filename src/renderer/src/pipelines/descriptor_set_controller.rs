@@ -11,10 +11,6 @@ use vulkano::sampler::Sampler;
 use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo};
 
 pub struct DescriptorSetController {
-    camera: Subbuffer<CameraUniform>,
-    textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
-    material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
-    mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
     descriptor_sets: [Arc<PersistentDescriptorSet>; 4],
     // 0: camera, 1: textures, 2: material_info, 3: mesh_info
     pipeline_layout: Arc<PipelineLayout>,
@@ -30,10 +26,6 @@ impl DescriptorSetController {
         pipeline_layout: Arc<PipelineLayout>,
     ) -> Self {
         Self {
-            camera: camera.clone(),
-            textures: textures.clone(),
-            material_info_buffers: material_info_buffers.clone(),
-            mesh_info_buffers: mesh_info_buffers.clone(),
             descriptor_sets: [
                 Self::get_camera_descriptor_set(
                     descriptor_set_allocator,
