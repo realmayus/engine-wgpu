@@ -19,79 +19,81 @@ fn draw_model_collapsing(
     parent_transform: Mat4,
     commands: &mut Vec<Box<dyn Command>>,
 ) {
-    ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
-        if ui.button("Remove").clicked() {
-            commands.push(Box::new(DeleteModelCommand {
-                to_delete: model.id,
-            }));
-        }
-        ui.label("Translation:");
-        let mut local_transform = model.local_transform;
-        if ui
-            .add(egui::Slider::new(&mut local_transform.w_axis.x, -10.0..=10.0).text("X"))
-            .changed()
-        {
-            commands.push(Box::new(UpdateModelCommand {
-                to_update: model.id,
-                parent_transform,
-                local_transform,
-            }));
-        }
+    ui.push_id(model.id, |ui| {
+        ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
+            if ui.button("Remove").clicked() {
+                commands.push(Box::new(DeleteModelCommand {
+                    to_delete: model.id,
+                }));
+            }
+            ui.label("Translation:");
+            let mut local_transform = model.local_transform;
+            if ui
+                .add(egui::Slider::new(&mut local_transform.w_axis.x, -10.0..=10.0).text("X"))
+                .changed()
+            {
+                commands.push(Box::new(UpdateModelCommand {
+                    to_update: model.id,
+                    parent_transform,
+                    local_transform,
+                }));
+            }
 
-        if ui
-            .add(egui::Slider::new(&mut local_transform.w_axis.y, -10.0..=10.0).text("Y"))
-            .changed()
-        {
-            commands.push(Box::new(UpdateModelCommand {
-                to_update: model.id,
-                parent_transform,
-                local_transform,
-            }));
-        }
+            if ui
+                .add(egui::Slider::new(&mut local_transform.w_axis.y, -10.0..=10.0).text("Y"))
+                .changed()
+            {
+                commands.push(Box::new(UpdateModelCommand {
+                    to_update: model.id,
+                    parent_transform,
+                    local_transform,
+                }));
+            }
 
-        if ui
-            .add(egui::Slider::new(&mut local_transform.w_axis.z, -10.0..=10.0).text("Z"))
-            .changed()
-        {
-            commands.push(Box::new(UpdateModelCommand {
-                to_update: model.id,
-                parent_transform,
-                local_transform,
-            }));
-        }
+            if ui
+                .add(egui::Slider::new(&mut local_transform.w_axis.z, -10.0..=10.0).text("Z"))
+                .changed()
+            {
+                commands.push(Box::new(UpdateModelCommand {
+                    to_update: model.id,
+                    parent_transform,
+                    local_transform,
+                }));
+            }
 
-        ui.label("Meshes:");
-        for mesh in model.meshes.as_slice() {
-            ui.push_id(mesh.id, |ui| {
-                ui.collapsing("Mesh", |ui| {
-                    ui.label(format!(
-                        "# of vert/norm/in: {}/{}/{}",
-                        mesh.vertices.len(),
-                        mesh.normals.len(),
-                        mesh.indices.len()
-                    ));
-                    ui.label(
-                        "Material: ".to_owned()
-                            + &*String::from(
-                                mesh.material.borrow().name.clone().unwrap_or_default(),
-                            ),
-                    );
-                    if ui.button("Log material").clicked() {
-                        info!("{:?}", mesh.material);
-                    }
-                })
-            });
-        }
-        ui.separator();
-        ui.label("Children:");
-        for child in model.children.as_slice() {
-            draw_model_collapsing(
-                ui,
-                child,
-                parent_transform * model.local_transform,
-                commands,
-            );
-        }
+            ui.label("Meshes:");
+            for mesh in model.meshes.as_slice() {
+                ui.push_id(mesh.id, |ui| {
+                    ui.collapsing("Mesh", |ui| {
+                        ui.label(format!(
+                            "# of vert/norm/in: {}/{}/{}",
+                            mesh.vertices.len(),
+                            mesh.normals.len(),
+                            mesh.indices.len()
+                        ));
+                        ui.label(
+                            "Material: ".to_owned()
+                                + &*String::from(
+                                    mesh.material.borrow().name.clone().unwrap_or_default(),
+                                ),
+                        );
+                        if ui.button("Log material").clicked() {
+                            info!("{:?}", mesh.material);
+                        }
+                    })
+                });
+            }
+            ui.separator();
+            ui.label("Children:");
+            for child in model.children.as_slice() {
+                draw_model_collapsing(
+                    ui,
+                    child,
+                    parent_transform * model.local_transform,
+                    commands,
+                );
+            }
+        });
     });
 }
 
