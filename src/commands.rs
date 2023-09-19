@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use glam::Mat4;
 use itertools::Itertools;
+use log::info;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::Device;
@@ -41,16 +42,10 @@ impl Command for DeleteModelCommand {
         _cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         _device: Arc<Device>,
     ) {
+        info!("Deleting model with ID {}", self.to_delete);
         for scene in state.world.scenes.as_mut_slice() {
-            let mut models = vec![];
-            for m in scene.models.clone() {
-                //TODO get rid of this clone
-                if m.id != self.to_delete {
-                    models.push(m);
-                    break;
-                }
-            }
-            scene.models = models;
+            // we don't know which scene the model is in
+            scene.models.retain(|m| m.id != self.to_delete);
         }
         for pipeline_provider in pipeline_providers {
             //TODO don't assume there's only one instance of a provider
