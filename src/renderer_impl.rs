@@ -251,6 +251,29 @@ pub fn start() {
         material_manager.add_material(material);
     };
 
+    {
+        let img = image::open("assets/textures/white.png")
+            .expect("Couldn't load white texture")
+            .to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        let dyn_img = DynamicImage::from(img);
+
+        let path = extract_image_to_file("white", &dyn_img, Png);
+
+        let tex = create_texture(
+            dyn_img.into_bytes(),
+            format::Format::R8G8B8A8_UNORM,
+            width,
+            height,
+            &setup_info.memory_allocator,
+            &mut cmd_buf_builder,
+        );
+
+        let texture = Texture::from(tex, Some(Box::from("White texture")), 1, path);
+        texture_manager.add_texture(texture);
+    }
+
     let camera = Camera::new_default(
         viewport.dimensions[0],
         viewport.dimensions[1],

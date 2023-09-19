@@ -99,7 +99,7 @@ impl Dirtyable for Material {
         debug!("Updated material #{}", self.id);
         self.set_dirty(false);
         let mut mapping = self.buffer.write().unwrap();
-        mapping.base_texture = self.base_texture.as_ref().map(|t| t.id).unwrap_or(0);
+        mapping.base_texture = self.base_texture.as_ref().map(|t| t.id).unwrap_or(1);
         mapping.base_color = self.base_color.to_array();
     }
 }
