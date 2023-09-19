@@ -4,10 +4,14 @@ use glam::Mat4;
 use log::info;
 
 use lib::scene::Model;
+use lib::scene_serde::WorldSerde;
 use lib::Dirtyable;
-use renderer::PartialRenderState;
+use systems::io;
 
-use crate::renderer_impl::{Command, DeleteModelCommand, GlobalState, UpdateModelCommand};
+use crate::commands::{
+    Command, DeleteModelCommand, ImportGltfCommand, LoadWorldCommand, UpdateModelCommand,
+};
+use crate::renderer_impl::GlobalState;
 
 fn draw_model_collapsing(
     ui: &mut Ui,
@@ -15,99 +19,138 @@ fn draw_model_collapsing(
     parent_transform: Mat4,
     commands: &mut Vec<Box<dyn Command>>,
 ) {
-    ui.collapsing(String::from(model.name.clone().unwrap_or_default()), |ui| {
-        if ui.button("Remove").clicked() {
-            commands.push(Box::new(DeleteModelCommand {
-                to_delete: model.id,
-            }));
-        }
-        ui.label("Translation:");
-        let mut local_transform = model.local_transform;
-        if ui
-            .add(egui::Slider::new(&mut local_transform.w_axis.x, -10.0..=10.0).text("X"))
-            .changed()
-        {
-            commands.push(Box::new(UpdateModelCommand {
-                to_update: model.id,
-                parent_transform,
-                local_transform,
-            }));
-        }
+    ui.push_id(model.id, |ui| {
+        ui.collapsing(
+            format!("{} {}", model.name.clone().unwrap_or_default(), model.id),
+            |ui| {
+                if ui.button("Remove").clicked() {
+                    commands.push(Box::new(DeleteModelCommand {
+                        to_delete: model.id,
+                    }));
+                }
+                ui.label("Translation:");
+                let mut local_transform = model.local_transform;
+                if ui
+                    .add(egui::Slider::new(&mut local_transform.w_axis.x, -10.0..=10.0).text("X"))
+                    .changed()
+                {
+                    commands.push(Box::new(UpdateModelCommand {
+                        to_update: model.id,
+                        parent_transform,
+                        local_transform,
+                    }));
+                }
 
-        if ui
-            .add(egui::Slider::new(&mut local_transform.w_axis.y, -10.0..=10.0).text("Y"))
-            .changed()
-        {
-            commands.push(Box::new(UpdateModelCommand {
-                to_update: model.id,
-                parent_transform,
-                local_transform,
-            }));
-        }
+                if ui
+                    .add(egui::Slider::new(&mut local_transform.w_axis.y, -10.0..=10.0).text("Y"))
+                    .changed()
+                {
+                    commands.push(Box::new(UpdateModelCommand {
+                        to_update: model.id,
+                        parent_transform,
+                        local_transform,
+                    }));
+                }
 
-        if ui
-            .add(egui::Slider::new(&mut local_transform.w_axis.z, -10.0..=10.0).text("Z"))
-            .changed()
-        {
-            commands.push(Box::new(UpdateModelCommand {
-                to_update: model.id,
-                parent_transform,
-                local_transform,
-            }));
-        }
+                if ui
+                    .add(egui::Slider::new(&mut local_transform.w_axis.z, -10.0..=10.0).text("Z"))
+                    .changed()
+                {
+                    commands.push(Box::new(UpdateModelCommand {
+                        to_update: model.id,
+                        parent_transform,
+                        local_transform,
+                    }));
+                }
 
-        ui.label("Meshes:");
-        for mesh in model.meshes.as_slice() {
-            ui.push_id(mesh.id, |ui| {
-                ui.collapsing("Mesh", |ui| {
-                    ui.label(format!(
-                        "# of vert/norm/in: {}/{}/{}",
-                        mesh.vertices.len(),
-                        mesh.normals.len(),
-                        mesh.indices.len()
-                    ));
-                    ui.label(
-                        "Material: ".to_owned()
-                            + &*String::from(
-                                mesh.material.borrow().name.clone().unwrap_or_default(),
-                            ),
+                ui.label("Meshes:");
+                for mesh in model.meshes.as_slice() {
+                    ui.push_id(mesh.id, |ui| {
+                        ui.collapsing("Mesh", |ui| {
+                            ui.label(format!(
+                                "# of vert/norm/in: {}/{}/{}",
+                                mesh.vertices.len(),
+                                mesh.normals.len(),
+                                mesh.indices.len()
+                            ));
+                            ui.label(
+                                "Material: ".to_owned()
+                                    + &*String::from(
+                                        mesh.material.borrow().name.clone().unwrap_or_default(),
+                                    ),
+                            );
+                            if ui.button("Log material").clicked() {
+                                info!("{:?}", mesh.material);
+                            }
+                        })
+                    });
+                }
+                ui.separator();
+                ui.label("Children:");
+                for child in model.children.as_slice() {
+                    draw_model_collapsing(
+                        ui,
+                        child,
+                        parent_transform * model.local_transform,
+                        commands,
                     );
-                    if ui.button("Log material").clicked() {
-                        info!("{:?}", mesh.material);
-                    }
-                })
-            });
-        }
-        ui.separator();
-        ui.label("Children:");
-        for child in model.children.as_slice() {
-            draw_model_collapsing(
-                ui,
-                child,
-                parent_transform * model.local_transform,
-                commands,
-            );
-        }
+                }
+            },
+        );
     });
 }
 
-pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state: &mut GlobalState) {
+pub(crate) fn render_gui(gui: &mut Gui, state: &mut GlobalState) {
     let ctx = gui.context();
     egui::Window::new("Scene").show(&ctx, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::default()), |ui| {
-            if ui.button("Load world").clicked() {}
-            if ui.button("Save world").clicked() {
-                // if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                //     io::world_saver::save(
-                //         path.as_path(),
-                //         WorldSerde::from(
-                //             state.textures.clone(),
-                //             state.materials.clone(),
-                //             state.scenes.clone(),
-                //         ),
-                //     )
-                //         .expect("Couldn't save world");
-                // }
+            if ui.button("Load").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("World file", &["json"])
+                    .pick_file()
+                {
+                    state
+                        .commands
+                        .push(Box::new(LoadWorldCommand { path: path.clone() }));
+                    state.inner_state.opened_file = Some(path);
+                }
+            }
+            if ui.button("Save as…").clicked() {
+                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    io::world_saver::save(
+                        path.as_path(),
+                        WorldSerde::from(
+                            &state.inner_state.world.textures,
+                            &state.inner_state.world.materials,
+                            state.inner_state.world.scenes.clone(),
+                        ),
+                    )
+                    .expect("Couldn't save world");
+                }
+            }
+            if ui
+                .add_enabled(
+                    state.inner_state.opened_file.is_some(),
+                    egui::Button::new("Save"),
+                )
+                .clicked()
+            {
+                io::world_saver::save(
+                    state
+                        .inner_state
+                        .opened_file
+                        .as_ref()
+                        .unwrap()
+                        .as_path()
+                        .parent()
+                        .unwrap(),
+                    WorldSerde::from(
+                        &state.inner_state.world.textures,
+                        &state.inner_state.world.materials,
+                        state.inner_state.world.scenes.clone(),
+                    ),
+                )
+                .expect("Couldn't save world");
             }
         });
         if ui.button("Import glTF").clicked() {
@@ -116,7 +159,7 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
                 .pick_files()
             {
                 for path in paths {
-                    println!("{}", path.display());
+                    state.commands.push(Box::new(ImportGltfCommand { path }));
                 }
             }
         }
@@ -134,13 +177,16 @@ pub(crate) fn render_gui(gui: &mut Gui, render_state: PartialRenderState, state:
     });
 
     egui::Window::new("Camera").show(&ctx, |ui| {
-        ui.label(format!("Eye: {}", &render_state.camera.eye));
-        ui.label(format!("Target: {}", &render_state.camera.target));
-        ui.label(format!("Up: {}", &render_state.camera.up));
-        ui.add(egui::Slider::new(&mut render_state.camera.speed, 0.03..=0.3).text("Speed"));
-        ui.add(egui::Slider::new(&mut render_state.camera.fovy, 0.0..=180.0).text("Field of view"));
+        ui.label(format!("Eye: {}", &state.inner_state.camera.eye));
+        ui.label(format!("Target: {}", &state.inner_state.camera.target));
+        ui.label(format!("Up: {}", &state.inner_state.camera.up));
+        ui.add(egui::Slider::new(&mut state.inner_state.camera.speed, 0.03..=0.3).text("Speed"));
+        ui.add(
+            egui::Slider::new(&mut state.inner_state.camera.fovy, 0.0..=180.0)
+                .text("Field of view"),
+        );
         if ui.button("Reset").clicked() {
-            render_state.camera.reset();
+            state.inner_state.camera.reset();
         }
     });
 

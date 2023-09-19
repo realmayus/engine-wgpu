@@ -82,9 +82,9 @@ impl Camera {
         let proj =
             Mat4::perspective_rh_gl(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
-        return proj * view * scale;
+        proj * view * scale
     }
-    pub(crate) fn update_aspect(&mut self, width: f32, height: f32) {
+    pub fn update_aspect(&mut self, width: f32, height: f32) {
         self.aspect = width / height;
     }
     pub fn update_view(&self) {

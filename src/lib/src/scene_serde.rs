@@ -1,18 +1,20 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::mem;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use image::{DynamicImage, ImageFormat};
 use serde::{Deserialize, Serialize};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
-use crate::scene::{Material, Mesh, Model, Scene, Texture};
+use crate::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager, World};
 use crate::shader_types::{MaterialInfo, MeshInfo};
 use crate::texture::create_texture;
+use crate::util::extract_image_to_file;
 
 #[derive(Serialize, Deserialize)]
 pub struct TextureSerde {
@@ -33,16 +35,27 @@ impl From<Rc<Texture>> for TextureSerde {
 
 impl Texture {
     fn from_serde(
-        value: TextureSerde,
+        value: &TextureSerde,
         allocator: &StandardMemoryAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        root_dir: &Path,
     ) -> Texture {
-        let img = image::open(value.img_path.to_str().unwrap()).unwrap_or_else(|_| {
-            panic!(
-                "Couldn't load texture at {}",
-                value.img_path.to_str().unwrap()
-            )
-        });
+        let img = DynamicImage::from(
+            image::open(root_dir.join(value.img_path.as_path()))
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Couldn't load texture at {}",
+                        value.img_path.to_str().unwrap()
+                    )
+                })
+                .to_rgba8(),
+        );
+        let path = extract_image_to_file(
+            value.img_path.file_stem().unwrap().to_str().unwrap(),
+            &img,
+            ImageFormat::from_path(value.img_path.as_path()).unwrap(),
+        );
+
         let (width, height) = (img.width(), img.height());
         let texture = create_texture(
             img.into_bytes(),
@@ -52,7 +65,7 @@ impl Texture {
             allocator,
             cmd_buf_builder,
         );
-        Texture::from(texture, value.name, value.id, value.img_path)
+        Texture::from(texture, value.name.clone(), value.id, path)
     }
 }
 
@@ -116,22 +129,24 @@ impl From<Rc<RefCell<Material>>> for MaterialSerde {
 
 impl Material {
     fn from_serde(
-        value: MaterialSerde,
-        textures: HashMap<u32, Rc<Texture>>,
+        value: &MaterialSerde,
+        textures: &TextureManager,
         allocator: &StandardMemoryAllocator,
     ) -> Material {
         Material {
             dirty: true,
             id: value.id,
-            name: value.name,
-            base_texture: textures.get(&value.base_texture).cloned(),
+            name: value.name.clone(),
+            base_texture: Some(textures.get_texture(value.base_texture)),
             base_color: value.base_color,
-            metallic_roughness_texture: textures.get(&value.metallic_roughness_texture).cloned(),
+            metallic_roughness_texture: Some(
+                textures.get_texture(value.metallic_roughness_texture),
+            ),
             metallic_roughness_factors: value.metallic_roughness_factors,
-            normal_texture: textures.get(&value.normal_texture).cloned(),
-            occlusion_texture: textures.get(&value.occlusion_texture).cloned(),
+            normal_texture: Some(textures.get_texture(value.normal_texture)),
+            occlusion_texture: Some(textures.get_texture(value.occlusion_texture)),
             occlusion_strength: value.occlusion_strength,
-            emissive_texture: textures.get(&value.emissive_texture).cloned(),
+            emissive_texture: Some(textures.get_texture(value.emissive_texture)),
             emissive_factors: value.emissive_factors,
             buffer: Buffer::from_data(
                 allocator,
@@ -178,14 +193,14 @@ impl From<Mesh> for MeshSerde {
 impl Mesh {
     fn from_serde(
         value: MeshSerde,
-        materials: &HashMap<u32, Rc<RefCell<Material>>>,
+        materials: &MaterialManager,
         allocator: &StandardMemoryAllocator,
     ) -> Self {
         Mesh::from(
             value.vertices,
             value.indices,
             value.normals,
-            materials.get(&value.material).cloned().unwrap(),
+            materials.get_material(value.material),
             value.uvs,
             value.global_transform,
             Buffer::from_data(
@@ -229,7 +244,7 @@ impl From<Model> for ModelSerde {
 impl Model {
     fn from_serde(
         value: ModelSerde,
-        materials: &HashMap<u32, Rc<RefCell<Material>>>,
+        materials: &MaterialManager,
         allocator: &StandardMemoryAllocator,
     ) -> Self {
         Model {
@@ -270,7 +285,7 @@ impl From<Scene> for SceneSerde {
 impl Scene {
     fn from_serde(
         value: SceneSerde,
-        materials: &HashMap<u32, Rc<RefCell<Material>>>,
+        materials: &MaterialManager,
         allocator: &StandardMemoryAllocator,
     ) -> Self {
         Self {
@@ -280,28 +295,128 @@ impl Scene {
                 .into_iter()
                 .map(|m| Model::from_serde(m, materials, allocator))
                 .collect(),
-            name: value.name,
+            name: value.name.clone(),
         }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct WorldSerde {
-    pub textures: Vec<TextureSerde>,
-    pub materials: Vec<MaterialSerde>,
+    pub textures: TextureManagerSerde,
+    pub materials: MaterialManagerSerde,
     pub scenes: Vec<SceneSerde>,
 }
 
 impl WorldSerde {
     pub fn from(
-        textures: Vec<Rc<Texture>>,
-        materials: Vec<Rc<RefCell<Material>>>,
+        textures: &TextureManager,
+        materials: &MaterialManager,
         scenes: Vec<Scene>,
     ) -> Self {
         Self {
-            textures: textures.into_iter().map(TextureSerde::from).collect(),
-            materials: materials.into_iter().map(MaterialSerde::from).collect(),
+            textures: TextureManagerSerde::from(textures),
+            materials: MaterialManagerSerde::from(materials),
             scenes: scenes.into_iter().map(SceneSerde::from).collect(),
         }
+    }
+
+    pub fn parse(
+        &mut self,
+        allocator: &StandardMemoryAllocator,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        root_dir: &Path,
+    ) -> World {
+        let textures =
+            TextureManager::from_serde(&self.textures, allocator, cmd_buf_builder, root_dir);
+        let materials = MaterialManager::from_serde(&self.materials, &textures, allocator);
+        let scenes_serde = mem::take(&mut self.scenes);
+        let scenes = scenes_serde
+            .into_iter()
+            .map(|scene| Scene::from_serde(scene, &materials, allocator))
+            .collect();
+        World {
+            scenes,
+            active_scene: 0,
+            materials,
+            textures,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TextureManagerSerde {
+    pub textures: Vec<TextureSerde>,
+}
+
+impl From<&TextureManager> for TextureManagerSerde {
+    fn from(value: &TextureManager) -> Self {
+        Self {
+            textures: value
+                .iter()
+                .map(|tex| TextureSerde::from(tex.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl TextureManager {
+    fn from_serde(
+        value: &TextureManagerSerde,
+        allocator: &StandardMemoryAllocator,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        root_dir: &Path,
+    ) -> Self {
+        let mut manager = Self::new();
+        for tex in value
+            .textures
+            .iter()
+            .map(|tex| Texture::from_serde(tex, allocator, cmd_buf_builder, root_dir))
+            .into_iter()
+        {
+            let id = tex.id;
+            let result_id = manager.add_texture(tex);
+            assert_eq!(
+                id, result_id,
+                "Expected texture ID {} but got {}",
+                result_id, id
+            );
+        }
+        manager
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MaterialManagerSerde {
+    pub materials: Vec<MaterialSerde>,
+}
+
+impl From<&MaterialManager> for MaterialManagerSerde {
+    fn from(value: &MaterialManager) -> Self {
+        Self {
+            materials: value
+                .iter()
+                .map(|mat| MaterialSerde::from(mat.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl MaterialManager {
+    fn from_serde(
+        value: &MaterialManagerSerde,
+        textures: &TextureManager,
+        allocator: &StandardMemoryAllocator,
+    ) -> MaterialManager {
+        let mut manager = Self::new();
+        for mat in value.materials.as_slice() {
+            let id = mat.id;
+            let result_id = manager.add_material(Material::from_serde(mat, textures, allocator));
+            assert_eq!(
+                result_id, id,
+                "Expected material ID {} but got {}",
+                result_id, id
+            );
+        }
+        manager
     }
 }

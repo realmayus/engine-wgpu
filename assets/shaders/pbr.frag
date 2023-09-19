@@ -21,5 +21,5 @@ layout(set = 3, binding = 0) buffer DrawCallInfo {
 
 
 void main() {
-    f_color = texture(nonuniformEXT(texs[materials[draw_call_infos[index].mat_id].base_texture]), tex_coords);
+    f_color = texture(nonuniformEXT(texs[materials[draw_call_infos[index].mat_id].base_texture]), tex_coords) * nonuniformEXT(materials[draw_call_infos[index].mat_id].base_color);
 }
