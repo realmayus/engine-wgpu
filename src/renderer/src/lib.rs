@@ -77,6 +77,7 @@ pub struct RenderInitState {
     pub cmd_buf_allocator: StandardCommandBufferAllocator,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub render_pass: Arc<RenderPass>,
+    pub image_format: Format,
 }
 
 fn select_physical_device(

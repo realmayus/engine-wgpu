@@ -79,6 +79,7 @@ pub fn start_renderer(
         state.init_state.queue.clone(),
         GuiConfig {
             is_overlay: true,
+            preferred_format: Some(state.init_state.image_format),
             ..Default::default()
         },
     );
