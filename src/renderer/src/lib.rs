@@ -181,10 +181,6 @@ pub fn init_renderer() -> RenderInitState {
 
     let dimensions = window.inner_size();
     let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
-    let image_format = physical_device
-        .surface_formats(&surface, Default::default())
-        .unwrap()[0]
-        .0;
 
     // Create the swapchain
     let (swapchain, images) = {
@@ -193,7 +189,6 @@ pub fn init_renderer() -> RenderInitState {
             surface.clone(),
             SwapchainCreateInfo {
                 min_image_count: caps.min_image_count,
-                image_format: Some(image_format),
                 image_extent: dimensions.into(),
                 image_usage: ImageUsage::COLOR_ATTACHMENT,
                 composite_alpha,
@@ -215,13 +210,13 @@ pub fn init_renderer() -> RenderInitState {
         device,
         surface,
         caps,
-        image_format,
         event_loop,
         dimensions,
         composite_alpha,
         window,
         memory_allocator: Arc::new(memory_allocator),
         queue,
+        image_format: swapchain.image_format(),
         swapchain,
         images,
         cmd_buf_allocator,
@@ -392,6 +387,7 @@ pub fn start_renderer(
         state.init_state.queue.clone(),
         GuiConfig {
             is_overlay: true,
+            preferred_format: Some(state.init_state.image_format),
             ..Default::default()
         },
     );
