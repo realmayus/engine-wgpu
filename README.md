@@ -1,12 +1,20 @@
 # engine-vk [![Rust](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml/badge.svg)](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml)
-Vulkan game engine
+Vulkan game engine written in Rust. The goal is to have the entire engine as a separate library to ensure low coupling.
+
+This crate contains the following subcrates:
+- `lib`: contains structs and helpers that are shared across the entire engine, such as the world, scene, model, mesh, texture, and material structs
+- `renderer`: contains the abstraction that interfaces with vulkan through vulkano
+- `system::io`: contains various I/O functions such as loading/saving features and a glTF importer
+- `system::particle`: particle system, TBA
+- `system::physics`: physics engine, TBA
+- `system::sound`: sound engine, TBA
 
 ## I/O
 The program creates a directory `run` in the current working directory (cwd) where all textures and other resources are expanded at runtime. This directory is cleared upon exit.
 
 World files (`world.json`) contain relative paths to resources like images. Thus, the scene file must be contained in the same directory as the other resource directories. 
 
-The working directory can be set using the ` WORKING_DIR` environment variable.
+The working directory can be set using the `WORKING_DIR` environment variable.
 
 ## Roadmap
 ### Renderer

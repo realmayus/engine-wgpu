@@ -3,13 +3,8 @@ use std::sync::Arc;
 
 use lib::shader_types::{CameraUniform, MyNormal, MyTangent, MyUV, MyVertex};
 use vulkano::buffer::Subbuffer;
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::layout::DescriptorSetLayout;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::Device;
 use vulkano::image::ImageViewAbstract;
@@ -18,13 +13,14 @@ use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription};
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
-use vulkano::render_pass::{Framebuffer, RenderPass, Subpass};
+use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 use vulkano::DeviceSize;
 
+use lib::scene::DrawableVertexInputs;
+
 use crate::pipelines::PipelineProvider;
-use crate::VertexBuffer;
 
 mod vs {
     vulkano_shaders::shader! {
@@ -43,29 +39,24 @@ mod fs {
 /**
 Pipeline for physically-based rendering
 */
-pub struct PBRPipeline {
+pub struct PBRPipelineProvider {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertex_buffers: Vec<VertexBuffer>,
-    normal_buffers: Vec<VertexBuffer>,
-    tangent_buffers: Vec<VertexBuffer>,
-    uv_buffers: Vec<VertexBuffer>,
-    index_buffers: Vec<Subbuffer<[u32]>>,
+    cached_vertex_input_buffers: Vec<DrawableVertexInputs>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
     render_pass: Arc<RenderPass>,
     device: Arc<Device>,
     vertex_input_state: Vec<VertexBufferDescription>,
+    pipeline: Option<Arc<GraphicsPipeline>>,
+    pub recreate_render_passes: bool,
 }
-impl PBRPipeline {
+
+impl PBRPipelineProvider {
     pub fn new(
         device: Arc<Device>,
-        vertex_buffers: Vec<VertexBuffer>,
-        normal_buffers: Vec<VertexBuffer>,
-        tangent_buffers: Vec<VertexBuffer>,
-        uv_buffers: Vec<VertexBuffer>,
-        index_buffers: Vec<Subbuffer<[u32]>>,
+        drawables: Vec<DrawableVertexInputs>,
         camera_buffer: Subbuffer<CameraUniform>,
         textures: impl IntoIterator<Item = (Arc<dyn ImageViewAbstract>, Arc<Sampler>)>
             + ExactSizeIterator,
@@ -104,7 +95,6 @@ impl PBRPipeline {
             ),
             ({
                 let m_len = mesh_info_buffers.len() as u32;
-                let l_len = light_buffer.len() as u32;
                 (
                     m_len,
                     vec![
@@ -122,16 +112,13 @@ impl PBRPipeline {
                     WriteDescriptorSet::buffer_array(0, 0, light_buffer),
                 ],
             ),
+            // (0, vec![WriteDescriptorSet::buffer(0, light_buffer.0)]),
         ];
 
         Self {
             vs,
             fs,
-            vertex_buffers,
-            normal_buffers,
-            tangent_buffers,
-            uv_buffers,
-            index_buffers,
+            cached_vertex_input_buffers: drawables,
             write_descriptor_sets,
             descriptor_sets: vec![],
             viewport,
@@ -143,65 +130,79 @@ impl PBRPipeline {
                 MyTangent::per_vertex(),
                 MyUV::per_vertex(),
             ],
+            pipeline: None,
+            recreate_render_passes: false,
         }
     }
+
+    pub fn update_drawables(&mut self, new_inputs: Vec<DrawableVertexInputs>) {
+        self.cached_vertex_input_buffers = new_inputs;
+    }
+
+    pub fn update_descriptor_set(
+        &mut self,
+        descriptor_set_id: u32,
+        f: Box<dyn Fn() -> Arc<PersistentDescriptorSet>>,
+    ) {
+        self.descriptor_sets[descriptor_set_id as usize] = f();
+    }
 }
-impl PipelineProvider for PBRPipeline {
-    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
-        GraphicsPipeline::start()
-            // describes layout of vertex input
-            .vertex_input_state(self.vertex_input_state.clone())
-            // specify entry point of vertex shader (vulkan shaders can technically have multiple)
-            .vertex_shader(self.vs.entry_point("main").unwrap(), ())
-            //Indicate type of primitives (default is list of triangles)
-            .input_assembly_state(InputAssemblyState::new())
-            // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
-            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([self
-                .viewport
-                .clone()]))
-            // Specify entry point of fragment shader
-            .fragment_shader(self.fs.entry_point("main").unwrap(), ())
-            .depth_stencil_state(DepthStencilState::simple_depth_test())
-            // This pipeline object concerns the first pass of the render pass
-            .render_pass(Subpass::from((self.render_pass).clone(), 0).unwrap())
-            .with_auto_layout(self.device.clone(), |x| {
-                // textures
-                let binding = x[1].bindings.get_mut(&0).unwrap();
-                binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
-                // material info
-                let binding = x[2].bindings.get_mut(&0).unwrap();
-                binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128;
+impl PipelineProvider for PBRPipelineProvider {
+    fn create_pipeline(&mut self) {
+        self.pipeline = Some(
+            GraphicsPipeline::start()
+                .vertex_input_state(self.vertex_input_state.clone()) // describes layout of vertex input
+                .vertex_shader(self.vs.entry_point("main").unwrap(), ()) // specify entry point of vertex shader (vulkan shaders can technically have multiple)
+                .input_assembly_state(InputAssemblyState::new()) //Indicate type of primitives (default is list of triangles)
+                .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([self
+                    .viewport
+                    .clone()])) // Set the *fixed* viewport -> makes it impossible to change viewport for each draw cmd, but increases performance. Need to create new pipeline object if size does change.
+                .fragment_shader(self.fs.entry_point("main").unwrap(), ()) // Specify entry point of fragment shader
+                .depth_stencil_state(DepthStencilState::simple_depth_test())
+                .render_pass(Subpass::from((&self.render_pass).clone(), 0).unwrap()) // This pipeline object concerns the first pass of the render pass
+                .with_auto_layout(self.device.clone(), |x| {
+                    let binding = x[1].bindings.get_mut(&0).unwrap();
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128; //TODO this is an upper bound to the number of textures, perhaps make it dynamic
 
-                // MeshInfo
-                let binding = x[3].bindings.get_mut(&0).unwrap();
-                binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128;
+                    // material info
+                    let binding = x[2].bindings.get_mut(&0).unwrap();
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128;
 
-                // LightInfo
-                let binding = x[4].bindings.get_mut(&0).unwrap();
-                binding.variable_descriptor_count = true;
-                binding.descriptor_count = 128;
-            })
-            .unwrap()
+                    // MeshInfo
+                    let binding = x[3].bindings.get_mut(&0).unwrap();
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128;
+
+                    // LightInfo
+                    let binding = x[4].bindings.get_mut(&0).unwrap();
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128;
+                })
+                .unwrap(),
+        );
     }
 
     fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
     }
 
-    fn init_descriptor_sets(
-        &mut self,
-        set_layouts: &[Arc<DescriptorSetLayout>],
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-    ) {
+    fn init_descriptor_sets(&mut self, descriptor_set_allocator: &StandardDescriptorSetAllocator) {
         let mut temp = vec![];
         std::mem::swap(&mut self.write_descriptor_sets, &mut temp);
 
         for (i, (var_count, write_desc_set)) in temp.into_iter().enumerate() {
-            let descriptor_set_layout = set_layouts.get(i).unwrap().clone();
+            let descriptor_set_layout = self
+                .pipeline
+                .clone()
+                .unwrap()
+                .layout()
+                .set_layouts()
+                .get(i)
+                .unwrap()
+                .clone();
             self.descriptor_sets.push(
                 PersistentDescriptorSet::new_variable(
                     descriptor_set_allocator,
@@ -214,35 +215,35 @@ impl PipelineProvider for PBRPipeline {
         }
     }
 
-    fn render_pass(
-        &self,
-        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        pipeline: Arc<GraphicsPipeline>,
-    ) {
-        builder.bind_pipeline_graphics(pipeline.clone());
+    fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
+        builder.bind_pipeline_graphics(self.pipeline.clone().unwrap().clone());
 
         for i in 0..self.descriptor_sets.len() {
             builder.bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                pipeline.layout().clone(),
+                self.pipeline.clone().unwrap().layout().clone(),
                 i as u32,
                 self.descriptor_sets[i].clone(),
             );
         }
-        for i in 0..self.vertex_buffers.len() {
+        for (i, vertex_input) in self.cached_vertex_input_buffers.iter().enumerate() {
             builder
                 .bind_vertex_buffers(
                     0,
                     (
-                        self.vertex_buffers[i].subbuffer.clone(),
-                        self.normal_buffers[i].subbuffer.clone(),
-                        self.tangent_buffers[i].subbuffer.clone(),
-                        self.uv_buffers[i].subbuffer.clone(),
+                        vertex_input.vertex_buffer.subbuffer.clone(),
+                        vertex_input.normal_buffer.subbuffer.clone(),
+                        vertex_input.tangent_buffer.subbuffer.clone(),
+                        vertex_input.uv_buffer.subbuffer.clone(),
                     ),
                 )
-                .bind_index_buffer(self.index_buffers[i].clone())
-                .draw_indexed(self.index_buffers[i].len() as u32, 1, 0, 0, i as u32)
+                .bind_index_buffer(vertex_input.index_buffer.clone())
+                .draw_indexed(vertex_input.index_buffer.len() as u32, 1, 0, 0, i as u32)
                 .unwrap();
         }
+    }
+
+    fn must_recreate_render_passes(&mut self) -> bool {
+        self.recreate_render_passes
     }
 }

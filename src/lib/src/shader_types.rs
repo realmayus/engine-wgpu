@@ -141,6 +141,8 @@ pub struct LightInfo {
     pub light: u32,
     pub intensity: f32,
     pub range: f32,
+    // TODO doesn't need to be in every LightInfo struct but fuck descriptorsets
+    pub amount: u32,
 }
 impl LightInfo {
     pub fn from_light(light: &PointLight) -> Self {
@@ -153,6 +155,7 @@ impl LightInfo {
             light: light.index as u32,
             intensity: light.intensity,
             range: light.range.unwrap_or(1.),
+            amount: light.amount,
         }
     }
 }
