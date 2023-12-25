@@ -1,7 +1,8 @@
 use dotenv::dotenv;
 use log::info;
-use systems::io::clear_run_dir;
 
+mod commands;
+mod gui;
 mod renderer_impl;
 
 fn main() {
@@ -9,7 +10,5 @@ fn main() {
     env_logger::init();
     info!("Starting up engine...");
 
-    renderer_impl::start(vec!["assets/models/DamagedHelmet.gltf"]);
-    // example_renderer::start(vec!["assets/models/sponza/Sponza.gltf"]);
-    // renderer_impl::start(vec!["assets/models/sphere.glb"]);
+    renderer_impl::start();
 }

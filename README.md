@@ -19,7 +19,7 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 ## Roadmap
 ### Renderer
 - [x] egui [17.08.23]
-- [ ] dynamic asset loading
+- [x] dynamic asset loading [17.09.23]
 - [ ] point lights
 - [ ] gamma correction
 - [ ] Instancing
@@ -51,6 +51,7 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 ### I/O
 - [x] world (de-)serialization [25.08.23]
 - [ ] investigate https://github.com/google/flatbuffers
+- [ ] OBJ import / export, perhaps store vertex/normal/uv data in OBJs to reduce clutter in world.json
 - [ ] multi-threaded asset loading
 
 ### ECS

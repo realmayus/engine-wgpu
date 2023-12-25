@@ -1,14 +1,15 @@
-use log::debug;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+
+use log::debug;
 
 use lib::scene_serde::WorldSerde;
 
 pub fn save(path: &Path, world: WorldSerde) -> Result<(), Box<dyn Error>> {
     debug!("Saving world to {}", path.to_str().unwrap());
     fs::create_dir_all(path.join("images"))?;
-    for texture in world.textures.as_slice() {
+    for texture in world.textures.textures.as_slice() {
         debug!(
             "Texture has path {}",
             texture.img_path.clone().to_str().unwrap()
