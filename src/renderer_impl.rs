@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::vec::Vec;
 
 use egui_winit_vulkano::Gui;
-use glam::Mat4;
+use glam::{Mat4, Vec2};
 use image::DynamicImage;
 use image::ImageFormat::Png;
 use itertools::Itertools;
@@ -23,11 +23,11 @@ use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::Sampler;
 
 use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
-use lib::shader_types::{CameraUniform, LineInfo, MaterialInfo, MeshInfo};
+use lib::shader_types::{CameraUniform, LightInfo, LineInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 use lib::util::extract_image_to_file;
 use lib::{Dirtyable, VertexInputBuffer};
-use renderer::camera::Camera;
+use renderer::camera::{Camera, KeyState};
 use renderer::initialization::init_renderer;
 use renderer::pipelines::line_pipeline::LinePipelineProvider;
 use renderer::pipelines::pbr_pipeline::PBRPipelineProvider;
@@ -122,6 +122,7 @@ impl StateCallable for GlobalState {
         Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
         Vec<Subbuffer<MaterialInfo>>,
         Vec<Subbuffer<MeshInfo>>,
+        Vec<Subbuffer<LightInfo>>,
     ) {
         let texs = self
             .inner_state
@@ -140,26 +141,41 @@ impl StateCallable for GlobalState {
             .collect_vec()
             .into_iter();
 
+        let lights = self
+            .inner_state
+            .world
+            .get_active_scene()
+            .models
+            .iter()
+            .as_slice()
+            .iter()
+            .filter_map(|model| {
+                if let Some(ref light) = model.light {
+                    Some(light.buffer.clone())
+                } else {
+                    None
+                }
+            });
+
         (
             self.inner_state.camera.buffer.clone(),
             texs,
             material_info_bufs,
             mesh_info_bufs.collect_vec(),
+            lights.collect_vec(),
         )
     }
 
     fn recv_input(
         &mut self,
-        is_up_pressed: bool,
-        is_down_pressed: bool,
-        is_left_pressed: bool,
-        is_right_pressed: bool,
+        keys: &KeyState,
+        change: Vec2,
+        delta_time: f32,
     ) {
         self.inner_state.camera.recv_input(
-            is_up_pressed,
-            is_down_pressed,
-            is_left_pressed,
-            is_right_pressed,
+            keys,
+            change,
+            delta_time,
         );
     }
 }
@@ -207,14 +223,14 @@ pub fn start() {
     let mut texture_manager = TextureManager::new();
     let mut material_manager = MaterialManager::new();
     {
-        let img = image::open("assets/textures/no_texture.png")
+        let img = image::open("assets/textures/default.png")
             .expect("Couldn't load default texture")
             .to_rgba8();
         let width = img.width();
         let height = img.height();
         let dyn_img = DynamicImage::from(img);
 
-        let path = extract_image_to_file("no_texture", &dyn_img, Png);
+        let path = extract_image_to_file("default", &dyn_img, Png);
 
         let tex = create_texture(
             dyn_img.into_bytes(),
@@ -228,6 +244,26 @@ pub fn start() {
         let texture = Texture::from(tex, Some(Box::from("Default texture")), 0, path);
         texture_manager.add_texture(texture);
 
+        let img = image::open("assets/textures/default_normal.png")
+            .expect("Couldn't load default normal texture")
+            .to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        let dyn_img = DynamicImage::from(img);
+
+        let path = extract_image_to_file("default_normal", &dyn_img, Png);
+
+        let tex = create_texture(
+            dyn_img.into_bytes(),
+            format::Format::R8G8B8A8_UNORM,
+            width,
+            height,
+            &setup_info.memory_allocator,
+            &mut cmd_buf_builder,
+        );
+        let texture_normal = Texture::from(tex, Some(Box::from("Default normal texture")), 1, path);
+        texture_manager.add_texture(texture_normal);
+
         let material = Material::from_default(
             Some(texture_manager.get_texture(0)),
             Buffer::from_data(
@@ -240,10 +276,7 @@ pub fn start() {
                     usage: MemoryUsage::Upload,
                     ..Default::default()
                 },
-                MaterialInfo {
-                    base_color: [1.0, 1.0, 1.0, 1.0],
-                    base_texture: 0,
-                },
+                MaterialInfo::default(),
             )
             .expect("Couldn't allocate MaterialInfo uniform"),
         );
@@ -298,7 +331,6 @@ pub fn start() {
 
     let device = setup_info.device.clone();
     let render_pass = setup_info.render_pass.clone();
-
     let pbr_pipeline = PBRPipelineProvider::new(
         device.clone(),
         global_state

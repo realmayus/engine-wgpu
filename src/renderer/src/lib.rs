@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use egui_winit_vulkano::Gui;
+use glam::Vec2;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
@@ -22,9 +23,9 @@ use vulkano::swapchain::{Surface, Swapchain};
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
-use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo};
+use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo};
 
-use crate::camera::Camera;
+use crate::camera::{Camera, KeyState};
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
 
 pub mod camera;
@@ -54,14 +55,14 @@ pub trait StateCallable {
         Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
         Vec<Subbuffer<MaterialInfo>>,
         Vec<Subbuffer<MeshInfo>>,
+        Vec<Subbuffer<LightInfo>>,
     );
 
     fn recv_input(
         &mut self,
-        is_up_pressed: bool,
-        is_down_pressed: bool,
-        is_left_pressed: bool,
-        is_right_pressed: bool,
+        keys: &KeyState,
+        change: Vec2,
+        delta_time: f32,
     );
 }
 

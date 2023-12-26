@@ -15,7 +15,7 @@ use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
 use lib::scene::DrawableVertexInputs;
-use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo, MyNormal, MyUV, MyVertex};
+use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo, MyNormal, MyTangent, MyUV, MyVertex};
 
 use crate::pipelines::descriptor_set_controller::DescriptorSetController;
 use crate::pipelines::PipelineProvider;
@@ -71,6 +71,7 @@ impl PBRPipelineProvider {
             vertex_input_state: vec![
                 MyVertex::per_vertex(),
                 MyNormal::per_vertex(),
+                MyTangent::per_vertex(),
                 MyUV::per_vertex(),
             ],
             pipeline: None,
@@ -115,7 +116,11 @@ impl PipelineProvider for PBRPipelineProvider {
 
                     let binding = x[3].bindings.get_mut(&0).unwrap(); // MeshInfo
                     binding.variable_descriptor_count = true;
-                    binding.descriptor_count = 128
+                    binding.descriptor_count = 128;
+
+                    let binding = x[4].bindings.get_mut(&0).unwrap(); // LightInfo
+                    binding.variable_descriptor_count = true;
+                    binding.descriptor_count = 128;
                 })
                 .unwrap(),
         );
@@ -132,12 +137,14 @@ impl PipelineProvider for PBRPipelineProvider {
         textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+        light_info_buffers: Vec<Subbuffer<LightInfo>>,
     ) {
         self.descriptor_set_controller = Some(DescriptorSetController::init(
             camera,
             textures,
             material_info_buffers,
             mesh_info_buffers,
+            light_info_buffers,
             descriptor_set_allocator,
             self.pipeline.clone().unwrap().layout().clone(),
         ));
@@ -158,6 +165,7 @@ impl PipelineProvider for PBRPipelineProvider {
                     (
                         vertex_input.vertex_buffer.subbuffer.clone(),
                         vertex_input.normal_buffer.subbuffer.clone(),
+                        vertex_input.tangent_buffer.subbuffer.clone(),
                         vertex_input.uv_buffer.subbuffer.clone(),
                     ),
                 )

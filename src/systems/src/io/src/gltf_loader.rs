@@ -1,12 +1,14 @@
+use lib::scene::PointLight;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::str::FromStr;
 use std::{fs, io};
 
 use base64::{engine::general_purpose, Engine as _};
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
@@ -20,7 +22,7 @@ use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 
 use lib::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
-use lib::shader_types::{MaterialInfo, MeshInfo};
+use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 use lib::util::extract_image_to_file;
 
@@ -304,7 +306,7 @@ pub fn load_gltf(
                 dirty: true, // must get updated upon start in order to prime the uniform
                 id: 0, // will get overwritten by call to MaterialManager::add_material() below
                 name: gltf_mat.name().map(Box::from),
-                base_texture: gltf_mat
+                albedo_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .base_color_texture()
                     .map(|t| t.texture().index())
@@ -314,7 +316,7 @@ pub fn load_gltf(
                             .expect("Couldn't find base texture")
                             .clone()
                     }),
-                base_color: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
+                albedo: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
                 metallic_roughness_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .metallic_roughness_texture()
@@ -347,7 +349,7 @@ pub fn load_gltf(
                             .expect("Couldn't find occlusion texture")
                             .clone()
                     }),
-                occlusion_strength: 1.0, // TODO: Impl: try to read strength from glTF
+                occlusion_factor: 1.0, // TODO: Impl: try to read strength from glTF
                 emissive_texture: gltf_mat
                     .emissive_texture()
                     .map(|t| t.texture().index())
@@ -379,8 +381,8 @@ pub fn load_gltf(
 
     for scene in gltf.scenes() {
         info!("Scene has {:?} nodes", scene.nodes().len());
-
-        let models = scene
+        let mut num_lights = 0;
+        let mut models: Vec<Model> = scene
             .nodes()
             .map(|n| {
                 load_node(
@@ -390,7 +392,18 @@ pub fn load_gltf(
                     allocator,
                     material_manager.get_default_material(),
                     Mat4::default(),
+                    &mut num_lights,
                 )
+            })
+            .collect();
+
+        models = models
+            .into_iter()
+            .map(|mut model| {
+                if let Some(ref mut light) = model.light {
+                    light.amount = num_lights;
+                }
+                model
             })
             .collect();
         scenes.push(Scene::from(models, scene.name().map(Box::from)));
@@ -405,6 +418,7 @@ fn load_node(
     allocator: &StandardMemoryAllocator,
     default_material: Rc<RefCell<Material>>,
     parent_transform: Mat4,
+    num_lights: &mut u32,
 ) -> Model {
     let mut children: Vec<Model> = vec![];
     let local_transform = Mat4::from_cols_array_2d(&node.transform().matrix());
@@ -416,6 +430,7 @@ fn load_node(
             allocator,
             default_material.clone(),
             parent_transform * local_transform,
+            num_lights,
         ));
     }
     let mut global_transform = parent_transform * local_transform;
@@ -427,6 +442,8 @@ fn load_node(
             let mut positions: Vec<Vec3> = vec![];
             let mut indices: Vec<u32> = vec![];
             let mut normals: Vec<Vec3> = vec![];
+            // xyz is tangent, w is bi-tangent sign
+            let mut tangents: Vec<Vec4> = vec![];
             let mut uvs: Vec<Vec2> = vec![];
             let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             if let Some(iter) = reader.read_tex_coords(0) {
@@ -441,6 +458,9 @@ fn load_node(
             if let Some(iter) = reader.read_normals() {
                 normals = iter.map(Vec3::from).collect();
             }
+            if let Some(iter) = reader.read_tangents() {
+                tangents = iter.map(Vec4::from).collect();
+            }
 
             let mat = gltf_primitive
                 .material()
@@ -450,6 +470,7 @@ fn load_node(
                 positions,
                 indices,
                 normals,
+                tangents,
                 mat.unwrap_or(default_material.clone()),
                 uvs,
                 global_transform,
@@ -463,16 +484,93 @@ fn load_node(
                         usage: MemoryUsage::Upload,
                         ..Default::default()
                     },
-                    MeshInfo::default(),
+                    MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
                 )
                 .expect("Couldn't allocate MeshInfo uniform"),
             ));
         }
     }
-    Model::from(
-        meshes,
-        node.name().map(Box::from),
-        children,
-        local_transform,
+
+    let light = node.light().map(|light| PointLight {
+        dirty: true,
+        global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
+        index: light.index(),
+        color: Vec3::from(light.color()),
+        intensity: light.intensity(),
+        range: light.range(),
+        amount: *num_lights,
+        buffer: Buffer::from_data(
+            allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            LightInfo::default(),
+        )
+        .expect("Couldn't allocate LightInfo buffer"),
+    });
+
+    if let Some(ref _light) = light {
+        *num_lights += 1;
+    }
+
+    Model::from(meshes, node.name().map(Box::from), children, local_transform, light)
+}
+
+/// loads the hardcoded exr
+fn load_exr(
+    allocator: &StandardMemoryAllocator,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    tex_i: u32,
+) -> Texture {
+    let img = image::open(Path::new("assets/EXRs/little_paris_eiffel_tower_2k.exr"))
+        .expect("Couldn't load Exr.");
+    let exr_textureview = create_texture(
+        DynamicImage::from(img.to_rgba32f()).into_bytes(),
+        Format::R32G32B32A32_SFLOAT,
+        img.width(),
+        img.height(),
+        allocator,
+        cmd_buf_builder,
+    );
+    let name = "EXR".to_string().into_boxed_str();
+    Texture::from(
+        exr_textureview,
+        Some(name),
+        tex_i,
+        PathBuf::from_str("assets/EXRs/little_paris_eiffel_tower_2k.exr").unwrap(),
+    )
+}
+
+pub fn load_texture(
+    allocator: &StandardMemoryAllocator,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    path: &Path,
+    index: u32,
+) -> Texture {
+    let img =
+        image::open(path).expect(format!("Couldn't load texture from path {:?}.", path).as_str());
+    let width = img.width();
+    let height = img.height();
+
+    let texture_view = create_texture(
+        DynamicImage::from(img.to_rgba8()).into_bytes(),
+        Format::R8G8B8A8_UNORM,
+        width,
+        height,
+        allocator,
+        cmd_buf_builder,
+    );
+    let mut path_buf = PathBuf::new();
+    path_buf.push(path);
+    Texture::from(
+        texture_view,
+        Some(path.to_str().unwrap().to_string().into_boxed_str()),
+        index,
+        PathBuf::from_str(path.to_str().unwrap()).unwrap(),
     )
 }

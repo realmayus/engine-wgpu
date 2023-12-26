@@ -15,7 +15,7 @@ use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::sampler::Sampler;
 use vulkano::shader::ShaderModule;
 
-use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo, MyVertex};
+use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo, MyVertex};
 use lib::VertexInputBuffer;
 
 use crate::pipelines::PipelineProvider;
@@ -125,10 +125,11 @@ impl PipelineProvider for LinePipelineProvider {
     fn init_descriptor_sets(
         &mut self,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        _camera: Subbuffer<CameraUniform>,
-        _textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
-        _material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
-        _mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+        camera: Subbuffer<CameraUniform>,
+        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
+        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+        light_info_buffers: Vec<Subbuffer<LightInfo>>,
     ) {
         let mut temp = vec![];
         std::mem::swap(&mut self.write_descriptor_sets, &mut temp);

@@ -1,3 +1,5 @@
+use crate::scene::PointLight;
+use crate::scene::Material;
 use glam::Mat4;
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex;
@@ -16,6 +18,13 @@ pub struct MyVertex {
 pub struct MyNormal {
     #[format(R32G32B32_SFLOAT)]
     normal: [f32; 3],
+}
+
+#[derive(BufferContents, Vertex)]
+#[repr(C)]
+pub struct MyTangent {
+    #[format(R32G32B32A32_SFLOAT)]
+    normal: [f32; 4],
 }
 
 #[derive(BufferContents, Vertex)]
@@ -45,15 +54,56 @@ impl CameraUniform {
 #[derive(BufferContents, Debug)]
 #[repr(C)]
 pub struct MaterialInfo {
-    pub base_color: [f32; 4],
-    pub base_texture: u32, // index of texture
+    pub albedo: [f32; 4],
+    pub albedo_texture: u32, // index of texture
+    pub metal_roughness_factors: [f32; 2],
+    pub metal_roughness_texture: u32,
+    pub emission_factors: [f32; 3],
+    pub emission_texture: u32,
+    pub normal_texture: u32,
+    pub occlusion_factor: f32,
+    pub occlusion_texture: u32,
 }
 
+impl From<&Material> for MaterialInfo {
+    fn from(material: &Material) -> Self {
+        Self {
+            albedo: material.albedo.to_array(),
+            albedo_texture: material.albedo_texture.as_ref().unwrap().id,
+            metal_roughness_factors: material.metallic_roughness_factors.to_array(),
+            metal_roughness_texture: material
+                .metallic_roughness_texture
+                .as_ref()
+                .map(|t| t.id)
+                .unwrap_or(1),
+            emission_factors: material.emissive_factors.to_array(),
+            emission_texture: material
+                .emissive_texture
+                .as_ref()
+                .map(|t| t.id)
+                .unwrap_or(1),
+            normal_texture: material.normal_texture.as_ref().map(|t| t.id).unwrap_or(0),
+            occlusion_factor: 1.0,
+            occlusion_texture: material
+                .occlusion_texture
+                .as_ref()
+                .map(|t| t.id)
+                .unwrap_or(0),
+        }
+    }
+}
 impl Default for MaterialInfo {
     fn default() -> Self {
         Self {
-            base_color: [1.0, 1.0, 1.0, 1.0],
-            base_texture: 0,
+            albedo: [1.0; 4],
+            albedo_texture: 0,
+            metal_roughness_factors: [0.5; 2],
+            metal_roughness_texture: 0,
+            emission_factors: [0.0; 3],
+            emission_texture: 0,
+            normal_texture: 1,
+            occlusion_factor: 0.0,
+            occlusion_texture: 0,
         }
     }
 }
@@ -80,4 +130,28 @@ impl MeshInfo {
 pub struct LineInfo {
     pub model_transform: [[f32; 4]; 4],
     pub color: [f32; 4],
+}
+
+#[derive(BufferContents, Debug, Default)]
+#[repr(C)]
+pub struct LightInfo {
+    pub transform: [[f32; 4]; 4],
+    pub color: [f32; 3],
+    pub light: u32,
+    pub intensity: f32,
+    pub range: f32,
+    pub amount: u32,
+}
+
+impl From<&PointLight> for LightInfo {
+    fn from(light: &PointLight) -> Self {
+        Self {
+            transform: light.global_transform.to_cols_array_2d(),
+            color: light.color.to_array(),
+            light: light.index as u32,
+            intensity: light.intensity,
+            range: light.range.unwrap_or(1.0),
+            amount: light.amount,
+        }
+    }
 }

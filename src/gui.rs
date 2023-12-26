@@ -200,7 +200,7 @@ pub(crate) fn render_gui(gui: &mut Gui, state: &mut GlobalState) {
                         if ui.button("Update").clicked() {
                             mat.clone().borrow_mut().set_dirty(true);
                         }
-                        ui.label(format!("Base color factors: {}", mat.borrow().base_color));
+                        ui.label(format!("Base color factors: {}", mat.borrow().albedo));
                         ui.label(format!(
                             "Metallic roughness factors: {}",
                             mat.borrow().metallic_roughness_factors
@@ -211,12 +211,12 @@ pub(crate) fn render_gui(gui: &mut Gui, state: &mut GlobalState) {
                         ));
                         ui.label(format!(
                             "Occlusion strength: {}",
-                            mat.borrow().occlusion_strength
+                            mat.borrow().occlusion_factor
                         ));
                         ui.separator();
                         ui.label(format!(
                             "Base color texture: {:?}",
-                            mat.borrow().base_texture
+                            mat.borrow().albedo_texture
                         ));
                         ui.label(format!("Normal texture: {:?}", mat.borrow().normal_texture));
                         ui.label(format!(

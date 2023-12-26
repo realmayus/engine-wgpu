@@ -7,7 +7,7 @@ use vulkano::image::ImageViewAbstract;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::Sampler;
 
-use lib::shader_types::{CameraUniform, MaterialInfo, MeshInfo};
+use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo};
 
 use crate::pipelines::line_pipeline::LinePipelineProvider;
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
@@ -27,6 +27,7 @@ pub trait PipelineProvider {
         textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+        light_info_buffers: Vec<Subbuffer<LightInfo>>,
     );
     fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>);
 
@@ -60,6 +61,7 @@ impl PipelineProvider for PipelineProviderKind {
         textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
+        light_info_buffers: Vec<Subbuffer<LightInfo>>
     ) {
         match self {
             PipelineProviderKind::LINE(line_pipeline) => line_pipeline.init_descriptor_sets(
@@ -68,6 +70,7 @@ impl PipelineProvider for PipelineProviderKind {
                 textures,
                 material_info_buffers,
                 mesh_info_buffers,
+                light_info_buffers,
             ),
             PipelineProviderKind::PBR(pbr_pipeline) => pbr_pipeline.init_descriptor_sets(
                 descriptor_set_allocator,
@@ -75,7 +78,9 @@ impl PipelineProvider for PipelineProviderKind {
                 textures,
                 material_info_buffers,
                 mesh_info_buffers,
+                light_info_buffers,
             ),
+
         }
     }
 
