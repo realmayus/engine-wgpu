@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use image::{DynamicImage, ImageFormat};
@@ -366,12 +367,11 @@ impl TextureManager {
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         root_dir: &Path,
     ) -> Self {
-        let mut manager = Self::new();
+        let mut manager = Self::new_ref(allocator, cmd_buf_builder);
         for tex in value
             .textures
             .iter()
             .map(|tex| Texture::from_serde(tex, allocator, cmd_buf_builder, root_dir))
-            .into_iter()
         {
             let id = tex.id;
             let result_id = manager.add_texture(tex);

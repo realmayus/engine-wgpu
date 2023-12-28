@@ -22,7 +22,10 @@ use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemo
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::sampler::Sampler;
 
-use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
+use lib::scene::{
+    DefaultTextureType, DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager,
+    World,
+};
 use lib::shader_types::{CameraUniform, LineInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 use lib::util::extract_image_to_file;
@@ -204,75 +207,31 @@ pub fn start() {
     )
     .unwrap();
 
-    let mut texture_manager = TextureManager::new();
+    let mut texture_manager =
+        TextureManager::new(&setup_info.memory_allocator, &mut cmd_buf_builder);
     let mut material_manager = MaterialManager::new();
-    {
-        let img = image::open("assets/textures/no_texture.png")
-            .expect("Couldn't load default texture")
-            .to_rgba8();
-        let width = img.width();
-        let height = img.height();
-        let dyn_img = DynamicImage::from(img);
 
-        let path = extract_image_to_file("no_texture", &dyn_img, Png);
-
-        let tex = create_texture(
-            dyn_img.into_bytes(),
-            format::Format::R8G8B8A8_UNORM,
-            width,
-            height,
+    let material = Material::from_default(
+        Some(texture_manager.get_default_texture(DefaultTextureType::Default)),
+        Buffer::from_data(
             &setup_info.memory_allocator,
-            &mut cmd_buf_builder,
-        );
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                usage: MemoryUsage::Upload,
+                ..Default::default()
+            },
+            MaterialInfo {
+                base_color: [1.0, 1.0, 1.0, 1.0],
+                base_texture: 0,
+            },
+        )
+        .expect("Couldn't allocate MaterialInfo uniform"),
+    );
 
-        let texture = Texture::from(tex, Some(Box::from("Default texture")), 0, path);
-        texture_manager.add_texture(texture);
-
-        let material = Material::from_default(
-            Some(texture_manager.get_texture(0)),
-            Buffer::from_data(
-                &setup_info.memory_allocator,
-                BufferCreateInfo {
-                    usage: BufferUsage::STORAGE_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    usage: MemoryUsage::Upload,
-                    ..Default::default()
-                },
-                MaterialInfo {
-                    base_color: [1.0, 1.0, 1.0, 1.0],
-                    base_texture: 0,
-                },
-            )
-            .expect("Couldn't allocate MaterialInfo uniform"),
-        );
-
-        material_manager.add_material(material);
-    };
-
-    {
-        let img = image::open("assets/textures/white.png")
-            .expect("Couldn't load white texture")
-            .to_rgba8();
-        let width = img.width();
-        let height = img.height();
-        let dyn_img = DynamicImage::from(img);
-
-        let path = extract_image_to_file("white", &dyn_img, Png);
-
-        let tex = create_texture(
-            dyn_img.into_bytes(),
-            format::Format::R8G8B8A8_UNORM,
-            width,
-            height,
-            &setup_info.memory_allocator,
-            &mut cmd_buf_builder,
-        );
-
-        let texture = Texture::from(tex, Some(Box::from("White texture")), 1, path);
-        texture_manager.add_texture(texture);
-    }
+    material_manager.add_material(material);
 
     let camera = Camera::new_default(
         viewport.dimensions[0],

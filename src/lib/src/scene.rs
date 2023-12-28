@@ -6,16 +6,22 @@ use std::slice::Iter;
 use std::sync::Arc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use image::DynamicImage;
+use image::ImageFormat::Png;
 use log::debug;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::device::Device;
+use vulkano::format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{ImageViewAbstract, ImmutableImage};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
 use vulkano::sampler::{Sampler, SamplerCreateInfo};
 
 use crate::shader_types::{MaterialInfo, MeshInfo};
+use crate::texture::create_texture;
+use crate::util::extract_image_to_file;
 use crate::{Dirtyable, VertexInputBuffer};
 
 pub struct Texture {
@@ -304,14 +310,171 @@ pub struct TextureManager {
 }
 
 impl TextureManager {
-    pub fn new() -> Self {
-        Self { textures: vec![] }
+    pub fn new(
+        memory_allocator: &Arc<StandardMemoryAllocator>,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    ) -> Self {
+        let mut textures = vec![];
+        {
+            let img = image::open("assets/textures/white.png")
+                .expect("Couldn't load default texture")
+                .to_rgba8();
+            let width = img.width();
+            let height = img.height();
+            let dyn_img = DynamicImage::from(img);
+
+            let path = extract_image_to_file("white", &dyn_img, Png);
+
+            let tex = create_texture(
+                dyn_img.into_bytes(),
+                format::Format::R8G8B8A8_UNORM,
+                width,
+                height,
+                memory_allocator,
+                cmd_buf_builder,
+            );
+
+            let texture = Texture::from(tex, Some(Box::from("Default texture")), 0, path);
+            textures.push(Rc::from(texture));
+        }
+
+        {
+            let img = image::open("assets/textures/default_normal.png")
+                .expect("Couldn't load white texture")
+                .to_rgba8();
+            let width = img.width();
+            let height = img.height();
+            let dyn_img = DynamicImage::from(img);
+
+            let path = extract_image_to_file("default_normal", &dyn_img, Png);
+
+            let tex = create_texture(
+                dyn_img.into_bytes(),
+                format::Format::R8G8B8A8_UNORM,
+                width,
+                height,
+                memory_allocator,
+                cmd_buf_builder,
+            );
+
+            let texture = Texture::from(tex, Some(Box::from("Default normal texture")), 1, path);
+            textures.push(Rc::from(texture));
+        }
+
+        {
+            let img = image::open("assets/textures/no_texture.png")
+                .expect("Couldn't load white texture")
+                .to_rgba8();
+            let width = img.width();
+            let height = img.height();
+            let dyn_img = DynamicImage::from(img);
+
+            let path = extract_image_to_file("no_texture", &dyn_img, Png);
+
+            let tex = create_texture(
+                dyn_img.into_bytes(),
+                format::Format::R8G8B8A8_UNORM,
+                width,
+                height,
+                memory_allocator,
+                cmd_buf_builder,
+            );
+
+            let texture = Texture::from(tex, Some(Box::from("No texture")), 2, path);
+            textures.push(Rc::from(texture));
+        }
+        Self { textures }
     }
+    pub fn new_ref(
+        memory_allocator: &StandardMemoryAllocator,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    ) -> Self {
+        let mut textures = vec![];
+        {
+            let img = image::open("assets/textures/white.png")
+                .expect("Couldn't load default texture")
+                .to_rgba8();
+            let width = img.width();
+            let height = img.height();
+            let dyn_img = DynamicImage::from(img);
+
+            let path = extract_image_to_file("white", &dyn_img, Png);
+
+            let tex = create_texture(
+                dyn_img.into_bytes(),
+                format::Format::R8G8B8A8_UNORM,
+                width,
+                height,
+                memory_allocator,
+                cmd_buf_builder,
+            );
+
+            let texture = Texture::from(tex, Some(Box::from("Default texture")), 0, path);
+            textures.push(Rc::from(texture));
+        }
+
+        {
+            let img = image::open("assets/textures/default_normal.png")
+                .expect("Couldn't load white texture")
+                .to_rgba8();
+            let width = img.width();
+            let height = img.height();
+            let dyn_img = DynamicImage::from(img);
+
+            let path = extract_image_to_file("default_normal", &dyn_img, Png);
+
+            let tex = create_texture(
+                dyn_img.into_bytes(),
+                format::Format::R8G8B8A8_UNORM,
+                width,
+                height,
+                memory_allocator,
+                cmd_buf_builder,
+            );
+
+            let texture = Texture::from(tex, Some(Box::from("Default normal texture")), 1, path);
+            textures.push(Rc::from(texture));
+        }
+
+        {
+            let img = image::open("assets/textures/no_texture.png")
+                .expect("Couldn't load white texture")
+                .to_rgba8();
+            let width = img.width();
+            let height = img.height();
+            let dyn_img = DynamicImage::from(img);
+
+            let path = extract_image_to_file("no_texture", &dyn_img, Png);
+
+            let tex = create_texture(
+                dyn_img.into_bytes(),
+                format::Format::R8G8B8A8_UNORM,
+                width,
+                height,
+                memory_allocator,
+                cmd_buf_builder,
+            );
+
+            let texture = Texture::from(tex, Some(Box::from("No texture")), 2, path);
+            textures.push(Rc::from(texture));
+        }
+        Self { textures }
+    }
+
     pub fn add_texture(&mut self, mut texture: Texture) -> u32 {
         let id = self.textures.len();
         texture.id = id as u32;
         self.textures.push(Rc::from(texture));
         id as u32
+    }
+
+    pub fn get_default_texture(&self, default_texture_type: DefaultTextureType) -> Rc<Texture> {
+        use DefaultTextureType as dtt;
+        match default_texture_type {
+            dtt::Default => self.textures[0].clone(),
+            dtt::DefaultNormal => self.textures[1].clone(),
+            dtt::NoTexture => self.textures[2].clone(),
+        }
     }
 
     pub fn get_texture(&self, id: u32) -> Rc<Texture> {
@@ -337,6 +500,11 @@ impl TextureManager {
             })
             .collect()
     }
+}
+pub enum DefaultTextureType {
+    Default,
+    DefaultNormal,
+    NoTexture,
 }
 
 #[derive(Default)]
