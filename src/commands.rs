@@ -57,7 +57,7 @@ impl Command for DeleteModelCommand {
                             .world
                             .get_active_scene()
                             .iter_meshes()
-                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
+                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator))
                             .collect_vec(),
                     );
                     pbr.recreate_render_passes = true;

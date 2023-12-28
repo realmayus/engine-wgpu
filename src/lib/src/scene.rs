@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -240,10 +241,10 @@ impl Debug for Model {
             self.name,
             self.meshes.len(),
             self.local_transform,
-            self.children
-                .iter()
-                .map(|c| format!("\n - {:?}", c))
-                .collect::<String>(),
+            self.children.iter().fold(String::new(), |mut acc, n| {
+                let _ = write!(acc, "\n - {:?}", n);
+                acc
+            }) //.collect::<String>(),
         )
     }
 }

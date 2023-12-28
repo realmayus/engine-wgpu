@@ -207,8 +207,7 @@ pub fn start() {
     )
     .unwrap();
 
-    let mut texture_manager =
-        TextureManager::new(&setup_info.memory_allocator, &mut cmd_buf_builder);
+    let texture_manager = TextureManager::new(&setup_info.memory_allocator, &mut cmd_buf_builder);
     let mut material_manager = MaterialManager::new();
 
     let material = Material::from_default(
