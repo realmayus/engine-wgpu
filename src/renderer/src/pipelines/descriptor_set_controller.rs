@@ -4,9 +4,9 @@ use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
-use vulkano::image::ImageViewAbstract;
+use vulkano::image::sampler::Sampler;
+use vulkano::image::view::ImageView;
 use vulkano::pipeline::{PipelineBindPoint, PipelineLayout};
-use vulkano::sampler::Sampler;
 
 use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo};
 
@@ -19,7 +19,7 @@ pub struct DescriptorSetController {
 impl DescriptorSetController {
     pub fn init(
         camera: Subbuffer<CameraUniform>,
-        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        textures: Vec<(Arc<ImageView>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
         light_info_buffers: Vec<Subbuffer<LightInfo>>,
@@ -77,19 +77,21 @@ impl DescriptorSetController {
             descriptor_set_allocator,
             pipeline_layout.set_layouts().get(0).unwrap().clone(),
             [WriteDescriptorSet::buffer(0, buffer)],
+            []
         )
         .unwrap()
     }
     fn get_textures_descriptor_set(
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         pipeline_layout: Arc<PipelineLayout>,
-        array: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        array: Vec<(Arc<ImageView>, Arc<Sampler>)>,
     ) -> Arc<PersistentDescriptorSet> {
         PersistentDescriptorSet::new_variable(
             descriptor_set_allocator,
             pipeline_layout.set_layouts().get(1).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::image_view_sampler_array(0, 0, array)],
+            []
         )
         .unwrap()
     }
@@ -103,6 +105,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(2).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::buffer_array(0, 0, array)],
+            []
         )
         .unwrap()
     }
@@ -117,6 +120,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(3).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::buffer_array(0, 0, array)],
+            []
         )
         .unwrap()
     }
@@ -131,6 +135,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(4).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::buffer_array(0, 0, array)],
+            []
         )
         .unwrap()
     }

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::image::ImageViewAbstract;
+use vulkano::image::sampler::Sampler;
+use vulkano::image::view::ImageView;
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::sampler::Sampler;
 
 use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo};
 
@@ -24,7 +24,7 @@ pub trait PipelineProvider {
         &mut self,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         camera: Subbuffer<CameraUniform>,
-        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        textures: Vec<(Arc<ImageView>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
         light_info_buffers: Vec<Subbuffer<LightInfo>>,
@@ -58,7 +58,7 @@ impl PipelineProvider for PipelineProviderKind {
         &mut self,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         camera: Subbuffer<CameraUniform>,
-        textures: Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        textures: Vec<(Arc<ImageView>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
         light_info_buffers: Vec<Subbuffer<LightInfo>>

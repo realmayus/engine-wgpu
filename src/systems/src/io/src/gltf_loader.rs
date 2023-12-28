@@ -1,3 +1,4 @@
+use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use lib::scene::PointLight;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -6,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 use std::{fs, io};
+use std::sync::Arc;
 
 use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3, Vec4};
@@ -19,7 +21,7 @@ use log::info;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format::Format;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
 use lib::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
@@ -230,8 +232,8 @@ fn load_image(
 
 pub fn load_gltf(
     path: &Path,
-    allocator: &StandardMemoryAllocator,
-    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    allocator: Arc<StandardMemoryAllocator>,
+    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     texture_manager: &mut TextureManager,
     material_manager: &mut MaterialManager,
 ) -> Vec<Scene> {
@@ -287,7 +289,7 @@ pub fn load_gltf(
             format,
             width,
             height,
-            allocator,
+            allocator.clone(),
             cmd_buf_builder,
         );
 
@@ -361,13 +363,13 @@ pub fn load_gltf(
                     }),
                 emissive_factors: gltf_mat.emissive_factor().into(),
                 buffer: Buffer::from_data(
-                    allocator,
+                    allocator.clone(),
                     BufferCreateInfo {
                         usage: BufferUsage::STORAGE_BUFFER,
                         ..Default::default()
                     },
                     AllocationCreateInfo {
-                        usage: MemoryUsage::Upload,
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                         ..Default::default()
                     },
                     MaterialInfo::default(),
@@ -389,7 +391,7 @@ pub fn load_gltf(
                     &n,
                     &buffers,
                     &local_materials,
-                    allocator,
+                    allocator.clone(),
                     material_manager.get_default_material(),
                     Mat4::default(),
                     &mut num_lights,
@@ -415,7 +417,7 @@ fn load_node(
     node: &Node,
     buffers: &Vec<Data>,
     materials: &Vec<Rc<RefCell<Material>>>,
-    allocator: &StandardMemoryAllocator,
+    allocator: Arc<StandardMemoryAllocator>,
     default_material: Rc<RefCell<Material>>,
     parent_transform: Mat4,
     num_lights: &mut u32,
@@ -427,7 +429,7 @@ fn load_node(
             &child,
             buffers,
             materials,
-            allocator,
+            allocator.clone(),
             default_material.clone(),
             parent_transform * local_transform,
             num_lights,
@@ -475,13 +477,13 @@ fn load_node(
                 uvs,
                 global_transform,
                 Buffer::from_data(
-                    allocator,
+                    allocator.clone(),
                     BufferCreateInfo {
                         usage: BufferUsage::STORAGE_BUFFER,
                         ..Default::default()
                     },
                     AllocationCreateInfo {
-                        usage: MemoryUsage::Upload,
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                         ..Default::default()
                     },
                     MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
@@ -506,7 +508,7 @@ fn load_node(
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             LightInfo::default(),
@@ -523,8 +525,8 @@ fn load_node(
 
 /// loads the hardcoded exr
 fn load_exr(
-    allocator: &StandardMemoryAllocator,
-    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    allocator: Arc<StandardMemoryAllocator>,
+    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     tex_i: u32,
 ) -> Texture {
     let img = image::open(Path::new("assets/EXRs/little_paris_eiffel_tower_2k.exr"))
@@ -547,8 +549,8 @@ fn load_exr(
 }
 
 pub fn load_texture(
-    allocator: &StandardMemoryAllocator,
-    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    allocator: Arc<StandardMemoryAllocator>,
+    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     path: &Path,
     index: u32,
 ) -> Texture {

@@ -5,6 +5,7 @@ use glam::Mat4;
 use itertools::Itertools;
 use log::info;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
+use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::Device;
 use vulkano::memory::allocator::StandardMemoryAllocator;
@@ -21,7 +22,7 @@ pub(crate) trait Command {
         &self,
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
         descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         device: Arc<Device>,
@@ -37,10 +38,10 @@ impl Command for DeleteModelCommand {
         &self,
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        _cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        _device: Arc<Device>,
+        allocator: Arc<StandardMemoryAllocator>,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        device: Arc<Device>,
     ) {
         info!("Deleting model with ID {}", self.to_delete);
         for scene in state.world.scenes.as_mut_slice() {
@@ -77,11 +78,11 @@ impl Command for UpdateModelCommand {
     fn execute(
         &self,
         state: &mut InnerState,
-        _pipeline_providers: &mut [PipelineProviderKind],
-        _allocator: &StandardMemoryAllocator,
-        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        _cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        _device: Arc<Device>,
+        pipeline_providers: &mut [PipelineProviderKind],
+        allocator: Arc<StandardMemoryAllocator>,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        device: Arc<Device>,
     ) {
         for scene in state.world.scenes.as_mut_slice() {
             for m in scene.models.as_mut_slice() {
@@ -103,14 +104,14 @@ impl Command for ImportGltfCommand {
         &self,
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        _device: Arc<Device>,
+        device: Arc<Device>,
     ) {
         let gltf_scenes = load_gltf(
             self.path.as_path(),
-            allocator,
+            allocator.clone(),
             cmd_buf_builder,
             &mut state.world.textures,
             &mut state.world.materials,
@@ -131,7 +132,7 @@ impl Command for ImportGltfCommand {
                             .world
                             .get_active_scene()
                             .iter_meshes()
-                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator))
+                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
                             .collect_vec(),
                     );
                     pbr.recreate_render_passes = true;
@@ -150,12 +151,12 @@ impl Command for LoadWorldCommand {
         &self,
         state: &mut InnerState,
         pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-        _descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        _device: Arc<Device>,
+        device: Arc<Device>,
     ) {
-        let world = load_world(self.path.as_path(), allocator, cmd_buf_builder);
+        let world = load_world(self.path.as_path(), allocator.clone(), cmd_buf_builder);
         state.world = world;
 
         for pipeline_provider in pipeline_providers {
@@ -168,7 +169,7 @@ impl Command for LoadWorldCommand {
                             .world
                             .get_active_scene()
                             .iter_meshes()
-                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator))
+                            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, allocator.clone()))
                             .collect_vec(),
                     );
                     pbr.recreate_render_passes = true;

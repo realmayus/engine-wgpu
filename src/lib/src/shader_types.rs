@@ -24,7 +24,7 @@ pub struct MyNormal {
 #[repr(C)]
 pub struct MyTangent {
     #[format(R32G32B32A32_SFLOAT)]
-    normal: [f32; 4],
+    tangent: [f32; 4],
 }
 
 #[derive(BufferContents, Vertex)]

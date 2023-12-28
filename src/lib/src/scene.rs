@@ -10,10 +10,10 @@ use log::{debug, info};
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::device::Device;
+use vulkano::image::Image;
+use vulkano::image::sampler::{Sampler, SamplerCreateInfo};
 use vulkano::image::view::ImageView;
-use vulkano::image::{ImageViewAbstract, ImmutableImage};
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
-use vulkano::sampler::{Sampler, SamplerCreateInfo};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use crate::{Dirtyable, VertexInputBuffer};
@@ -21,13 +21,13 @@ use crate::{Dirtyable, VertexInputBuffer};
 pub struct Texture {
     pub id: u32,
     pub name: Option<Box<str>>,
-    pub view: Arc<ImageView<ImmutableImage>>,
+    pub view: Arc<ImageView>,
     pub img_path: PathBuf, // relative to run directory
 }
 
 impl Texture {
     pub fn from(
-        view: Arc<ImageView<ImmutableImage>>,
+        view: Arc<ImageView>,
         name: Option<Box<str>>,
         id: u32,
         img_path: PathBuf,
@@ -382,12 +382,12 @@ impl TextureManager {
     pub fn get_view_sampler_array(
         &self,
         device: Arc<Device>,
-    ) -> Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)> {
+    ) -> Vec<(Arc<ImageView>, Arc<Sampler>)> {
         //TODO Optimization: work out if we really need to enforce Vec everywhere or if slices are sufficient
         self.iter()
             .map(|t| {
                 (
-                    t.view.clone() as Arc<dyn ImageViewAbstract>,
+                    t.view.clone(),
                     Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())
                         .unwrap(),
                 )
@@ -455,15 +455,15 @@ pub struct DrawableVertexInputs {
 }
 
 impl DrawableVertexInputs {
-    pub fn from_mesh(mesh: &Mesh, memory_allocator: &StandardMemoryAllocator) -> Self {
+    pub fn from_mesh(mesh: &Mesh, memory_allocator: Arc<StandardMemoryAllocator>) -> Self {
         let vertex_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-            memory_allocator,
+            memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.vertices.iter().map(|v| v.to_array()),
@@ -471,13 +471,13 @@ impl DrawableVertexInputs {
         .expect("Couldn't allocate vertex buffer");
 
         let normal_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-            memory_allocator,
+            memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.normals.iter().map(|v| v.to_array()),
@@ -485,13 +485,13 @@ impl DrawableVertexInputs {
         .expect("Couldn't allocate normal buffer");
 
         let tangent_buffer: Subbuffer<[[f32; 4]]> = Buffer::from_iter(
-            memory_allocator,
+            memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.tangents.iter().map(|v| v.to_array()),
@@ -499,13 +499,13 @@ impl DrawableVertexInputs {
         .expect("Couldn't allocate tangent buffer");
 
         let uv_buffer: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
-            memory_allocator,
+            memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.uvs.iter().map(|v| v.to_array()),
@@ -519,7 +519,7 @@ impl DrawableVertexInputs {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.indices.clone(),

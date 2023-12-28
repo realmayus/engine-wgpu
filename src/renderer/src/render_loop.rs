@@ -4,13 +4,15 @@ use log::{debug, error, info};
 use std::time::Instant;
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::AttachmentImage;
 use vulkano::swapchain::{
-    AcquireError, SwapchainCreateInfo, SwapchainCreationError, SwapchainPresentInfo,
+    SwapchainCreateInfo, SwapchainPresentInfo,
 };
-use vulkano::sync::{FlushError, GpuFuture};
-use vulkano::{swapchain, sync};
-use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
+use vulkano::sync::{GpuFuture};
+use vulkano::{image, swapchain, sync, Validated, VulkanError};
+use vulkano::image::{Image, ImageCreateInfo, ImageUsage};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
+use winit::event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent};
+use winit::event::WindowEvent::KeyboardInput;
 use winit::event_loop::ControlFlow;
 
 use crate::camera::KeyState;
@@ -24,16 +26,22 @@ pub fn start_renderer(
 ) {
     info!(
         "Viewport dimensions: x={} y={}",
-        state.viewport.dimensions[0] as u32, state.viewport.dimensions[1] as u32
+        state.viewport.extent[0] as u32, state.viewport.extent[1] as u32
     );
     let depth_buffer = ImageView::new_default(
-        AttachmentImage::transient(
-            &state.init_state.memory_allocator,
-            [
-                state.viewport.dimensions[0] as u32,
-                state.viewport.dimensions[1] as u32,
-            ],
-            Format::D16_UNORM,
+        Image::new(
+            state.init_state.memory_allocator.clone(),
+                ImageCreateInfo {
+                    extent: [state.viewport.extent[0] as u32, state.viewport.extent[1] as u32, 1],
+                    format: Format::D16_UNORM,
+                    usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+                    ..Default::default()
+                },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            }
+
         )
         .unwrap(),
     )
@@ -81,9 +89,9 @@ pub fn start_renderer(
         &state.init_state.event_loop,
         state.init_state.surface,
         state.init_state.queue.clone(),
+        state.init_state.image_format,
         GuiConfig {
             is_overlay: true,
-            preferred_format: Some(state.init_state.image_format),
             ..Default::default()
         },
     );
@@ -115,7 +123,7 @@ pub fn start_renderer(
             event:
                 WindowEvent::KeyboardInput {
                     input:
-                        KeyboardInput {
+                        winit::event::KeyboardInput {
                             state,
                             virtual_keycode: Some(keycode),
                             ..
@@ -145,7 +153,7 @@ pub fn start_renderer(
             event:
                 WindowEvent::KeyboardInput {
                     input:
-                        KeyboardInput {
+                        winit::event::KeyboardInput {
                             state: key_state,
                             virtual_keycode: Some(keycode),
                             ..
@@ -186,8 +194,8 @@ pub fn start_renderer(
         } => keys.shift_pressed = mods.shift(),
         Event::WindowEvent { event, .. } => match event {
             WindowEvent::CursorMoved { position: pos, .. } => {
-                let x = pos.x as f32 / state.viewport.dimensions[0];
-                let y = pos.y as f32 / state.viewport.dimensions[1];
+                let x = pos.x as f32 / state.viewport.extent[0];
+                let y = pos.y as f32 / state.viewport.extent[1];
                 cursor_delta = Vec2::new(x, y) - cursor_pos;
                 cursor_pos = Vec2::new(x, y);
                 gui.update(&event);
@@ -221,18 +229,22 @@ pub fn start_renderer(
                         ..state.init_state.swapchain.create_info()
                     }) {
                         Ok(r) => r,
-                        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => {
-                            debug!("Image extent not supported");
-                            return;
-                        }
                         Err(e) => panic!("failed to recreate swapchain: {e}"),
                     };
                 state.init_state.swapchain = new_swapchain;
                 let depth_buffer = ImageView::new_default(
-                    AttachmentImage::transient(
-                        &state.init_state.memory_allocator,
-                        new_dimensions.into(),
-                        Format::D16_UNORM,
+                    Image::new(
+                        state.init_state.memory_allocator.clone(),
+                        ImageCreateInfo {
+                            extent: [new_dimensions.width, new_dimensions.height, 1],
+                            format: Format::D16_UNORM,
+                            usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+                            ..Default::default()
+                        },
+            AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
                     )
                     .unwrap(),
                 )
@@ -246,7 +258,7 @@ pub fn start_renderer(
                 if recreate_render_passes {
                     recreate_render_passes = false;
 
-                    state.viewport.dimensions = new_dimensions.into();
+                    state.viewport.extent = new_dimensions.into();
                     let (camera, textures, material_infos, mesh_infos, light_infos) =
                         callable.get_buffers(state.init_state.device.clone());
                     for provider in pipeline_providers.as_mut_slice() {
@@ -277,10 +289,10 @@ pub fn start_renderer(
             let (image_i, suboptimal, acquire_future) =
                 match swapchain::acquire_next_image(state.init_state.swapchain.clone(), None) {
                     Ok(r) => r,
-                    Err(AcquireError::OutOfDate) => {
-                        recreate_swapchain = true;
-                        return;
-                    }
+                    // Err(Validated::<vulkano::VulkanError>) => {
+                    //     recreate_swapchain = true;
+                    //     return;
+                    // }
                     Err(e) => panic!("Failed to acquire next image: {e}"),
                 };
             if suboptimal {
@@ -290,13 +302,13 @@ pub fn start_renderer(
             acquire_future.wait(None).unwrap();
             let update_cmd_buffer = callable.update(
                 pipeline_providers.as_mut_slice(),
-                &state.init_state.memory_allocator,
-                &state.init_state.descriptor_set_allocator,
-                &state.init_state.cmd_buf_allocator,
+                state.init_state.memory_allocator.clone(),
+                state.init_state.descriptor_set_allocator.clone(),
+                state.init_state.cmd_buf_allocator.clone(),
                 state.init_state.queue.queue_family_index(),
                 state.init_state.device.clone(),
                 state.viewport.clone(),
-            );
+            ).unwrap();
             for provider in pipeline_providers.as_mut_slice() {
                 recreate_render_passes =
                     recreate_render_passes || provider.must_recreate_render_passes()
@@ -309,7 +321,7 @@ pub fn start_renderer(
                     command_buffers[image_i as usize].clone(),
                 ) // execute cmd buf which is selected based on image index
                 .unwrap()
-                .then_execute(state.init_state.queue.clone(), update_cmd_buffer.unwrap())
+                .then_execute(state.init_state.queue.clone(), update_cmd_buffer)
                 .unwrap();
 
             let after_egui =
@@ -328,8 +340,8 @@ pub fn start_renderer(
 
             match present {
                 Ok(future) => future.wait(None).unwrap(),
-                Err(FlushError::OutOfDate) => {
-                    recreate_swapchain = true;
+                Err(vulkano::Validated::Error(VulkanError::OutOfDate)) => {
+                        recreate_swapchain = true;
                 }
                 Err(e) => {
                     error!("Failed to flush future: {e}");

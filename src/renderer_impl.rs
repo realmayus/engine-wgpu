@@ -17,10 +17,10 @@ use vulkano::command_buffer::{
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::Device;
 use vulkano::format;
-use vulkano::image::ImageViewAbstract;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::image::sampler::Sampler;
+use vulkano::image::view::ImageView;
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::sampler::Sampler;
 
 use lib::scene::{DrawableVertexInputs, Material, MaterialManager, Texture, TextureManager, World};
 use lib::shader_types::{CameraUniform, LightInfo, LineInfo, MaterialInfo, MeshInfo};
@@ -58,16 +58,16 @@ impl StateCallable for GlobalState {
     fn update(
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        cmd_buf_allocator: &StandardCommandBufferAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
+        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+        cmd_buf_allocator: Arc<StandardCommandBufferAllocator>,
         queue_family_index: u32,
         device: Arc<Device>,
         viewport: Viewport,
-    ) -> Option<PrimaryAutoCommandBuffer> {
+    ) -> Option<Arc<PrimaryAutoCommandBuffer>> {
         let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
             //TODO would it make sense to only use builder if a command requests it?
-            cmd_buf_allocator,
+            cmd_buf_allocator.clone().as_ref(),
             queue_family_index,
             CommandBufferUsage::OneTimeSubmit,
         )
@@ -76,8 +76,8 @@ impl StateCallable for GlobalState {
             command.execute(
                 &mut self.inner_state,
                 pipeline_providers,
-                allocator,
-                descriptor_set_allocator,
+                allocator.clone(),
+                descriptor_set_allocator.as_ref(),
                 &mut cmd_buf_builder,
                 device.clone(),
             );
@@ -103,7 +103,7 @@ impl StateCallable for GlobalState {
 
         self.inner_state
             .camera
-            .update_aspect(viewport.dimensions[0], viewport.dimensions[1]);
+            .update_aspect(viewport.extent[0], viewport.extent[1]);
         self.inner_state.camera.update_view();
 
         Some(cmd_buf_builder.build().unwrap())
@@ -119,7 +119,7 @@ impl StateCallable for GlobalState {
         device: Arc<Device>,
     ) -> (
         Subbuffer<CameraUniform>,
-        Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        Vec<(Arc<ImageView>, Arc<Sampler>)>,
         Vec<Subbuffer<MaterialInfo>>,
         Vec<Subbuffer<MeshInfo>>,
         Vec<Subbuffer<LightInfo>>,
@@ -183,13 +183,13 @@ impl StateCallable for GlobalState {
 fn load_default_world(
     mut texture_manager: TextureManager,
     mut material_manager: MaterialManager,
-    memory_allocator: &StandardMemoryAllocator,
+    memory_allocator: Arc<StandardMemoryAllocator>,
     cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> World {
     let cube = load_gltf(
         PathBuf::from("assets")
             .join("models")
-            .join("cube.glb")
+            .join("DamagedHelmetTangents.glb")
             .as_path(),
         memory_allocator,
         cmd_buf_builder,
@@ -208,13 +208,13 @@ pub fn start() {
     let setup_info = init_renderer();
 
     let viewport = Viewport {
-        origin: [0.0, 0.0],
-        dimensions: setup_info.window.inner_size().into(),
-        depth_range: 0.0..1.0,
+        offset: [0.0, 0.0],
+        extent: setup_info.window.inner_size().into(),
+        depth_range: 0.0..=1.0,
     };
 
     let mut cmd_buf_builder = AutoCommandBufferBuilder::primary(
-        &setup_info.cmd_buf_allocator,
+        setup_info.cmd_buf_allocator.clone().as_ref(),
         setup_info.queue.queue_family_index(),
         CommandBufferUsage::OneTimeSubmit,
     )
@@ -237,7 +237,7 @@ pub fn start() {
             format::Format::R8G8B8A8_UNORM,
             width,
             height,
-            &setup_info.memory_allocator,
+            setup_info.memory_allocator.clone(),
             &mut cmd_buf_builder,
         );
 
@@ -258,7 +258,7 @@ pub fn start() {
             format::Format::R8G8B8A8_UNORM,
             width,
             height,
-            &setup_info.memory_allocator,
+            setup_info.memory_allocator.clone(),
             &mut cmd_buf_builder,
         );
         let texture_normal = Texture::from(tex, Some(Box::from("Default normal texture")), 1, path);
@@ -267,13 +267,13 @@ pub fn start() {
         let material = Material::from_default(
             Some(texture_manager.get_texture(0)),
             Buffer::from_data(
-                &setup_info.memory_allocator,
+                setup_info.memory_allocator.clone(),
                 BufferCreateInfo {
                     usage: BufferUsage::STORAGE_BUFFER,
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    usage: MemoryUsage::Upload,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 MaterialInfo::default(),
@@ -299,7 +299,7 @@ pub fn start() {
             format::Format::R8G8B8A8_UNORM,
             width,
             height,
-            &setup_info.memory_allocator,
+            setup_info.memory_allocator.clone(),
             &mut cmd_buf_builder,
         );
 
@@ -308,15 +308,15 @@ pub fn start() {
     }
 
     let camera = Camera::new_default(
-        viewport.dimensions[0],
-        viewport.dimensions[1],
-        &setup_info.memory_allocator,
+        viewport.extent[0],
+        viewport.extent[1],
+        setup_info.memory_allocator.clone(),
     );
 
     let world = load_default_world(
         texture_manager,
         material_manager,
-        &setup_info.memory_allocator,
+        setup_info.memory_allocator.clone(),
         &mut cmd_buf_builder,
     );
 
@@ -338,7 +338,7 @@ pub fn start() {
             .world
             .get_active_scene()
             .iter_meshes()
-            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, &setup_info.memory_allocator))
+            .map(|mesh| DrawableVertexInputs::from_mesh(mesh, setup_info.memory_allocator.clone()))
             .collect_vec(),
         viewport.clone(),
         render_pass.clone(),
@@ -347,13 +347,13 @@ pub fn start() {
     let line_vertex_buffers: Vec<VertexInputBuffer> = (0..10)
         .map(|_| VertexInputBuffer {
             subbuffer: Buffer::from_iter(
-                &setup_info.memory_allocator,
+                setup_info.memory_allocator.clone(),
                 BufferCreateInfo {
                     usage: BufferUsage::VERTEX_BUFFER,
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    usage: MemoryUsage::Upload,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 (0..2).map(|_| {
@@ -372,13 +372,13 @@ pub fn start() {
 
     let line_info_buffers = (0..10).map(|i| {
         Buffer::from_data(
-            &setup_info.memory_allocator,
+            setup_info.memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::STORAGE_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             LineInfo {

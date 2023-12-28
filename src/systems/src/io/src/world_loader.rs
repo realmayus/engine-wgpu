@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::fs;
 use std::path::Path;
 
@@ -10,8 +11,8 @@ use lib::scene_serde::WorldSerde;
 // Loads scenes from a scenes.json file
 pub fn load_world(
     path: &Path,
-    allocator: &StandardMemoryAllocator,
-    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    allocator: Arc<StandardMemoryAllocator>,
+    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> World {
     let data = fs::read(path).expect("Couldn't read world");
     let mut serde_world: WorldSerde =

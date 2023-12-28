@@ -1,8 +1,10 @@
+use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use crate::scene::PointLight;
 use std::cell::RefCell;
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use image::{DynamicImage, ImageFormat};
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::format;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
 use crate::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager, World};
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
@@ -37,7 +39,7 @@ impl From<Rc<Texture>> for TextureSerde {
 impl Texture {
     fn from_serde(
         value: &TextureSerde,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         root_dir: &Path,
     ) -> Texture {
@@ -132,7 +134,7 @@ impl Material {
     fn from_serde(
         value: &MaterialSerde,
         textures: &TextureManager,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
     ) -> Material {
         Material {
             dirty: true,
@@ -156,7 +158,7 @@ impl Material {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    usage: MemoryUsage::Upload,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 MaterialInfo::default(),
@@ -197,7 +199,7 @@ impl Mesh {
     fn from_serde(
         value: MeshSerde,
         materials: &MaterialManager,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
     ) -> Self {
         Mesh::from(
             value.vertices,
@@ -214,7 +216,7 @@ impl Mesh {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    usage: MemoryUsage::Upload,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 MeshInfo::default(),
@@ -251,19 +253,19 @@ impl Model {
     fn from_serde(
         value: ModelSerde,
         materials: &MaterialManager,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
     ) -> Self {
         Model {
             id: value.id,
             meshes: value
                 .meshes
                 .into_iter()
-                .map(|m| Mesh::from_serde(m, materials, allocator))
+                .map(|m| Mesh::from_serde(m, materials, allocator.clone()))
                 .collect(),
             children: value
                 .children
                 .into_iter()
-                .map(|m| Model::from_serde(m, materials, allocator))
+                .map(|m| Model::from_serde(m, materials, allocator.clone()))
                 .collect(),
             name: value.name,
             local_transform: value.local_transform,
@@ -293,14 +295,14 @@ impl Scene {
     fn from_serde(
         value: SceneSerde,
         materials: &MaterialManager,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
     ) -> Self {
         Self {
             id: value.id,
             models: value
                 .models
                 .into_iter()
-                .map(|m| Model::from_serde(m, materials, allocator))
+                .map(|m| Model::from_serde(m, materials, allocator.clone()))
                 .collect(),
             name: value.name.clone(),
         }
@@ -329,17 +331,17 @@ impl WorldSerde {
 
     pub fn parse(
         &mut self,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         root_dir: &Path,
     ) -> World {
         let textures =
-            TextureManager::from_serde(&self.textures, allocator, cmd_buf_builder, root_dir);
-        let materials = MaterialManager::from_serde(&self.materials, &textures, allocator);
+            TextureManager::from_serde(&self.textures, allocator.clone(), cmd_buf_builder, root_dir);
+        let materials = MaterialManager::from_serde(&self.materials, &textures, allocator.clone());
         let scenes_serde = mem::take(&mut self.scenes);
         let scenes = scenes_serde
             .into_iter()
-            .map(|scene| Scene::from_serde(scene, &materials, allocator))
+            .map(|scene| Scene::from_serde(scene, &materials, allocator.clone()))
             .collect();
         World {
             scenes,
@@ -369,15 +371,15 @@ impl From<&TextureManager> for TextureManagerSerde {
 impl TextureManager {
     fn from_serde(
         value: &TextureManagerSerde,
-        allocator: &StandardMemoryAllocator,
-        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        allocator: Arc<StandardMemoryAllocator>,
+        cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         root_dir: &Path,
     ) -> Self {
         let mut manager = Self::new();
         for tex in value
             .textures
             .iter()
-            .map(|tex| Texture::from_serde(tex, allocator, cmd_buf_builder, root_dir))
+            .map(|tex| Texture::from_serde(tex, allocator.clone(), cmd_buf_builder, root_dir))
             .into_iter()
         {
             let id = tex.id;
@@ -412,12 +414,12 @@ impl MaterialManager {
     fn from_serde(
         value: &MaterialManagerSerde,
         textures: &TextureManager,
-        allocator: &StandardMemoryAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
     ) -> MaterialManager {
         let mut manager = Self::new();
         for mat in value.materials.as_slice() {
             let id = mat.id;
-            let result_id = manager.add_material(Material::from_serde(mat, textures, allocator));
+            let result_id = manager.add_material(Material::from_serde(mat, textures, allocator.clone()));
             assert_eq!(
                 result_id, id,
                 "Expected material ID {} but got {}",
@@ -452,7 +454,7 @@ impl From<&PointLight> for PointLightSerde {
 }
 
 impl PointLight {
-    fn from_serde(value: &PointLightSerde, allocator: &StandardMemoryAllocator) -> Self {
+    fn from_serde(value: &PointLightSerde, allocator: Arc<StandardMemoryAllocator>) -> Self {
         Self {
             dirty: true,
             global_transform: value.global_transform,
@@ -468,7 +470,7 @@ impl PointLight {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    usage: MemoryUsage::Upload,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 LightInfo::default(),

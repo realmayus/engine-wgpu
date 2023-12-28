@@ -1,7 +1,8 @@
+use std::sync::Arc;
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryUsage, StandardMemoryAllocator};
+use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
 use lib::shader_types::CameraUniform;
 
@@ -43,7 +44,7 @@ impl Camera {
     pub fn new_default(
         width: f32,
         height: f32,
-        memory_allocator: &StandardMemoryAllocator,
+        memory_allocator: Arc<StandardMemoryAllocator>,
     ) -> Self {
         let eye: Vec3 = (0.3, 0.3, 1.0).into();
         let target: Vec3 = (0.0, 0.0, 0.0).into();
@@ -69,7 +70,7 @@ impl Camera {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             data,

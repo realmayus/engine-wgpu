@@ -4,21 +4,18 @@ use egui_winit_vulkano::Gui;
 use glam::Vec2;
 use vulkano::buffer::Subbuffer;
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-    SubpassContents,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{Device, DeviceExtensions, Queue, QueueFlags};
 use vulkano::format::Format;
+use vulkano::image::Image;
+use vulkano::image::sampler::Sampler;
 use vulkano::image::view::ImageView;
-use vulkano::image::{AttachmentImage, ImageViewAbstract, SwapchainImage};
 use vulkano::instance::Instance;
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::sampler::Sampler;
 use vulkano::swapchain::{Surface, Swapchain};
 use winit::event_loop::EventLoop;
 use winit::window::Window;
@@ -38,13 +35,13 @@ pub trait StateCallable {
     fn update(
         &mut self,
         pipeline_providers: &mut [PipelineProviderKind],
-        allocator: &StandardMemoryAllocator,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        cmd_buf_allocator: &StandardCommandBufferAllocator,
+        allocator: Arc<StandardMemoryAllocator>,
+        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+        cmd_buf_allocator: Arc<StandardCommandBufferAllocator>,
         queue_family_index: u32,
         device: Arc<Device>,
         viewport: Viewport,
-    ) -> Option<PrimaryAutoCommandBuffer>;
+    ) -> Option<Arc<PrimaryAutoCommandBuffer>>;
     fn cleanup(&self);
 
     fn get_buffers(
@@ -52,7 +49,7 @@ pub trait StateCallable {
         device: Arc<Device>,
     ) -> (
         Subbuffer<CameraUniform>,
-        Vec<(Arc<dyn ImageViewAbstract>, Arc<Sampler>)>,
+        Vec<(Arc<ImageView>, Arc<Sampler>)>,
         Vec<Subbuffer<MaterialInfo>>,
         Vec<Subbuffer<MeshInfo>>,
         Vec<Subbuffer<LightInfo>>,
@@ -74,9 +71,9 @@ pub struct RenderInitState {
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
-    pub images: Vec<Arc<SwapchainImage>>,
-    pub cmd_buf_allocator: StandardCommandBufferAllocator,
-    pub descriptor_set_allocator: StandardDescriptorSetAllocator,
+    pub images: Vec<Arc<Image>>,
+    pub cmd_buf_allocator: Arc<StandardCommandBufferAllocator>,
+    pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     pub render_pass: Arc<RenderPass>,
     pub image_format: Format,
 }
@@ -115,16 +112,16 @@ fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<Rende
         device,
         attachments: {
             color: {
-                load: Clear,
-                store: Store,
                 format: swapchain.image_format(), // set the format the same as the swapchain
                 samples: 1,
+                load_op: Clear,
+                store_op: Store,
             },
             depth: {
-                load: Clear,
-                store: DontCare,
                 format: Format::D16_UNORM,
                 samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
             }
         },
         pass: {
@@ -136,10 +133,10 @@ fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<Rende
 }
 
 fn get_framebuffers(
-    images: &[Arc<SwapchainImage>],
+    images: &[Arc<Image>],
     render_pass: &Arc<RenderPass>,
-    depth_buffer: Arc<ImageView<AttachmentImage>>,
-) -> (Vec<Arc<Framebuffer>>, Vec<Arc<ImageView<SwapchainImage>>>) {
+    depth_buffer: Arc<ImageView>,
+) -> (Vec<Arc<Framebuffer>>, Vec<Arc<ImageView>>) {
     images
         .iter()
         .map(|image| {
@@ -181,7 +178,10 @@ fn get_finalized_render_passes(
                         clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                     },
-                    SubpassContents::Inline,
+                    SubpassBeginInfo {
+                        contents: SubpassContents::Inline,
+                        ..Default::default()
+                    }
                 )
                 .unwrap();
 
@@ -189,9 +189,9 @@ fn get_finalized_render_passes(
                 pipeline_provider.render_pass(&mut builder);
             }
 
-            builder.end_render_pass().unwrap();
+            builder.end_render_pass(SubpassEndInfo::default()).unwrap();
 
-            Arc::new(builder.build().unwrap())
+            builder.build().unwrap()
         })
         .collect()
 }
