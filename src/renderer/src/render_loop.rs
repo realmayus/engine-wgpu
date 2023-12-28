@@ -1,3 +1,4 @@
+use std::process::exit;
 use egui_winit_vulkano::{Gui, GuiConfig};
 use glam::Vec2;
 use log::{debug, error, info};
@@ -66,6 +67,7 @@ pub fn start_renderer(
             light_info.clone(),
         );
     }
+
     let mut command_buffers = get_finalized_render_passes(
         framebuffers,
         &state.init_state.cmd_buf_allocator,
@@ -83,6 +85,7 @@ pub fn start_renderer(
         .unwrap()
         .then_signal_fence_and_flush()
         .unwrap();
+
     future.wait(None).unwrap();
 
     let mut gui = Gui::new(
@@ -101,9 +104,8 @@ pub fn start_renderer(
     let mut cursor_delta = Vec2::default();
     let mut delta_time = 0.01;
     let mut gui_catch = false;
-
+    let mut previous_frame_end = Some(sync::now(state.init_state.device.clone()).boxed());
     let event_loop = state.init_state.event_loop;
-
     // blocks main thread forever and calls closure whenever the event loop receives an event
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -211,6 +213,7 @@ pub fn start_renderer(
         Event::RedrawEventsCleared => {
             let time = Instant::now();
             // TODO: Optimization: Implement Frames in Flight
+            previous_frame_end.as_mut().unwrap().cleanup_finished();
             if recreate_render_passes || recreate_swapchain {
                 recreate_swapchain = false;
                 info!(
@@ -289,17 +292,19 @@ pub fn start_renderer(
             let (image_i, suboptimal, acquire_future) =
                 match swapchain::acquire_next_image(state.init_state.swapchain.clone(), None) {
                     Ok(r) => r,
-                    // Err(Validated::<vulkano::VulkanError>) => {
-                    //     recreate_swapchain = true;
-                    //     return;
-                    // }
+                    Err(Validated::Error(VulkanError::OutOfDate)) => {
+                        recreate_swapchain = true;
+                        return;
+                    }
                     Err(e) => panic!("Failed to acquire next image: {e}"),
                 };
+
             if suboptimal {
                 info!("Suboptimal image encountered, recreating swapchain in next frame");
                 recreate_swapchain = true;
             }
             acquire_future.wait(None).unwrap();
+
             let update_cmd_buffer = callable.update(
                 pipeline_providers.as_mut_slice(),
                 state.init_state.memory_allocator.clone(),
@@ -314,7 +319,7 @@ pub fn start_renderer(
                     recreate_render_passes || provider.must_recreate_render_passes()
             }
 
-            let main_drawings = sync::now(state.init_state.device.clone())
+            let main_drawings = previous_frame_end.take().unwrap()
                 .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                 .then_execute(
                     state.init_state.queue.clone(),
@@ -324,10 +329,11 @@ pub fn start_renderer(
                 .then_execute(state.init_state.queue.clone(), update_cmd_buffer)
                 .unwrap();
 
-            let after_egui =
-                gui.draw_on_image(main_drawings, image_views[image_i as usize].clone());
+            // let after_egui =
+            //     gui.draw_on_image(main_drawings, image_views[image_i as usize].clone());
 
-            let present = after_egui
+            // let present = after_egui
+            let present = main_drawings
                 .then_swapchain_present(
                     // tell the swapchain that we finished drawing and the image is ready for display
                     state.init_state.queue.clone(),
@@ -339,12 +345,14 @@ pub fn start_renderer(
                 .then_signal_fence_and_flush();
 
             match present {
-                Ok(future) => future.wait(None).unwrap(),
-                Err(vulkano::Validated::Error(VulkanError::OutOfDate)) => {
-                        recreate_swapchain = true;
+                Ok(future) => previous_frame_end = Some(future.boxed()),
+                Err(Validated::Error(VulkanError::OutOfDate)) => {
+                    recreate_swapchain = true;
+                    previous_frame_end = Some(sync::now(state.init_state.device.clone()).boxed());
                 }
                 Err(e) => {
                     error!("Failed to flush future: {e}");
+                    previous_frame_end = Some(sync::now(state.init_state.device.clone()).boxed());
                 }
             }
             let elapsed = time.elapsed().as_micros() as f32;

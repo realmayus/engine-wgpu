@@ -124,7 +124,7 @@ pub fn init_renderer() -> RenderInitState {
         surface,
         event_loop,
         window,
-        memory_allocator: memory_allocator,
+        memory_allocator,
         queue,
         image_format: swapchain.image_format(),
         swapchain,

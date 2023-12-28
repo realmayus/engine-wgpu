@@ -4,7 +4,6 @@ use log::debug;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CopyBufferToImageInfo, PrimaryAutoCommandBuffer};
 use vulkano::{DeviceSize, format};
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::image::{Image, ImageCreateInfo, ImageType};
 use vulkano::image::view::ImageView;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
@@ -17,6 +16,7 @@ pub fn create_texture(
     allocator: Arc<StandardMemoryAllocator>,
     cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> Arc<ImageView> {
+    assert_eq!(pixels.len(), (width * height * 4) as usize);
     debug!("Creating texture with format: {:?}", format);
     let extent = [width, height, 1];
     let image = Image::new(
@@ -38,10 +38,10 @@ pub fn create_texture(
             ..Default::default()
         },
         AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_HOST,
+            memory_type_filter: MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
             ..Default::default()
         },
-        pixels.into_iter(),
+        pixels,
     ).unwrap();
 
 
