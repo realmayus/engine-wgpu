@@ -407,12 +407,16 @@ impl TextureManager {
     ) -> Self {
         let mut textures = vec![];
         {
-            let img = image::open("assets/textures/white.png")
-                .expect("Couldn't load default texture")
-                .to_rgba8();
-            let width = img.width();
-            let height = img.height();
-            let dyn_img = DynamicImage::from(img);
+            // let img = image::open("assets/textures/white.png")
+            //     .expect("Couldn't load default texture")
+            //     .to_rgba8();
+            let width = 1; // img.width();
+            let height = 1; // img.height();
+            let dyn_img = DynamicImage::from(RgbaImage::from_pixel(
+                width,
+                height,
+                image::Rgba([255, 255, 255, 255]),
+            ));
 
             let path = extract_image_to_file("white", &dyn_img, Png);
 
@@ -430,12 +434,16 @@ impl TextureManager {
         }
 
         {
-            let img = image::open("assets/textures/default_normal.png")
-                .expect("Couldn't load white texture")
-                .to_rgba8();
-            let width = img.width();
-            let height = img.height();
-            let dyn_img = DynamicImage::from(img);
+            // let img = image::open("assets/textures/default_normal.png")
+            //     .expect("Couldn't load white texture")
+            //     .to_rgba8();
+            let width = 1; // img.width();
+            let height = 1; // img.height();
+            let dyn_img = DynamicImage::from(RgbaImage::from_pixel(
+                width,
+                height,
+                image::Rgba([128, 128, 255, 255]),
+            ));
 
             let path = extract_image_to_file("default_normal", &dyn_img, Png);
 
@@ -453,12 +461,18 @@ impl TextureManager {
         }
 
         {
-            let img = image::open("assets/textures/no_texture.png")
-                .expect("Couldn't load white texture")
-                .to_rgba8();
-            let width = img.width();
-            let height = img.height();
-            let dyn_img = DynamicImage::from(img);
+            // let img = image::open("assets/textures/no_texture.png")
+            //     .expect("Couldn't load white texture")
+            //     .to_rgba8();
+            let width = 2; //  img.width();
+            let height = 2; //  img.height();
+            let dyn_img = DynamicImage::from(RgbaImage::from_fn(width, height, |x, y| {
+                if (x + y) & 1 == 0 {
+                    image::Rgba([255, 0, 255, 255])
+                } else {
+                    image::Rgba([0, 0, 0, 0])
+                }
+            }));
 
             let path = extract_image_to_file("no_texture", &dyn_img, Png);
 
