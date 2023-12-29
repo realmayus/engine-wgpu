@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use image::ImageFormat::Png;
-use image::{DynamicImage, RgbImage};
+use image::{DynamicImage, RgbaImage};
 use log::debug;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -322,10 +322,10 @@ impl TextureManager {
             //     .to_rgba8();
             let width = 1; // img.width();
             let height = 1; // img.height();
-            let dyn_img = DynamicImage::from(RgbImage::from_pixel(
+            let dyn_img = DynamicImage::from(RgbaImage::from_pixel(
                 width,
                 height,
-                image::Rgb([255, 255, 255]),
+                image::Rgba([255, 255, 255, 255]),
             ));
 
             let path = extract_image_to_file("white", &dyn_img, Png);
@@ -349,10 +349,10 @@ impl TextureManager {
             //     .to_rgba8();
             let width = 1; // img.width();
             let height = 1; // img.height();
-            let dyn_img = DynamicImage::from(RgbImage::from_pixel(
+            let dyn_img = DynamicImage::from(RgbaImage::from_pixel(
                 width,
                 height,
-                image::Rgb([128, 128, 255]),
+                image::Rgba([128, 128, 255, 255]),
             ));
 
             let path = extract_image_to_file("default_normal", &dyn_img, Png);
@@ -376,11 +376,11 @@ impl TextureManager {
             //     .to_rgba8();
             let width = 2; //  img.width();
             let height = 2; //  img.height();
-            let dyn_img = DynamicImage::from(RgbImage::from_fn(width, height, |x, y| {
+            let dyn_img = DynamicImage::from(RgbaImage::from_fn(width, height, |x, y| {
                 if (x + y) & 1 == 0 {
-                    image::Rgb([255, 0, 255])
+                    image::Rgba([255, 0, 255, 255])
                 } else {
-                    image::Rgb([0, 0, 0])
+                    image::Rgba([0, 0, 0, 0])
                 }
             }));
 
@@ -400,6 +400,7 @@ impl TextureManager {
         }
         Self { textures }
     }
+
     pub fn new_ref(
         memory_allocator: &StandardMemoryAllocator,
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
