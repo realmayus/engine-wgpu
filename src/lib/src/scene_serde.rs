@@ -1,4 +1,3 @@
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use crate::scene::PointLight;
 use std::cell::RefCell;
 use std::mem;
@@ -9,14 +8,8 @@ use std::sync::Arc;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use image::{DynamicImage, ImageFormat};
 use serde::{Deserialize, Serialize};
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
-use vulkano::format;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
-
 use crate::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager, World};
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use crate::texture::create_texture;
 use crate::util::extract_image_to_file;
 
 #[derive(Serialize, Deserialize)]
@@ -158,7 +151,8 @@ impl Material {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 MaterialInfo::default(),
@@ -216,7 +210,8 @@ impl Mesh {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 MeshInfo::default(),
@@ -335,8 +330,12 @@ impl WorldSerde {
         cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         root_dir: &Path,
     ) -> World {
-        let textures =
-            TextureManager::from_serde(&self.textures, allocator.clone(), cmd_buf_builder, root_dir);
+        let textures = TextureManager::from_serde(
+            &self.textures,
+            allocator.clone(),
+            cmd_buf_builder,
+            root_dir,
+        );
         let materials = MaterialManager::from_serde(&self.materials, &textures, allocator.clone());
         let scenes_serde = mem::take(&mut self.scenes);
         let scenes = scenes_serde
@@ -372,7 +371,7 @@ impl TextureManager {
     fn from_serde(
         value: &TextureManagerSerde,
         allocator: Arc<StandardMemoryAllocator>,
-        cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         root_dir: &Path,
     ) -> Self {
         let mut manager = Self::new();
@@ -419,7 +418,8 @@ impl MaterialManager {
         let mut manager = Self::new();
         for mat in value.materials.as_slice() {
             let id = mat.id;
-            let result_id = manager.add_material(Material::from_serde(mat, textures, allocator.clone()));
+            let result_id =
+                manager.add_material(Material::from_serde(mat, textures, allocator.clone()));
             assert_eq!(
                 result_id, id,
                 "Expected material ID {} but got {}",
@@ -470,7 +470,8 @@ impl PointLight {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 LightInfo::default(),

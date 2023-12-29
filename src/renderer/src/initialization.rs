@@ -1,17 +1,6 @@
 use std::sync::Arc;
 
 use log::info;
-use vulkano::command_buffer::allocator::{
-    StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
-};
-use vulkano::descriptor_set::allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo};
-use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, Features, QueueCreateInfo};
-use vulkano::image::ImageUsage;
-use vulkano::instance::{Instance, InstanceCreateInfo};
-use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
-use vulkano::VulkanLibrary;
-use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
@@ -30,9 +19,7 @@ pub fn init_renderer() -> RenderInitState {
     .expect("Failed to create instance");
 
     let event_loop = EventLoop::new();
-    let window = Arc::new(WindowBuilder::new()
-        .build(&event_loop)
-        .unwrap());
+    let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
     let surface = Surface::from_window(instance.clone(), window.clone()).unwrap();
 
     window.set_title("Engine Playground - Press ESC to release controls");
@@ -116,7 +103,10 @@ pub fn init_renderer() -> RenderInitState {
     ));
 
     let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-    let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(device.clone(), StandardDescriptorSetAllocatorCreateInfo::default()));
+    let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
+        device.clone(),
+        StandardDescriptorSetAllocatorCreateInfo::default(),
+    ));
     let render_pass = get_render_pass(device.clone(), &swapchain);
 
     RenderInitState {

@@ -1,4 +1,3 @@
-use vulkano::buffer::Subbuffer;
 
 pub mod scene;
 pub mod scene_serde;

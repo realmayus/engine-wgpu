@@ -7,21 +7,27 @@ use vulkano::descriptor_set::layout::DescriptorBindingFlags;
 use vulkano::device::Device;
 use vulkano::image::sampler::Sampler;
 use vulkano::image::view::ImageView;
+use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::depth_stencil::{DepthState, DepthStencilState};
 use vulkano::pipeline::graphics::input_assembly::{InputAssemblyState, PrimitiveTopology};
-use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexBufferDescription, VertexDefinition, VertexInputState};
-use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo};
-use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
 use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::rasterization::RasterizationState;
+use vulkano::pipeline::graphics::vertex_input::{
+    Vertex, VertexBufferDescription, VertexDefinition, VertexInputState,
+};
+use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
 use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
+use vulkano::pipeline::{
+    GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+};
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
 
 use lib::scene::DrawableVertexInputs;
-use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo, MyNormal, MyTangent, MyUV, MyVertex};
+use lib::shader_types::{
+    CameraUniform, LightInfo, MaterialInfo, MeshInfo, MyNormal, MyTangent, MyUV, MyVertex,
+};
 
 use crate::pipelines::descriptor_set_controller::DescriptorSetController;
 use crate::pipelines::PipelineProvider;
@@ -79,7 +85,9 @@ impl PBRPipelineProvider {
                 MyNormal::per_vertex(),
                 MyTangent::per_vertex(),
                 MyUV::per_vertex(),
-            ].definition(&vs.entry_point("main").unwrap().info().input_interface).unwrap(),
+            ]
+            .definition(&vs.entry_point("main").unwrap().info().input_interface)
+            .unwrap(),
             pipeline: None,
             recreate_render_passes: false,
             descriptor_set_controller: None,
@@ -100,9 +108,13 @@ impl PBRPipelineProvider {
 
 impl PipelineProvider for PBRPipelineProvider {
     fn create_pipeline(&mut self) {
-        let stages = [PipelineShaderStageCreateInfo::new(self.vs.entry_point("main").unwrap()), PipelineShaderStageCreateInfo::new(self.fs.entry_point("main").unwrap())];
+        let stages = [
+            PipelineShaderStageCreateInfo::new(self.vs.entry_point("main").unwrap()),
+            PipelineShaderStageCreateInfo::new(self.fs.entry_point("main").unwrap()),
+        ];
         let layout = {
-            let mut layout_create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+            let mut layout_create_info =
+                PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
             let binding = layout_create_info.set_layouts[1]
                 .bindings
                 .get_mut(&0)
@@ -117,14 +129,12 @@ impl PipelineProvider for PBRPipelineProvider {
             binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
             binding.descriptor_count = 128;
 
-
             let binding = layout_create_info.set_layouts[3]
                 .bindings
                 .get_mut(&0)
                 .unwrap();
             binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
             binding.descriptor_count = 128;
-
 
             let binding = layout_create_info.set_layouts[4]
                 .bindings
@@ -133,7 +143,13 @@ impl PipelineProvider for PBRPipelineProvider {
             binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
             binding.descriptor_count = 128;
 
-            PipelineLayout::new(self.device.clone(), layout_create_info.into_pipeline_layout_create_info(self.device.clone()).unwrap()).unwrap()
+            PipelineLayout::new(
+                self.device.clone(),
+                layout_create_info
+                    .into_pipeline_layout_create_info(self.device.clone())
+                    .unwrap(),
+            )
+            .unwrap()
         };
         let input_assembly_state = InputAssemblyState::default();
         let subpass = Subpass::from(self.render_pass.clone(), 0).unwrap();
@@ -145,23 +161,25 @@ impl PipelineProvider for PBRPipelineProvider {
                     stages: stages.into_iter().collect(),
                     vertex_input_state: Some(self.vertex_input_state.clone()),
                     input_assembly_state: Some(input_assembly_state),
-                    viewport_state: Some(
-                        ViewportState {
-                            viewports: [self.viewport.clone()].into_iter().collect(),
-                            ..Default::default()
-                        }
-                    ),
+                    viewport_state: Some(ViewportState {
+                        viewports: [self.viewport.clone()].into_iter().collect(),
+                        ..Default::default()
+                    }),
                     rasterization_state: Some(RasterizationState::default()),
                     depth_stencil_state: Some(DepthStencilState {
                         depth: Some(DepthState::simple()),
                         ..Default::default()
                     }),
                     multisample_state: Some(MultisampleState::default()),
-                    color_blend_state: Some(ColorBlendState::with_attachment_states(subpass.num_color_attachments(), ColorBlendAttachmentState::default())),
+                    color_blend_state: Some(ColorBlendState::with_attachment_states(
+                        subpass.num_color_attachments(),
+                        ColorBlendAttachmentState::default(),
+                    )),
                     subpass: Some(subpass.into()),
                     ..GraphicsPipelineCreateInfo::layout(layout)
-                }
-            ).unwrap()
+                },
+            )
+            .unwrap(),
         );
     }
 
@@ -207,8 +225,10 @@ impl PipelineProvider for PBRPipelineProvider {
                         vertex_input.tangent_buffer.subbuffer.clone(),
                         vertex_input.uv_buffer.subbuffer.clone(),
                     ),
-                ).unwrap()
-                .bind_index_buffer(vertex_input.index_buffer.clone()).unwrap()
+                )
+                .unwrap()
+                .bind_index_buffer(vertex_input.index_buffer.clone())
+                .unwrap()
                 .draw_indexed(vertex_input.index_buffer.len() as u32, 1, 0, 0, i as u32)
                 .unwrap();
         }

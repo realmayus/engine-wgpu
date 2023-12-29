@@ -61,7 +61,7 @@ impl PipelineProvider for PipelineProviderKind {
         textures: Vec<(Arc<ImageView>, Arc<Sampler>)>,
         material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
         mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
-        light_info_buffers: Vec<Subbuffer<LightInfo>>
+        light_info_buffers: Vec<Subbuffer<LightInfo>>,
     ) {
         match self {
             PipelineProviderKind::LINE(line_pipeline) => line_pipeline.init_descriptor_sets(
@@ -80,7 +80,6 @@ impl PipelineProvider for PipelineProviderKind {
                 mesh_info_buffers,
                 light_info_buffers,
             ),
-
         }
     }
 

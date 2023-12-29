@@ -8,13 +8,6 @@ use std::sync::Arc;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::{debug, info};
 use rand::Rng;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::device::Device;
-use vulkano::image::Image;
-use vulkano::image::sampler::{Sampler, SamplerCreateInfo};
-use vulkano::image::view::ImageView;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
-
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use crate::{Dirtyable, VertexInputBuffer};
 
@@ -26,12 +19,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn from(
-        view: Arc<ImageView>,
-        name: Option<Box<str>>,
-        id: u32,
-        img_path: PathBuf,
-    ) -> Self {
+    pub fn from(view: Arc<ImageView>, name: Option<Box<str>>, id: u32, img_path: PathBuf) -> Self {
         Self {
             view,
             name,
@@ -463,7 +451,8 @@ impl DrawableVertexInputs {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.vertices.iter().map(|v| v.to_array()),
@@ -477,7 +466,8 @@ impl DrawableVertexInputs {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.normals.iter().map(|v| v.to_array()),
@@ -491,7 +481,8 @@ impl DrawableVertexInputs {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.tangents.iter().map(|v| v.to_array()),
@@ -505,7 +496,8 @@ impl DrawableVertexInputs {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.uvs.iter().map(|v| v.to_array()),
@@ -519,7 +511,8 @@ impl DrawableVertexInputs {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             mesh.indices.clone(),

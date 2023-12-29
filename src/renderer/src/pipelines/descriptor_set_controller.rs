@@ -77,7 +77,7 @@ impl DescriptorSetController {
             descriptor_set_allocator,
             pipeline_layout.set_layouts().get(0).unwrap().clone(),
             [WriteDescriptorSet::buffer(0, buffer)],
-            []
+            [],
         )
         .unwrap()
     }
@@ -91,7 +91,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(1).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::image_view_sampler_array(0, 0, array)],
-            []
+            [],
         )
         .unwrap()
     }
@@ -105,7 +105,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(2).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::buffer_array(0, 0, array)],
-            []
+            [],
         )
         .unwrap()
     }
@@ -120,7 +120,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(3).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::buffer_array(0, 0, array)],
-            []
+            [],
         )
         .unwrap()
     }
@@ -135,7 +135,7 @@ impl DescriptorSetController {
             pipeline_layout.set_layouts().get(4).unwrap().clone(),
             array.len() as u32,
             [WriteDescriptorSet::buffer_array(0, 0, array)],
-            []
+            [],
         )
         .unwrap()
     }

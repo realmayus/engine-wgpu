@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 glam = "0.24.1"
-vulkano = "0.34.1"
 gltf = { version = "1.2" , features = ["KHR_lights_punctual"]}
 lib = {path = "../../../lib"}
 base64 = "0.21.2"

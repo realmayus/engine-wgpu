@@ -6,12 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vulkano = "0.34.1"
-vulkano-win = "0.34.0"
-winit = "0.28"
 glam = "0.24.1"
-egui_winit_vulkano = "0.27.0"
-vulkano-shaders = "0.34.0"
 systems = { path = "../systems" }
 lib = { path = "../lib" }
 log = "0.4.19"
+wgpu = "0.18.0"
+egui-wgpu = { version = "0.24.1", features = ["winit"] }
+winit = "0.28.7"
+anyhow = "1.0.77"

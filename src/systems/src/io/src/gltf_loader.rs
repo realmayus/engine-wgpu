@@ -1,4 +1,3 @@
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use lib::scene::PointLight;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -6,8 +5,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
-use std::{fs, io};
 use std::sync::Arc;
+use std::{fs, io};
+use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 
 use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3, Vec4};
@@ -233,7 +233,7 @@ fn load_image(
 pub fn load_gltf(
     path: &Path,
     allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     texture_manager: &mut TextureManager,
     material_manager: &mut MaterialManager,
 ) -> Vec<Scene> {
@@ -369,7 +369,8 @@ pub fn load_gltf(
                         ..Default::default()
                     },
                     AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                         ..Default::default()
                     },
                     MaterialInfo::default(),
@@ -483,7 +484,8 @@ fn load_node(
                         ..Default::default()
                     },
                     AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                         ..Default::default()
                     },
                     MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
@@ -508,7 +510,8 @@ fn load_node(
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             LightInfo::default(),
@@ -520,13 +523,19 @@ fn load_node(
         *num_lights += 1;
     }
 
-    Model::from(meshes, node.name().map(Box::from), children, local_transform, light)
+    Model::from(
+        meshes,
+        node.name().map(Box::from),
+        children,
+        local_transform,
+        light,
+    )
 }
 
 /// loads the hardcoded exr
 fn load_exr(
     allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     tex_i: u32,
 ) -> Texture {
     let img = image::open(Path::new("assets/EXRs/little_paris_eiffel_tower_2k.exr"))
@@ -550,7 +559,7 @@ fn load_exr(
 
 pub fn load_texture(
     allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     path: &Path,
     index: u32,
 ) -> Texture {

@@ -1,20 +1,6 @@
-use std::process::exit;
-use egui_winit_vulkano::{Gui, GuiConfig};
 use glam::Vec2;
 use log::{debug, error, info};
 use std::time::Instant;
-use vulkano::format::Format;
-use vulkano::image::view::ImageView;
-use vulkano::swapchain::{
-    SwapchainCreateInfo, SwapchainPresentInfo,
-};
-use vulkano::sync::{GpuFuture};
-use vulkano::{image, swapchain, sync, Validated, VulkanError};
-use vulkano::image::{Image, ImageCreateInfo, ImageUsage};
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter};
-use winit::event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent};
-use winit::event::WindowEvent::KeyboardInput;
-use winit::event_loop::ControlFlow;
 
 use crate::camera::KeyState;
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
@@ -32,17 +18,21 @@ pub fn start_renderer(
     let depth_buffer = ImageView::new_default(
         Image::new(
             state.init_state.memory_allocator.clone(),
-                ImageCreateInfo {
-                    extent: [state.viewport.extent[0] as u32, state.viewport.extent[1] as u32, 1],
-                    format: Format::D16_UNORM,
-                    usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
-                    ..Default::default()
-                },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ImageCreateInfo {
+                extent: [
+                    state.viewport.extent[0] as u32,
+                    state.viewport.extent[1] as u32,
+                    1,
+                ],
+                format: Format::D16_UNORM,
+                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
                 ..Default::default()
-            }
-
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
         )
         .unwrap(),
     )
@@ -244,8 +234,9 @@ pub fn start_renderer(
                             usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
                             ..Default::default()
                         },
-            AllocationCreateInfo {
-                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                             ..Default::default()
                         },
                     )
@@ -304,21 +295,25 @@ pub fn start_renderer(
                 recreate_swapchain = true;
             }
 
-            let update_cmd_buffer = callable.update(
-                pipeline_providers.as_mut_slice(),
-                state.init_state.memory_allocator.clone(),
-                state.init_state.descriptor_set_allocator.clone(),
-                state.init_state.cmd_buf_allocator.clone(),
-                state.init_state.queue.queue_family_index(),
-                state.init_state.device.clone(),
-                state.viewport.clone(),
-            ).unwrap();
+            let update_cmd_buffer = callable
+                .update(
+                    pipeline_providers.as_mut_slice(),
+                    state.init_state.memory_allocator.clone(),
+                    state.init_state.descriptor_set_allocator.clone(),
+                    state.init_state.cmd_buf_allocator.clone(),
+                    state.init_state.queue.queue_family_index(),
+                    state.init_state.device.clone(),
+                    state.viewport.clone(),
+                )
+                .unwrap();
             for provider in pipeline_providers.as_mut_slice() {
                 recreate_render_passes =
                     recreate_render_passes || provider.must_recreate_render_passes()
             }
 
-            let main_drawings = previous_frame_end.take().unwrap()
+            let main_drawings = previous_frame_end
+                .take()
+                .unwrap()
                 .join(acquire_future) // cmd buf can't be executed immediately, as it needs to wait for the image to actually become available
                 .then_execute(
                     state.init_state.queue.clone(),

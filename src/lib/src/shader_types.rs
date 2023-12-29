@@ -1,8 +1,6 @@
-use crate::scene::PointLight;
 use crate::scene::Material;
+use crate::scene::PointLight;
 use glam::Mat4;
-use vulkano::buffer::BufferContents;
-use vulkano::pipeline::graphics::vertex_input::Vertex;
 
 // Vertex buffers
 

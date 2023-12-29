@@ -166,17 +166,8 @@ impl StateCallable for GlobalState {
         )
     }
 
-    fn recv_input(
-        &mut self,
-        keys: &KeyState,
-        change: Vec2,
-        delta_time: f32,
-    ) {
-        self.inner_state.camera.recv_input(
-            keys,
-            change,
-            delta_time,
-        );
+    fn recv_input(&mut self, keys: &KeyState, change: Vec2, delta_time: f32) {
+        self.inner_state.camera.recv_input(keys, change, delta_time);
     }
 }
 
@@ -273,7 +264,8 @@ pub fn start() {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 MaterialInfo::default(),
@@ -353,7 +345,8 @@ pub fn start() {
                     ..Default::default()
                 },
                 AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 (0..2).map(|_| {
@@ -378,7 +371,8 @@ pub fn start() {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             LineInfo {

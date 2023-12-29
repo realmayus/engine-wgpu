@@ -1,24 +1,11 @@
 use std::sync::Arc;
-
-use egui_winit_vulkano::Gui;
+use anyhow::*;
 use glam::Vec2;
-use vulkano::buffer::Subbuffer;
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo};
-use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
-use vulkano::device::{Device, DeviceExtensions, Queue, QueueFlags};
-use vulkano::format::Format;
-use vulkano::image::Image;
-use vulkano::image::sampler::Sampler;
-use vulkano::image::view::ImageView;
-use vulkano::instance::Instance;
-use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::swapchain::{Surface, Swapchain};
-use winit::event_loop::EventLoop;
-use winit::window::Window;
+use wgpu::{Device, Queue, Surface, SurfaceConfiguration, SurfaceError};
+use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
+use winit::window::{Window, WindowBuilder};
+use lib::scene::Texture;
 
 use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo};
 
@@ -55,57 +42,179 @@ pub trait StateCallable {
         Vec<Subbuffer<LightInfo>>,
     );
 
-    fn recv_input(
-        &mut self,
-        keys: &KeyState,
-        change: Vec2,
-        delta_time: f32,
-    );
+    fn recv_input(&mut self, keys: &KeyState, change: Vec2, delta_time: f32);
 }
 
 pub struct RenderInitState {
-    pub device: Arc<Device>,
-    surface: Arc<Surface>,
-    event_loop: EventLoop<()>,
-    pub window: Arc<Window>,
-    pub memory_allocator: Arc<StandardMemoryAllocator>,
-    pub queue: Arc<Queue>,
-    pub swapchain: Arc<Swapchain>,
-    pub images: Vec<Arc<Image>>,
-    pub cmd_buf_allocator: Arc<StandardCommandBufferAllocator>,
-    pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-    pub render_pass: Arc<RenderPass>,
-    pub image_format: Format,
+    pub device: Device,
+    surface: Surface,
+    surface_config: SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+    pub window: Window,
+    queue: Queue,
+    depth_texture: Texture,
 }
 
-fn select_physical_device(
-    instance: &Arc<Instance>,
-    surface: &Arc<Surface>,
-    device_extensions: &DeviceExtensions,
-) -> (Arc<PhysicalDevice>, u32) {
-    instance
-        .enumerate_physical_devices()
-        .expect("failed to enumerate physical devices")
-        .filter(|p| p.supported_extensions().contains(device_extensions))
-        .filter_map(|p| {
-            p.queue_family_properties()
-                .iter()
-                .enumerate()
-                .position(|(i, q)| {
-                    q.queue_flags.contains(QueueFlags::GRAPHICS)
-                        && p.surface_support(i as u32, surface).unwrap_or(false)
-                })
-                .map(|q| (p, q as u32))
-        })
-        .min_by_key(|(p, _)| match p.properties().device_type {
-            PhysicalDeviceType::DiscreteGpu => 0,
-            PhysicalDeviceType::IntegratedGpu => 1,
-            PhysicalDeviceType::VirtualGpu => 2,
-            PhysicalDeviceType::Cpu => 3,
-            _ => 4,
-        })
-        .expect("no device available")
+impl RenderInitState {
+    async fn new(window: Window) -> Self {
+        let size = window.inner_size();
+        assert_ne!(size.width, 0);
+        assert_ne!(size.height, 0);
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+        // Safety: Surface needs to live as long as the window that created it. State owns window, so this is safe.
+        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        // adapter is handle to the graphics card (to get its name, backend etc.)
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .unwrap();
+
+        let (device, queue) = adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                features: wgpu::Features::empty(),
+                limits: wgpu::Limits::default(),
+            },
+            None,
+        );
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .filter(|f| f.is_srgb())
+            .next()
+            .unwrap_or(surface_caps.formats[0]);
+        let surface_config = SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: size.width,
+            height: size.height,
+            present_mode: surface_caps.present_modes[0],
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+        };
+        surface.configure(&device, &surface_config);
+        let depth_texture = Texture::create_depth_texture(&device, &surface_config, "depth_texture");
+        Self {
+            window,
+            surface,
+            device,
+            queue,
+            surface_config,
+            size,
+            depth_texture,
+        }
+    }
+
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.surface_config.width = new_size.width;
+            self.surface_config.height = new_size.height;
+            self.surface.configure(&self.device, &self.surface_config);
+        }
+    }
+
+    fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+        false
+    }
+
+    fn update(&mut self) {
+        todo!();
+    }
+
+    fn render(&mut self) -> Result<(), SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        Ok(())
+    }
 }
+
+pub async fn run() {
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    let mut state = RenderInitState::new(window).await;
+    event_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == state.window().id() => if !state.input(event) {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(VirtualKeyCode::Escape),
+                            ..
+                        },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::Resized(physical_size) => {
+                        state.resize(*physical_size);
+                    }
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                        state.resize(**new_inner_size);
+                    }
+
+                    _ => {}
+                }
+            },
+            Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+                state.update();
+                match state.render() {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    Err(e) => eprintln!("{:?}", e),
+                }
+            }
+            Event::MainEventsCleared => {
+                state.window().request_redraw();
+            }
+            _ => {}
+        }
+    });
+}
+
 
 fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<RenderPass> {
     vulkano::single_pass_renderpass!(
@@ -181,7 +290,7 @@ fn get_finalized_render_passes(
                     SubpassBeginInfo {
                         contents: SubpassContents::Inline,
                         ..Default::default()
-                    }
+                    },
                 )
                 .unwrap();
 
@@ -194,14 +303,4 @@ fn get_finalized_render_passes(
             builder.build().unwrap()
         })
         .collect()
-}
-
-pub struct RenderState {
-    pub init_state: RenderInitState,
-    pub viewport: Viewport,
-    pub cmd_buf_builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-}
-
-pub struct PartialRenderState<'a> {
-    pub camera: &'a mut Camera,
 }

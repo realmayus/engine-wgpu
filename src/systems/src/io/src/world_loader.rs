@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::memory::allocator::StandardMemoryAllocator;
@@ -12,7 +12,7 @@ use lib::scene_serde::WorldSerde;
 pub fn load_world(
     path: &Path,
     allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
 ) -> World {
     let data = fs::read(path).expect("Couldn't read world");
     let mut serde_world: WorldSerde =
