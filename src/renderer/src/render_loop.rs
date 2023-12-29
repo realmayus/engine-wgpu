@@ -303,7 +303,6 @@ pub fn start_renderer(
                 info!("Suboptimal image encountered, recreating swapchain in next frame");
                 recreate_swapchain = true;
             }
-            acquire_future.wait(None).unwrap();
 
             let update_cmd_buffer = callable.update(
                 pipeline_providers.as_mut_slice(),
