@@ -7,8 +7,8 @@ use std::slice::Iter;
 use std::sync::Arc;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use image::DynamicImage;
 use image::ImageFormat::Png;
+use image::{DynamicImage, RgbImage};
 use log::debug;
 use rand::Rng;
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -317,12 +317,16 @@ impl TextureManager {
     ) -> Self {
         let mut textures = vec![];
         {
-            let img = image::open("assets/textures/white.png")
-                .expect("Couldn't load default texture")
-                .to_rgba8();
-            let width = img.width();
-            let height = img.height();
-            let dyn_img = DynamicImage::from(img);
+            // let img = image::open("assets/textures/white.png")
+            //     .expect("Couldn't load default texture")
+            //     .to_rgba8();
+            let width = 1; // img.width();
+            let height = 1; // img.height();
+            let dyn_img = DynamicImage::from(RgbImage::from_pixel(
+                width,
+                height,
+                image::Rgb([255, 255, 255]),
+            ));
 
             let path = extract_image_to_file("white", &dyn_img, Png);
 
@@ -340,12 +344,16 @@ impl TextureManager {
         }
 
         {
-            let img = image::open("assets/textures/default_normal.png")
-                .expect("Couldn't load white texture")
-                .to_rgba8();
-            let width = img.width();
-            let height = img.height();
-            let dyn_img = DynamicImage::from(img);
+            // let img = image::open("assets/textures/default_normal.png")
+            //     .expect("Couldn't load white texture")
+            //     .to_rgba8();
+            let width = 1; // img.width();
+            let height = 1; // img.height();
+            let dyn_img = DynamicImage::from(RgbImage::from_pixel(
+                width,
+                height,
+                image::Rgb([128, 128, 255]),
+            ));
 
             let path = extract_image_to_file("default_normal", &dyn_img, Png);
 
@@ -363,12 +371,18 @@ impl TextureManager {
         }
 
         {
-            let img = image::open("assets/textures/no_texture.png")
-                .expect("Couldn't load white texture")
-                .to_rgba8();
-            let width = img.width();
-            let height = img.height();
-            let dyn_img = DynamicImage::from(img);
+            // let img = image::open("assets/textures/no_texture.png")
+            //     .expect("Couldn't load white texture")
+            //     .to_rgba8();
+            let width = 2; //  img.width();
+            let height = 2; //  img.height();
+            let dyn_img = DynamicImage::from(RgbImage::from_fn(width, height, |x, y| {
+                if (x + y) & 1 == 0 {
+                    image::Rgb([255, 0, 255])
+                } else {
+                    image::Rgb([0, 0, 0])
+                }
+            }));
 
             let path = extract_image_to_file("no_texture", &dyn_img, Png);
 
