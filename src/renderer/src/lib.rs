@@ -144,14 +144,6 @@ impl RenderInitState {
         Ok(())
     }
 
-    /**
-    Loads a mesh into the GPU
-    */
-    fn load_mesh(&mut self, mesh: &lib::scene::Mesh) {
-        // create material binding
-        // create mesh binding
-
-    }
 }
 
 pub async fn run() {

@@ -211,14 +211,14 @@ impl PBRPipelineProvider {
 
 
     pub fn render_pass(&self,
-                   encoder: &mut CommandEncoder,
-                   vertex_inputs: &Vec<VertexInputs>,
-                   view: &TextureView,
-                   textures: &Vec<PbrTextureBundle>,
-                   mesh_info_buffers: &Vec<Buffer>,
-                   material_info_buffers: &Vec<Buffer>,
-                   camera_buffer: &Buffer) {
-        assert_eq!(vertex_inputs.len(), mesh_info_buffers.len());
+                       encoder: &mut CommandEncoder,
+                       vertex_inputs: &Vec<VertexInputs>,
+                       view: &TextureView,
+                       textures_bind_groups: &Vec<BindGroup>,
+                       material_info_bind_group: &BindGroup,
+                       mesh_info_bind_group: &BindGroup,
+                       camera_bind_group: &BindGroup) {
+        assert_eq!(vertex_inputs.len(), mesh_info_bind_group.len());
         
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
@@ -236,16 +236,14 @@ impl PBRPipelineProvider {
         });
 
         render_pass.set_pipeline(self.pipeline.as_ref().unwrap());
-        for texture in textures {
-            match texture.bind_group { 
-                Some(bind_group) => {
-                    render_pass.set_bind_group(0, &bind_group, &[]);
-                },
-                None => debug!("Not binding texture {} as it's not loaded", texture.id.unwrap())
-            }
-        }
+
+        render_pass.set_bind_group(1, material_info_bind_group, &[]);
+        render_pass.set_bind_group(2, mesh_info_bind_group, &[]);
+        render_pass.set_bind_group(3, camera_bind_group, &[]);
 
         for (i, &VertexInputs {vertex_buffer, index_buffer}) in vertex_inputs.iter().enumerate() {
+            render_pass.set_bind_group(0, &textures_bind_groups[i], &[]);
+
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -253,7 +251,7 @@ impl PBRPipelineProvider {
         }
     }
     
-    pub fn render_mesh(&self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, mesh: &Mesh) {
+    pub fn render_meshes(&self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, mesh: &Vec<Mesh>) {
         let vertex_inputs = VertexInputs::from_mesh(mesh, device);
         
         self.render_pass(
