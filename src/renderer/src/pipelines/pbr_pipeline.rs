@@ -1,240 +1,244 @@
-use std::sync::Arc;
+use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, Device, include_wgsl, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView};
+use wgpu::VertexStepMode::Vertex;
 
-use vulkano::buffer::Subbuffer;
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
-use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
-use vulkano::descriptor_set::layout::DescriptorBindingFlags;
-use vulkano::device::Device;
-use vulkano::image::sampler::Sampler;
-use vulkano::image::view::ImageView;
-use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
-use vulkano::pipeline::graphics::depth_stencil::{DepthState, DepthStencilState};
-use vulkano::pipeline::graphics::input_assembly::{InputAssemblyState, PrimitiveTopology};
-use vulkano::pipeline::graphics::multisample::MultisampleState;
-use vulkano::pipeline::graphics::rasterization::RasterizationState;
-use vulkano::pipeline::graphics::vertex_input::{
-    Vertex, VertexBufferDescription, VertexDefinition, VertexInputState,
-};
-use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
-use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
-use vulkano::pipeline::{
-    GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
-};
-use vulkano::render_pass::{RenderPass, Subpass};
-use vulkano::shader::ShaderModule;
 
-use lib::scene::DrawableVertexInputs;
-use lib::shader_types::{
-    CameraUniform, LightInfo, MaterialInfo, MeshInfo, MyNormal, MyTangent, MyUV, MyVertex,
-};
+use lib::scene::VertexInputs;
 
-use crate::pipelines::descriptor_set_controller::DescriptorSetController;
-use crate::pipelines::PipelineProvider;
-
-mod vs {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        path: "../../assets/shaders/pbr.vert",
-    }
-}
-
-mod fs {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "../../assets/shaders/pbr.frag",
-    }
-}
 
 /**
 Pipeline for physically-based rendering
 */
 pub struct PBRPipelineProvider {
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
-    cached_vertex_input_buffers: Vec<DrawableVertexInputs>,
-    viewport: Viewport,
-    render_pass: Arc<RenderPass>,
-    device: Arc<Device>,
-    vertex_input_state: VertexInputState,
-    pipeline: Option<Arc<GraphicsPipeline>>,
-    pub recreate_render_passes: bool,
-    descriptor_set_controller: Option<DescriptorSetController>,
-    // will get initialized later
+    shader: ShaderModule,
+    cached_vertex_input_buffers: Vec<VertexInputs>,
+    pipeline: Option<RenderPipeline>,
+    pub pipeline_layout: PipelineLayout,
+    pub tex_bind_group: BindGroup,
+    pub mat_bind_group: BindGroup,
+    pub mesh_bind_group: BindGroup,
+    pub cam_bind_group: BindGroup,
 }
 
 impl PBRPipelineProvider {
+
+    // Creates all necessary bind groups and layouts for the pipeline
     pub fn new(
-        device: Arc<Device>,
-        drawables: Vec<DrawableVertexInputs>,
-        viewport: Viewport,
-        render_pass: Arc<RenderPass>,
+        device: &Device,
+        drawables: Vec<VertexInputs>,
+        texture_views: Vec<TextureView>,
+        samplers: Vec<Sampler>,
+        mesh_info_buffers: Vec<Buffer>,
+        material_info_buffers: Vec<Buffer>,
+        camera_buffer: Buffer,
+        num_textures: u32,
+        num_materials: usize,
     ) -> Self {
-        let vs = vs::load(device.clone()).expect("failed to create vertex shader module");
-        let fs = fs::load(device.clone()).expect("failed to create fragment shader module");
+        let shader = device.create_shader_module(include_wgsl!("assets/shaders/pbr.wgsl"));
+        let pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("PBR Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+
+        let tex_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("PBR Texture Bindgroup Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: Some(num_textures.into()),  // TODO support 0 textures
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: Some(num_textures.into()),  // TODO support 0 textures
+                }
+            ],
+        });
+
+        let tex_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("PBR Texture Bindgroup"),
+            layout: &tex_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureViewArray(&texture_views.into()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::SamplerArray(&samplers.into()),
+                },
+            ],
+        });
+
+
+        let mat_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("PBR Material Bindgroup Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: Some(num_materials.into()),
+                }
+            ],
+        });
+
+        let mat_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("PBR Material Bindgroup"),
+            layout: &mat_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::BufferArray(&material_info_buffers.into()),
+                },
+            ],
+        });
+
+        let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("PBR Mesh Bindgroup Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: Some(mesh_info_buffers.len().into()), // TODO support 0 meshes
+                }
+            ],
+        });
+
+        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("PBR Mesh Bindgroup"),
+            layout: &mesh_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::BufferArray(&mesh_info_buffers.into()),
+                },
+            ],
+        });
+
+        let cam_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("PBR Camera Bindgroup Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+        });
+
+        let cam_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("PBR Camera Bindgroup"),
+            layout: &cam_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         Self {
-            vs: vs.clone(),
-            fs,
+            shader,
             cached_vertex_input_buffers: drawables,
-            viewport,
-            render_pass,
-            device,
-            vertex_input_state: [
-                MyVertex::per_vertex(),
-                MyNormal::per_vertex(),
-                MyTangent::per_vertex(),
-                MyUV::per_vertex(),
-            ]
-            .definition(&vs.entry_point("main").unwrap().info().input_interface)
-            .unwrap(),
             pipeline: None,
-            recreate_render_passes: false,
-            descriptor_set_controller: None,
+            pipeline_layout,
+            tex_bind_group,
+            mat_bind_group,
+            mesh_bind_group,
+            cam_bind_group,
         }
     }
 
-    pub fn update_drawables(&mut self, new_inputs: Vec<DrawableVertexInputs>) {
-        self.cached_vertex_input_buffers = new_inputs;
+    // (re-)creates the pipeline
+    fn create_pipeline(&mut self, device: Device) {
+        self.pipeline = Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("PBR Pipeline"),
+            layout: Some(&self.pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &self.shader,
+                entry_point: "vs_main",
+                buffers: &[
+                    Vertex::desc(),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &self.shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        }));
     }
 
-    pub fn update_descriptor_sets<F>(&mut self, f: F)
-    where
-        F: Fn(&mut DescriptorSetController),
-    {
-        f(self.descriptor_set_controller.as_mut().unwrap());
-    }
-}
 
-impl PipelineProvider for PBRPipelineProvider {
-    fn create_pipeline(&mut self) {
-        let stages = [
-            PipelineShaderStageCreateInfo::new(self.vs.entry_point("main").unwrap()),
-            PipelineShaderStageCreateInfo::new(self.fs.entry_point("main").unwrap()),
-        ];
-        let layout = {
-            let mut layout_create_info =
-                PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-            let binding = layout_create_info.set_layouts[1]
-                .bindings
-                .get_mut(&0)
-                .unwrap();
-            binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
-            binding.descriptor_count = 128;
+    fn render_pass(&self, encoder: &mut CommandEncoder, vertex_inputs: Vec<VertexInputs>, view: &TextureView) {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("PBR Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                }
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
 
-            let binding = layout_create_info.set_layouts[2]
-                .bindings
-                .get_mut(&0)
-                .unwrap();
-            binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
-            binding.descriptor_count = 128;
+        render_pass.set_pipeline(self.pipeline.as_ref().unwrap());
 
-            let binding = layout_create_info.set_layouts[3]
-                .bindings
-                .get_mut(&0)
-                .unwrap();
-            binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
-            binding.descriptor_count = 128;
+        for (i, &VertexInputs {vertex_buffer, index_buffer}) in vertex_inputs.iter().enumerate() {
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            let binding = layout_create_info.set_layouts[4]
-                .bindings
-                .get_mut(&0)
-                .unwrap();
-            binding.binding_flags |= DescriptorBindingFlags::VARIABLE_DESCRIPTOR_COUNT;
-            binding.descriptor_count = 128;
-
-            PipelineLayout::new(
-                self.device.clone(),
-                layout_create_info
-                    .into_pipeline_layout_create_info(self.device.clone())
-                    .unwrap(),
-            )
-            .unwrap()
-        };
-        let input_assembly_state = InputAssemblyState::default();
-        let subpass = Subpass::from(self.render_pass.clone(), 0).unwrap();
-        self.pipeline = Some(
-            GraphicsPipeline::new(
-                self.device.clone(),
-                None,
-                GraphicsPipelineCreateInfo {
-                    stages: stages.into_iter().collect(),
-                    vertex_input_state: Some(self.vertex_input_state.clone()),
-                    input_assembly_state: Some(input_assembly_state),
-                    viewport_state: Some(ViewportState {
-                        viewports: [self.viewport.clone()].into_iter().collect(),
-                        ..Default::default()
-                    }),
-                    rasterization_state: Some(RasterizationState::default()),
-                    depth_stencil_state: Some(DepthStencilState {
-                        depth: Some(DepthState::simple()),
-                        ..Default::default()
-                    }),
-                    multisample_state: Some(MultisampleState::default()),
-                    color_blend_state: Some(ColorBlendState::with_attachment_states(
-                        subpass.num_color_attachments(),
-                        ColorBlendAttachmentState::default(),
-                    )),
-                    subpass: Some(subpass.into()),
-                    ..GraphicsPipelineCreateInfo::layout(layout)
-                },
-            )
-            .unwrap(),
-        );
-    }
-
-    fn set_viewport(&mut self, viewport: Viewport) {
-        self.viewport = viewport;
-    }
-
-    fn init_descriptor_sets(
-        &mut self,
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        camera: Subbuffer<CameraUniform>,
-        textures: Vec<(Arc<ImageView>, Arc<Sampler>)>,
-        material_info_buffers: Vec<Subbuffer<MaterialInfo>>,
-        mesh_info_buffers: Vec<Subbuffer<MeshInfo>>,
-        light_info_buffers: Vec<Subbuffer<LightInfo>>,
-    ) {
-        self.descriptor_set_controller = Some(DescriptorSetController::init(
-            camera,
-            textures,
-            material_info_buffers,
-            mesh_info_buffers,
-            light_info_buffers,
-            descriptor_set_allocator,
-            self.pipeline.clone().unwrap().layout().clone(),
-        ));
-    }
-
-    fn render_pass(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
-        let _ = builder.bind_pipeline_graphics(self.pipeline.clone().unwrap().clone());
-
-        self.descriptor_set_controller
-            .as_ref()
-            .unwrap()
-            .bind(builder);
-
-        for (i, vertex_input) in self.cached_vertex_input_buffers.iter().enumerate() {
-            builder
-                .bind_vertex_buffers(
-                    0,
-                    (
-                        vertex_input.vertex_buffer.subbuffer.clone(),
-                        vertex_input.normal_buffer.subbuffer.clone(),
-                        vertex_input.tangent_buffer.subbuffer.clone(),
-                        vertex_input.uv_buffer.subbuffer.clone(),
-                    ),
-                )
-                .unwrap()
-                .bind_index_buffer(vertex_input.index_buffer.clone())
-                .unwrap()
-                .draw_indexed(vertex_input.index_buffer.len() as u32, 1, 0, 0, i as u32)
-                .unwrap();
+            render_pass.draw_indexed(0..index_buffer.count, i as i32, 0..1);
         }
-    }
-
-    fn must_recreate_render_passes(&mut self) -> bool {
-        self.recreate_render_passes
     }
 }

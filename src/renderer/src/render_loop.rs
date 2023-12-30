@@ -4,12 +4,12 @@ use std::time::Instant;
 
 use crate::camera::KeyState;
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
-use crate::{get_finalized_render_passes, get_framebuffers, RenderState, StateCallable};
+use crate::{get_finalized_render_passes, get_framebuffers, RenderState, Hook};
 
 pub fn start_renderer(
     mut state: RenderState,
     mut pipeline_providers: Vec<PipelineProviderKind>,
-    mut callable: impl StateCallable + 'static,
+    mut callable: impl Hook + 'static,
 ) {
     info!(
         "Viewport dimensions: x={} y={}",

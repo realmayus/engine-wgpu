@@ -1,48 +1,30 @@
 use std::sync::Arc;
+
 use anyhow::*;
-use glam::Vec2;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
-use lib::scene::Texture;
 
-use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo};
+use lib::scene::{Texture, World};
 
 use crate::camera::{Camera, KeyState};
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
+use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 
 pub mod camera;
 pub mod initialization;
 pub mod pipelines;
 pub mod render_loop;
 
-pub trait StateCallable {
-    fn setup_gui(&mut self, gui: &mut Gui);
+pub trait Hook {
+    fn setup() -> World;
+
     fn update(
         &mut self,
-        pipeline_providers: &mut [PipelineProviderKind],
-        allocator: Arc<StandardMemoryAllocator>,
-        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-        cmd_buf_allocator: Arc<StandardCommandBufferAllocator>,
-        queue_family_index: u32,
-        device: Arc<Device>,
-        viewport: Viewport,
-    ) -> Option<Arc<PrimaryAutoCommandBuffer>>;
-    fn cleanup(&self);
-
-    fn get_buffers(
-        &self,
-        device: Arc<Device>,
-    ) -> (
-        Subbuffer<CameraUniform>,
-        Vec<(Arc<ImageView>, Arc<Sampler>)>,
-        Vec<Subbuffer<MaterialInfo>>,
-        Vec<Subbuffer<MeshInfo>>,
-        Vec<Subbuffer<LightInfo>>,
+        keys: &KeyState,
+        delta_time: f32,
     );
-
-    fn recv_input(&mut self, keys: &KeyState, change: Vec2, delta_time: f32);
 }
 
 pub struct RenderInitState {
@@ -53,10 +35,13 @@ pub struct RenderInitState {
     pub window: Window,
     queue: Queue,
     depth_texture: Texture,
+    pbr_pipeline: wgpu::RenderPipeline,
+    camera: Camera,
+    world: World,
 }
 
 impl RenderInitState {
-    async fn new(window: Window) -> Self {
+    async fn new(window: Window, hook: impl Hook) -> Self {
         let size = window.inner_size();
         assert_ne!(size.width, 0);
         assert_ne!(size.height, 0);
@@ -105,6 +90,10 @@ impl RenderInitState {
         };
         surface.configure(&device, &surface_config);
         let depth_texture = Texture::create_depth_texture(&device, &surface_config, "depth_texture");
+        let world = hook.setup();
+
+        //TODO create buffers for materials and textures (where do we store them? what if a new model with new textures is loaded?)
+        let pipeline = PBRPipelineProvider::new(&device, vec![], vec![], vec![], vec![], vec![], (), 0, 0);
         Self {
             window,
             surface,
@@ -238,7 +227,7 @@ fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<Rende
             depth_stencil: {depth},
         },
     )
-    .unwrap()
+        .unwrap()
 }
 
 fn get_framebuffers(
@@ -258,7 +247,7 @@ fn get_framebuffers(
                         ..Default::default()
                     },
                 )
-                .unwrap(),
+                    .unwrap(),
                 view.clone(),
             )
         })
@@ -279,7 +268,7 @@ fn get_finalized_render_passes(
                 queue_family_index,
                 CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
             )
-            .unwrap();
+                .unwrap();
 
             builder
                 .begin_render_pass(

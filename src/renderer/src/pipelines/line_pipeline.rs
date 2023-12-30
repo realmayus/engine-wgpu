@@ -26,7 +26,7 @@ use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
 
 use lib::shader_types::{CameraUniform, LightInfo, MaterialInfo, MeshInfo, MyVertex};
-use lib::VertexInputBuffer;
+use lib::SizedBuffer;
 
 use crate::pipelines::PipelineProvider;
 
@@ -50,7 +50,7 @@ Pipeline for drawing lines in 3D space, e.g. for axes
 pub struct LinePipelineProvider {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertex_buffers: Vec<VertexInputBuffer>,
+    vertex_buffers: Vec<SizedBuffer>,
     write_descriptor_sets: Vec<(u32, Vec<WriteDescriptorSet>)>, // tuples of WriteDescriptorSets and VARIABLE descriptor count, is cleared by init_descriptor_sets function
     descriptor_sets: Vec<Arc<PersistentDescriptorSet>>, // initially empty -> populated by init_descriptor_sets function
     viewport: Viewport,
@@ -63,7 +63,7 @@ pub struct LinePipelineProvider {
 impl LinePipelineProvider {
     pub fn new(
         device: Arc<Device>,
-        vertex_buffers: Vec<VertexInputBuffer>,
+        vertex_buffers: Vec<SizedBuffer>,
         camera_buffer: Subbuffer<CameraUniform>,
         line_info_buffers: impl IntoIterator<Item = Subbuffer<impl ?Sized>> + ExactSizeIterator,
         viewport: Viewport,
@@ -216,7 +216,7 @@ impl PipelineProvider for LinePipelineProvider {
             builder
                 .bind_vertex_buffers(0, self.vertex_buffers[i].subbuffer.clone())
                 .unwrap()
-                .draw(self.vertex_buffers[i].vertex_count, 1, 0, i as u32)
+                .draw(self.vertex_buffers[i].count, 1, 0, i as u32)
                 .unwrap();
         }
     }

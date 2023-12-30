@@ -14,3 +14,4 @@ wgpu = "0.18.0"
 egui-wgpu = { version = "0.24.1", features = ["winit"] }
 winit = "0.28.7"
 anyhow = "1.0.77"
+bytemuck = { version = "1.14.0", features = ["derive"] }

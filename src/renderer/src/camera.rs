@@ -1,6 +1,9 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
 use std::sync::Arc;
+use bytemuck::bytes_of_mut;
+use wgpu::{Buffer, Device};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
@@ -33,7 +36,7 @@ pub struct Camera {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
-    pub buffer: Subbuffer<CameraUniform>,
+    pub buffer: Buffer,
     pub speed: f32,
     pub fps: bool,
     /// the camera's transform matrix / world to view matrix
@@ -44,7 +47,7 @@ impl Camera {
     pub fn new_default(
         width: f32,
         height: f32,
-        memory_allocator: Arc<StandardMemoryAllocator>,
+        device: Device,
     ) -> Self {
         let eye: Vec3 = (0.3, 0.3, 1.0).into();
         let target: Vec3 = (0.0, 0.0, 0.0).into();
@@ -63,20 +66,13 @@ impl Camera {
         data.proj_view = (proj * view * scale).to_cols_array_2d();
         data.view_position = (Vec4::from((eye, 1.0))).into();
 
-        let camera_buffer = Buffer::from_data(
-            memory_allocator,
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            data,
-        )
-        .expect("Couldn't create camera buffer");
+        let camera_buffer = device.create_buffer_init(
+            &BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[data]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
 
         Camera {
             eye,

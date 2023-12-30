@@ -1,3 +1,8 @@
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+};
+@group(1) @binding(0) // 1.
+var<uniform> camera: CameraUniform;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,

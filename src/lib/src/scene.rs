@@ -8,8 +8,10 @@ use std::sync::Arc;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::{debug, info};
 use rand::Rng;
-use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use crate::{Dirtyable, VertexInputBuffer};
+use wgpu::{Buffer, Device, Sampler, TextureView};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex};
+use crate::{Dirtyable, SizedBuffer};
 
 pub struct Texture {
     pub id: u32,
@@ -370,8 +372,7 @@ impl TextureManager {
     pub fn get_view_sampler_array(
         &self,
         device: Arc<Device>,
-    ) -> Vec<(Arc<ImageView>, Arc<Sampler>)> {
-        //TODO Optimization: work out if we really need to enforce Vec everywhere or if slices are sufficient
+    ) -> Vec<(Arc<TextureView>, Arc<Sampler>)> {
         self.iter()
             .map(|t| {
                 (
@@ -412,7 +413,7 @@ impl MaterialManager {
         self.materials.iter()
     }
 
-    pub fn get_buffer_array(&self) -> Vec<Subbuffer<MaterialInfo>> {
+    pub fn get_buffer_array(&self) -> Vec<Buffer> {
         self.iter().map(|mat| mat.borrow().buffer.clone()).collect()
     }
 }
@@ -434,109 +435,47 @@ impl World {
     }
 }
 
-pub struct DrawableVertexInputs {
-    pub vertex_buffer: VertexInputBuffer,
-    pub normal_buffer: VertexInputBuffer,
-    pub uv_buffer: VertexInputBuffer,
-    pub tangent_buffer: VertexInputBuffer,
-    pub index_buffer: Subbuffer<[u32]>,
+// Data passed to the vertex shader as vertex inputs, contains the vertex positions, normals, tangents, UVs and indices for a mesh
+pub struct VertexInputs {
+    pub vertex_buffer: SizedBuffer,
+    pub index_buffer: SizedBuffer,
 }
 
-impl DrawableVertexInputs {
-    pub fn from_mesh(mesh: &Mesh, memory_allocator: Arc<StandardMemoryAllocator>) -> Self {
-        let vertex_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.vertices.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate vertex buffer");
+impl VertexInputs {
+    pub fn from_mesh(mesh: &Mesh, device: Device) -> Self {
+        let mut buffers = vec![];
+        for (a, b, c, d) in mesh.vertices.as_slice().iter().zip(&mesh.normals).zip(&mesh.tangents).zip(&mesh.uvs).flatten() {
+            buffers.push(PbrVertex {
+                position: *a,
+                normal: *b,
+                tangent: *c,
+                uv: *d,
+            });
+        }
 
-        let normal_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.normals.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate normal buffer");
 
-        let tangent_buffer: Subbuffer<[[f32; 4]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.tangents.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate tangent buffer");
+        let vertex_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&buffers),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
-        let uv_buffer: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.uvs.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate UV buffer");
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&mesh.indices.iter().map(|i| *i as u16).collect::<Vec<u16>>()),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
-        let index_buffer = Buffer::from_iter(
-            memory_allocator,
-            BufferCreateInfo {
-                usage: BufferUsage::INDEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.indices.clone(),
-        )
-        .expect("Couldn't allocate index buffer");
 
         Self {
-            vertex_buffer: VertexInputBuffer {
-                subbuffer: vertex_buffer.into_bytes(),
-                vertex_count: mesh.vertices.len() as u32,
+            vertex_buffer: SizedBuffer {
+                buffer: vertex_buffer.into_bytes(),
+                count: mesh.vertices.len() as u32,
             },
-            normal_buffer: VertexInputBuffer {
-                subbuffer: normal_buffer.into_bytes(),
-                vertex_count: mesh.normals.len() as u32,
+            index_buffer: SizedBuffer {
+                buffer: index_buffer.into_bytes(),
+                count: mesh.indices.len() as u32,
             },
-            tangent_buffer: VertexInputBuffer {
-                subbuffer: tangent_buffer.into_bytes(),
-                vertex_count: mesh.tangents.len() as u32,
-            },
-            uv_buffer: VertexInputBuffer {
-                subbuffer: uv_buffer.into_bytes(),
-                vertex_count: mesh.uvs.len() as u32,
-            },
-            index_buffer,
         }
     }
 }

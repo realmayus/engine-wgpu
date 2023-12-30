@@ -1,3 +1,4 @@
+use wgpu::Buffer;
 
 pub mod scene;
 pub mod scene_serde;
@@ -22,7 +23,8 @@ pub trait Dirtyable {
     fn update(&mut self);
 }
 
-pub struct VertexInputBuffer {
-    pub subbuffer: Subbuffer<[u8]>,
-    pub vertex_count: u32,
+// A buffer that also stores the number of elements in it.
+pub struct SizedBuffer {
+    pub buffer: Buffer,
+    pub count: u32,
 }

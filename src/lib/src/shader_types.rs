@@ -2,40 +2,35 @@ use crate::scene::Material;
 use crate::scene::PointLight;
 use glam::Mat4;
 
-// Vertex buffers
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-pub struct MyVertex {
-    #[format(R32G32B32_SFLOAT)]
-    position: [f32; 3],
+trait Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 4];
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
 }
 
-#[derive(BufferContents, Vertex)]
 #[repr(C)]
-pub struct MyNormal {
-    #[format(R32G32B32_SFLOAT)]
-    normal: [f32; 3],
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PbrVertex {
+    pub(crate) position: [f32; 3],
+    pub(crate) normal: [f32; 3],
+    pub(crate) tangent: [f32; 4],
+    pub(crate) uv: [f32; 2],
 }
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-pub struct MyTangent {
-    #[format(R32G32B32A32_SFLOAT)]
-    tangent: [f32; 4],
-}
-
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-pub struct MyUV {
-    #[format(R32G32_SFLOAT)]
-    uv: [f32; 2],
+impl Vertex for PbrVertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 4] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4, 3 => Float32x2];
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<PbrVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
 }
 
 // Uniforms
 
-#[derive(BufferContents, Debug, Default, Copy, Clone)]
 #[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub proj_view: [[f32; 4]; 4],
     pub view_position: [f32; 4],
@@ -49,8 +44,8 @@ impl CameraUniform {
     }
 }
 
-#[derive(BufferContents, Debug)]
 #[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialInfo {
     pub albedo: [f32; 4],
     pub albedo_texture: u32, // index of texture
@@ -106,8 +101,8 @@ impl Default for MaterialInfo {
     }
 }
 
-#[derive(BufferContents, Debug, Default)]
 #[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshInfo {
     pub material: u32,
     _align: [u32; 3],
@@ -123,15 +118,9 @@ impl MeshInfo {
     }
 }
 
-#[derive(BufferContents, Debug, Default)]
-#[repr(C)]
-pub struct LineInfo {
-    pub model_transform: [[f32; 4]; 4],
-    pub color: [f32; 4],
-}
 
-#[derive(BufferContents, Debug, Default)]
 #[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightInfo {
     pub transform: [[f32; 4]; 4],
     pub color: [f32; 3],
