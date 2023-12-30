@@ -1,13 +1,24 @@
 use anyhow::*;
 use image::GenericImageView;
 
+#[derive(Debug)]
+pub enum TextureKind {
+    Albedo,
+    Normal,
+    MetalRoughness,
+    Occlusion,
+    Emission,
+    Depth,
+    Other,
+}
+
 pub struct Texture {
     pub id: Option<u16>,  // only used for serde, as we now store bind groups directly in the texture, allowing us to bind a texture by reference whenever needed
     pub name: Option<String>,
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    pub bind_group: Option<wgpu::BindGroup>
+    pub kind: TextureKind,
 }
 
 impl Texture {
@@ -16,9 +27,10 @@ impl Texture {
         queue: &wgpu::Queue,
         bytes: &[u8],
         label: &str,
+        texture_kind: TextureKind
     ) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label))
+        Self::from_image(device, queue, &img, Some(label), texture_kind)
     }
 
     fn from_image(
@@ -26,6 +38,7 @@ impl Texture {
         queue: &wgpu::Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
+        texture_kind: TextureKind,
     ) -> Result<Self> {
         let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
@@ -79,7 +92,7 @@ impl Texture {
             texture,
             view,
             sampler,
-            bind_group: None
+            kind: texture_kind,
         })
     }
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -125,24 +138,7 @@ impl Texture {
             texture,
             view,
             sampler,
-            bind_group: None
+            kind: TextureKind::Depth,
         }
-    }
-
-    pub fn create_bind_group(&mut self, device: &wgpu::Device, layout: &wgpu::BindGroupLayout) {
-        self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("PBR Texture Bindgroup"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        }));
     }
 }

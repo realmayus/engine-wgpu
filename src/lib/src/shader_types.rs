@@ -4,7 +4,7 @@ use glam::Mat4;
 
 trait Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4];
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
+    fn desc() -> wgpu::VertexBufferLayout<'static>;
 }
 
 #[repr(C)]

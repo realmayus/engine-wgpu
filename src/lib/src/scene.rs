@@ -9,11 +9,11 @@ use std::sync::Arc;
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex};
 use crate::{Dirtyable, Material, SizedBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use log::{debug, info};
+use log::{debug, info, warn};
 use rand::Rng;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, Device};
-use crate::texture::Texture;
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Device};
+use crate::texture::{Texture, TextureKind};
 
 pub struct PbrMaterial {
     pub dirty: bool,
@@ -29,6 +29,7 @@ pub struct PbrMaterial {
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
     pub buffer: Buffer,
+    pub texture_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl PbrMaterial {
@@ -50,7 +51,36 @@ impl PbrMaterial {
             emissive_texture: None,
             emissive_factors: Vec3::from((0.0, 0.0, 0.0)),
             buffer,
+            texture_bind_group: None,
         }
+    }
+
+    pub fn create_texture_bind_group(&mut self, device: &Device, layout: &BindGroupLayout, tex_mgr: &TextureManager) {
+        let mut entries = vec![];
+        for rc_tex in [
+            tex_mgr.unwrap_default(&self.albedo_texture, TextureKind::Albedo),
+            tex_mgr.unwrap_default(&self.normal_texture, TextureKind::Normal),
+            tex_mgr.unwrap_default(&self.metallic_roughness_texture, TextureKind::MetalRoughness),
+            tex_mgr.unwrap_default(&self.occlusion_texture, TextureKind::Occlusion),
+            tex_mgr.unwrap_default(&self.emissive_texture, TextureKind::Emission),
+        ] {
+            let Texture{view, sampler, .. } = rc_tex.as_ref();
+            entries.push(BindGroupEntry {
+                binding: entries.len() as u32,
+                resource: BindingResource::TextureView(&view),
+            });
+            entries.push(BindGroupEntry {
+                binding: entries.len() as u32,
+                resource: BindingResource::Sampler(&sampler),
+            });
+        }
+        self.texture_bind_group = Some(device.create_bind_group(
+            &BindGroupDescriptor{
+                label: Some("PBR Texture Bundle Bind Group"),
+                layout,
+                entries: &entries,
+            }
+        ));
     }
 }
 
@@ -113,7 +143,7 @@ pub struct Mesh {
     pub material: Rc<RefCell<Material>>,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
-    pub buffer: Buffer,
+    pub buffer: Buffer, // buffer containing the model transform and material info
 }
 impl Mesh {
     pub fn from(
@@ -345,6 +375,37 @@ impl TextureManager {
     pub fn iter(&self) -> Iter<'_, Rc<Texture>> {
         self.textures.iter()
     }
+
+    pub fn default_tex(&self, texture_kind: TextureKind) -> Rc<Texture> {
+        match texture_kind {
+            TextureKind::Albedo => {
+                self.textures[0].clone()
+            }
+            TextureKind::Normal => {
+                self.textures[0].clone()
+            }
+            TextureKind::MetalRoughness => {
+                self.textures[0].clone()
+            }
+            TextureKind::Occlusion => {
+                self.textures[0].clone()
+            }
+            TextureKind::Emission => {
+                self.textures[0].clone()
+            }
+            TextureKind::Depth => {
+                self.textures[0].clone()
+            }
+            TextureKind::Other => {
+                warn!("No default texture for texture kind {:?}", texture_kind);
+                self.textures[0].clone()
+            }
+        }
+    }
+
+    pub fn unwrap_default(&self, texture: &Option<Rc<Texture>>, texture_kind: TextureKind) -> Rc<Texture> {
+        texture.unwrap_or_else(|| self.default_tex(texture_kind))
+    }
 }
 
 #[derive(Default)]
@@ -447,11 +508,11 @@ impl VertexInputs {
 
         Self {
             vertex_buffer: SizedBuffer {
-                buffer: vertex_buffer.into_bytes(),
+                buffer: vertex_buffer,
                 count: mesh.vertices.len() as u32,
             },
             index_buffer: SizedBuffer {
-                buffer: index_buffer.into_bytes(),
+                buffer: index_buffer,
                 count: mesh.indices.len() as u32,
             },
         }

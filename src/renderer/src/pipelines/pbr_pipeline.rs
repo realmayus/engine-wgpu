@@ -1,8 +1,11 @@
+use log::debug;
 use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, Device, include_wgsl, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView};
+use wgpu::SamplerBindingType::Filtering;
 use wgpu::VertexStepMode::Vertex;
 
 
-use lib::scene::VertexInputs;
+use lib::scene::{Mesh, VertexInputs};
+use lib::texture::{PbrTextureBundle, Texture};
 
 
 /**
@@ -13,10 +16,10 @@ pub struct PBRPipelineProvider {
     cached_vertex_input_buffers: Vec<VertexInputs>,
     pipeline: Option<RenderPipeline>,
     pub pipeline_layout: PipelineLayout,
-    pub tex_bind_group: BindGroup,
     pub mat_bind_group: BindGroup,
     pub mesh_bind_group: BindGroup,
     pub cam_bind_group: BindGroup,
+    tex_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl PBRPipelineProvider {
@@ -41,44 +44,35 @@ impl PBRPipelineProvider {
                 push_constant_ranges: &[],
             });
 
-        let tex_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("PBR Texture Bindgroup Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
+
+        let tex_bind_group_layout = {
+            let mut tex_bind_group_layout_entries = Vec::new();
+            for i in 0..5 {
+                tex_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
+                    binding: i,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
-                    count: Some(num_textures.into()),  // TODO support 0 textures
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    count: None,
+                });
+                tex_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
+                    binding: i + num_textures,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: Some(num_textures.into()),  // TODO support 0 textures
-                }
-            ],
-        });
+                    ty: wgpu::BindingType::Sampler(Filtering),
+                    count: None,
+                });
+            }
 
-        let tex_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("PBR Texture Bindgroup"),
-            layout: &tex_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureViewArray(&texture_views.into()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::SamplerArray(&samplers.into()),
-                },
-            ],
-        });
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("PBR Texture Bindgroup Layout"),
+                entries: &tex_bind_group_layout_entries,
+            })
+        };
 
-
+        
         let mat_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("PBR Material Bindgroup Layout"),
             entries: &[
@@ -165,10 +159,10 @@ impl PBRPipelineProvider {
             cached_vertex_input_buffers: drawables,
             pipeline: None,
             pipeline_layout,
-            tex_bind_group,
             mat_bind_group,
             mesh_bind_group,
             cam_bind_group,
+            tex_bind_group_layout,
         }
     }
 
@@ -220,11 +214,12 @@ impl PBRPipelineProvider {
                    encoder: &mut CommandEncoder,
                    vertex_inputs: &Vec<VertexInputs>,
                    view: &TextureView,
-                   texture_views: &Vec<TextureView>,
-                   samplers: &Vec<Sampler>,
+                   textures: &Vec<PbrTextureBundle>,
                    mesh_info_buffers: &Vec<Buffer>,
                    material_info_buffers: &Vec<Buffer>,
                    camera_buffer: &Buffer) {
+        assert_eq!(vertex_inputs.len(), mesh_info_buffers.len());
+        
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -241,6 +236,14 @@ impl PBRPipelineProvider {
         });
 
         render_pass.set_pipeline(self.pipeline.as_ref().unwrap());
+        for texture in textures {
+            match texture.bind_group { 
+                Some(bind_group) => {
+                    render_pass.set_bind_group(0, &bind_group, &[]);
+                },
+                None => debug!("Not binding texture {} as it's not loaded", texture.id.unwrap())
+            }
+        }
 
         for (i, &VertexInputs {vertex_buffer, index_buffer}) in vertex_inputs.iter().enumerate() {
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
@@ -248,5 +251,15 @@ impl PBRPipelineProvider {
 
             render_pass.draw_indexed(0..index_buffer.count, i as i32, 0..1);
         }
+    }
+    
+    pub fn render_mesh(&self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, mesh: &Mesh) {
+        let vertex_inputs = VertexInputs::from_mesh(mesh, device);
+        
+        self.render_pass(
+            encoder,
+            vertex_inputs,
+            
+        )
     }
 }
