@@ -6,7 +6,6 @@ use image::{DynamicImage, ImageFormat};
 use log::debug;
 use rand::distributions::{Alphanumeric, DistString};
 
-
 pub fn extract_image_to_file(name: &str, img: &DynamicImage, file_format: ImageFormat) -> PathBuf {
     debug!("Extracting image '{:?}' into file", name);
     let mut path = if let Ok(cwd) = std::env::var("WORKING_DIR") {

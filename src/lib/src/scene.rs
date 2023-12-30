@@ -1,43 +1,21 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::fmt::{Debug, Formatter};
+use std::iter::Filter;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::slice::Iter;
 use std::sync::Arc;
 
+use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex};
+use crate::{Dirtyable, Material, SizedBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use log::{debug, info};
 use rand::Rng;
-use wgpu::{Buffer, Device, Sampler, TextureView};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex};
-use crate::{Dirtyable, SizedBuffer};
+use wgpu::{Buffer, Device};
+use crate::texture::Texture;
 
-pub struct Texture {
-    pub id: u32,
-    pub name: Option<Box<str>>,
-    pub view: Arc<ImageView>,
-    pub img_path: PathBuf, // relative to run directory
-}
-
-impl Texture {
-    pub fn from(view: Arc<ImageView>, name: Option<Box<str>>, id: u32, img_path: PathBuf) -> Self {
-        Self {
-            view,
-            name,
-            id,
-            img_path,
-        }
-    }
-}
-
-impl Debug for Texture {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{TEXTURE: name: {:?}, id: {}}}", self.name, self.id)
-    }
-}
-
-pub struct Material {
+pub struct PbrMaterial {
     pub dirty: bool,
     pub id: u32,
     pub name: Option<Box<str>>,
@@ -50,13 +28,13 @@ pub struct Material {
     pub occlusion_factor: f32,
     pub emissive_texture: Option<Rc<Texture>>,
     pub emissive_factors: Vec3,
-    pub buffer: Subbuffer<MaterialInfo>,
+    pub buffer: Buffer,
 }
 
-impl Material {
+impl PbrMaterial {
     pub fn from_default(
         base_texture: Option<Rc<Texture>>,
-        buffer: Subbuffer<MaterialInfo>,
+        buffer: Buffer,
     ) -> Self {
         Self {
             dirty: true,
@@ -76,7 +54,7 @@ impl Material {
     }
 }
 
-impl Dirtyable for Material {
+impl Dirtyable for PbrMaterial {
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -94,10 +72,10 @@ impl Dirtyable for Material {
         mapping.metal_roughness_texture = self
             .metallic_roughness_texture
             .as_ref()
-            .map(|t| t.id)
-            .unwrap_or(0);
+            .map(|t| t.id.unwrap())
+            .unwrap_or(0u16);
         mapping.metal_roughness_factors = self.metallic_roughness_factors.to_array();
-        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id).unwrap_or(1);
+        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(1);
         mapping.occlusion_texture = self.occlusion_texture.as_ref().map(|t| t.id).unwrap_or(0);
         mapping.occlusion_factor = self.occlusion_factor;
         mapping.emission_texture = self.emissive_texture.as_ref().map(|t| t.id).unwrap_or(0);
@@ -105,26 +83,26 @@ impl Dirtyable for Material {
     }
 }
 
-impl Debug for Material {
+impl Debug for PbrMaterial {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // -1 means no texture, -2 means there is a texture but its ID is None fsr...
         write!(
             f,
-            "{{MATERIAL: name: {}, base_texture: {}, base_color: {:?}, metallic_roughness_texture: {}, metallic_roughness_factors: {:?}, normal_texture: {}, occlusion_texture: {}, occlusion_strength: {}, emissive_texture: {}, emissive_factors: {:?}}}",
-            self.name.clone().unwrap_or_default(),
-            self.albedo_texture.clone().map(|t| t.id as i32).unwrap_or(-1),  // there really shouldn't be any int overflow :p
+            "{{MATERIAL: Name: {:?}, albedo: {:?}, metallic_roughness_factors: {:?}, occlusion_factor: {}, emissive_factors: {:?}, albedo_texture: {:?}, metallic_roughness_texture: {:?}, normal_texture: {:?}, occlusion_texture: {:?}, emissive_texture: {:?}}}",
+            self.name,
             self.albedo,
-            self.metallic_roughness_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
             self.metallic_roughness_factors,
-            self.normal_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
-            self.occlusion_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
             self.occlusion_factor,
-            self.emissive_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
             self.emissive_factors,
+            self.albedo_texture.as_ref().map(|t| t.id.map(|i| i as i16).unwrap_or(-2)).unwrap_or(-1),
+            self.metallic_roughness_texture.as_ref().map(|t| t.id.map(|i| i as i16).unwrap_or(-2)).unwrap_or(-1),
+            self.normal_texture.as_ref().map(|t| t.id.map(|i| i as i16).unwrap_or(-2)).unwrap_or(-1),
+            self.occlusion_texture.as_ref().map(|t| t.id.map(|i| i as i16).unwrap_or(-2)).unwrap_or(-1),
+            self.emissive_texture.as_ref().map(|t| t.id.map(|i| i as i16).unwrap_or(-2)).unwrap_or(-1),
         )
     }
 }
 
-#[derive(Clone)]
 pub struct Mesh {
     dirty: bool,
     pub id: u32, // for key purposes in GUIs and stuff
@@ -135,7 +113,7 @@ pub struct Mesh {
     pub material: Rc<RefCell<Material>>,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
-    pub buffer: Subbuffer<MeshInfo>,
+    pub buffer: Buffer,
 }
 impl Mesh {
     pub fn from(
@@ -143,10 +121,10 @@ impl Mesh {
         indices: Vec<u32>,
         normals: Vec<Vec3>,
         tangents: Vec<Vec4>,
-        material: Rc<RefCell<Material>>,
+        material: Rc<RefCell<PbrMaterial>>,
         uvs: Vec<Vec2>,
         global_transform: Mat4,
-        buffer: Subbuffer<MeshInfo>,
+        buffer: Buffer,
     ) -> Self {
         Self {
             id: rand::thread_rng().gen_range(0u32..1u32 << 31),
@@ -201,8 +179,7 @@ pub struct PointLight {
     pub color: Vec3,
     pub intensity: f32,
     pub range: Option<f32>,
-    pub buffer: Subbuffer<LightInfo>,
-    // TODO pass as set but fuck that right now
+    pub buffer: Buffer,
     pub amount: u32,
 }
 impl Dirtyable for PointLight {
@@ -356,7 +333,7 @@ impl TextureManager {
     }
     pub fn add_texture(&mut self, mut texture: Texture) -> u32 {
         let id = self.textures.len();
-        texture.id = id as u32;
+        texture.id = Some(id as u16);
         self.textures.push(Rc::from(texture));
         id as u32
     }
@@ -368,48 +345,33 @@ impl TextureManager {
     pub fn iter(&self) -> Iter<'_, Rc<Texture>> {
         self.textures.iter()
     }
-
-    pub fn get_view_sampler_array(
-        &self,
-        device: Arc<Device>,
-    ) -> Vec<(Arc<TextureView>, Arc<Sampler>)> {
-        self.iter()
-            .map(|t| {
-                (
-                    t.view.clone(),
-                    Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())
-                        .unwrap(),
-                )
-            })
-            .collect()
-    }
 }
 
 #[derive(Default)]
 pub struct MaterialManager {
-    materials: Vec<Rc<RefCell<Material>>>,
+    materials: Vec<Rc<RefCell<PbrMaterial>>>,
 }
 
 impl MaterialManager {
     pub fn new() -> Self {
         Self { materials: vec![] }
     }
-    pub fn add_material(&mut self, mut material: Material) -> u32 {
+    pub fn add_material(&mut self, mut material: PbrMaterial) -> u32 {
         let id = self.materials.len();
         material.id = id as u32;
         self.materials.push(Rc::new(RefCell::new(material)));
         id as u32
     }
 
-    pub fn get_material(&self, id: u32) -> Rc<RefCell<Material>> {
+    pub fn get_material(&self, id: u32) -> Rc<RefCell<PbrMaterial>> {
         self.materials[id as usize].clone()
     }
 
-    pub fn get_default_material(&self) -> Rc<RefCell<Material>> {
+    pub fn get_default_material(&self) -> Rc<RefCell<PbrMaterial>> {
         self.materials[0].clone()
     }
 
-    pub fn iter(&self) -> Iter<'_, Rc<RefCell<Material>>> {
+    pub fn iter(&self) -> Iter<'_, Rc<RefCell<PbrMaterial>>> {
         self.materials.iter()
     }
 
@@ -433,6 +395,14 @@ impl World {
     pub fn get_active_scene_mut(&mut self) -> &mut Scene {
         self.scenes.get_mut(self.active_scene).unwrap()
     }
+
+    // TODO Optimization: the performance of this must be terrible!
+    pub fn pbr_meshes(&self) -> Filter<impl Iterator<Item=&Mesh> + Sized, fn(&&Mesh) -> bool> {
+        self.get_active_scene().iter_meshes().filter(|mesh| match *mesh.material.borrow() {
+            Material::Pbr(_) => true,
+            _ => false,
+        })
+    }
 }
 
 // Data passed to the vertex shader as vertex inputs, contains the vertex positions, normals, tangents, UVs and indices for a mesh
@@ -442,9 +412,17 @@ pub struct VertexInputs {
 }
 
 impl VertexInputs {
-    pub fn from_mesh(mesh: &Mesh, device: Device) -> Self {
+    pub fn from_mesh(mesh: &Mesh, device: &Device) -> Self {
         let mut buffers = vec![];
-        for (a, b, c, d) in mesh.vertices.as_slice().iter().zip(&mesh.normals).zip(&mesh.tangents).zip(&mesh.uvs).flatten() {
+        for (a, b, c, d) in mesh
+            .vertices
+            .as_slice()
+            .iter()
+            .zip(&mesh.normals)
+            .zip(&mesh.tangents)
+            .zip(&mesh.uvs)
+            .flatten()
+        {
             buffers.push(PbrVertex {
                 position: *a,
                 normal: *b,
@@ -452,7 +430,6 @@ impl VertexInputs {
                 uv: *d,
             });
         }
-
 
         let vertex_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -462,10 +439,11 @@ impl VertexInputs {
 
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&mesh.indices.iter().map(|i| *i as u16).collect::<Vec<u16>>()),
+            contents: bytemuck::cast_slice(
+                &mesh.indices.iter().map(|i| *i as u16).collect::<Vec<u16>>(),
+            ),
             usage: wgpu::BufferUsages::INDEX,
         });
-
 
         Self {
             vertex_buffer: SizedBuffer {

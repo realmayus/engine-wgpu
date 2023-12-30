@@ -6,7 +6,7 @@ use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
-use lib::scene::{Texture, World};
+use lib::scene::{Texture, VertexInputs, World};
 
 use crate::camera::{Camera, KeyState};
 use crate::pipelines::{PipelineProvider, PipelineProviderKind};
@@ -35,7 +35,7 @@ pub struct RenderInitState {
     pub window: Window,
     queue: Queue,
     depth_texture: Texture,
-    pbr_pipeline: wgpu::RenderPipeline,
+    pbr_pipeline: PBRPipelineProvider,
     camera: Camera,
     world: World,
 }
@@ -134,24 +134,23 @@ impl RenderInitState {
         });
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            self.pbr_pipeline.render_pass(
+                &mut encoder,
+                &self.world.pbr_meshes().map(|m| VertexInputs::from_mesh(m, &self.device)).collect::<Vec<VertexInputs>>(),
+            )
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         Ok(())
+    }
+
+    /**
+    Loads a mesh into the GPU
+    */
+    fn load_mesh(&mut self, mesh: &lib::scene::Mesh) {
+        // create material binding
+        // create mesh binding
+
     }
 }
 

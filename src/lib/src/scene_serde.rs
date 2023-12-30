@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::scene::{PbrMaterial, MaterialManager, Mesh, Model, Scene, Texture, TextureManager, World};
+use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
+use crate::util::extract_image_to_file;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use image::{DynamicImage, ImageFormat};
 use serde::{Deserialize, Serialize};
-use crate::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager, World};
-use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use crate::util::extract_image_to_file;
 
 #[derive(Serialize, Deserialize)]
 pub struct TextureSerde {
@@ -80,8 +80,8 @@ pub struct MaterialSerde {
     pub emissive_factors: Vec3,
 }
 
-impl From<Rc<RefCell<Material>>> for MaterialSerde {
-    fn from(value: Rc<RefCell<Material>>) -> Self {
+impl From<Rc<RefCell<PbrMaterial>>> for MaterialSerde {
+    fn from(value: Rc<RefCell<PbrMaterial>>) -> Self {
         MaterialSerde {
             id: value.borrow().id,
             name: value.borrow().name.clone(),
@@ -123,13 +123,13 @@ impl From<Rc<RefCell<Material>>> for MaterialSerde {
     }
 }
 
-impl Material {
+impl PbrMaterial {
     fn from_serde(
         value: &MaterialSerde,
         textures: &TextureManager,
         allocator: Arc<StandardMemoryAllocator>,
-    ) -> Material {
-        Material {
+    ) -> PbrMaterial {
+        PbrMaterial {
             dirty: true,
             id: value.id,
             name: value.name.clone(),
@@ -419,7 +419,7 @@ impl MaterialManager {
         for mat in value.materials.as_slice() {
             let id = mat.id;
             let result_id =
-                manager.add_material(Material::from_serde(mat, textures, allocator.clone()));
+                manager.add_material(PbrMaterial::from_serde(mat, textures, allocator.clone()));
             assert_eq!(
                 result_id, id,
                 "Expected material ID {} but got {}",

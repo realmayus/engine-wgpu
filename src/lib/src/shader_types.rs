@@ -1,4 +1,4 @@
-use crate::scene::Material;
+use crate::scene::PbrMaterial;
 use crate::scene::PointLight;
 use glam::Mat4;
 
@@ -48,40 +48,42 @@ impl CameraUniform {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialInfo {
     pub albedo: [f32; 4],
-    pub albedo_texture: u32, // index of texture
-    pub metal_roughness_factors: [f32; 2],
-    pub metal_roughness_texture: u32,
     pub emission_factors: [f32; 3],
-    pub emission_texture: u32,
-    pub normal_texture: u32,
     pub occlusion_factor: f32,
-    pub occlusion_texture: u32,
+    pub metal_roughness_factors: [f32; 2],
+    pub albedo_texture: u16, // index of texture
+    pub normal_texture: u16,
+    pub metal_roughness_texture: u16,
+    pub occlusion_texture: u16,
+    pub emission_texture: u16,
+    _padding: u16,
 }
 
-impl From<&Material> for MaterialInfo {
-    fn from(material: &Material) -> Self {
+impl From<&PbrMaterial> for MaterialInfo {
+    fn from(material: &PbrMaterial) -> Self {
         Self {
             albedo: material.albedo.to_array(),
-            albedo_texture: material.albedo_texture.as_ref().unwrap().id,
+            albedo_texture: material.albedo_texture.as_ref().unwrap().id.unwrap(),
             metal_roughness_factors: material.metallic_roughness_factors.to_array(),
             metal_roughness_texture: material
                 .metallic_roughness_texture
                 .as_ref()
-                .map(|t| t.id)
+                .map(|t| t.id.unwrap())
                 .unwrap_or(1),
             emission_factors: material.emissive_factors.to_array(),
             emission_texture: material
                 .emissive_texture
                 .as_ref()
-                .map(|t| t.id)
+                .map(|t| t.id.unwrap())
                 .unwrap_or(1),
-            normal_texture: material.normal_texture.as_ref().map(|t| t.id).unwrap_or(0),
+            normal_texture: material.normal_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(0),
             occlusion_factor: 1.0,
             occlusion_texture: material
                 .occlusion_texture
                 .as_ref()
-                .map(|t| t.id)
+                .map(|t| t.id.unwrap())
                 .unwrap_or(0),
+            _padding: 0,
         }
     }
 }
@@ -97,6 +99,7 @@ impl Default for MaterialInfo {
             normal_texture: 1,
             occlusion_factor: 0.0,
             occlusion_texture: 0,
+            _padding: 0,
         }
     }
 }
@@ -117,7 +120,6 @@ impl MeshInfo {
         }
     }
 }
-
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

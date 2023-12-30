@@ -15,6 +15,7 @@ use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 mod descriptor_set_controller;
 pub mod line_pipeline;
 pub mod pbr_pipeline;
+mod bind_group_controller;
 
 pub trait PipelineProvider {
     fn create_pipeline(&mut self);

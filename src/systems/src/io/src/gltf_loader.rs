@@ -23,7 +23,7 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer
 use vulkano::format::Format;
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
-use lib::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
+use lib::scene::{PbrMaterial, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use lib::texture::create_texture;
 use lib::util::extract_image_to_file;
@@ -243,7 +243,7 @@ pub fn load_gltf(
 
     let mut scenes: Vec<Scene> = vec![];
     let mut local_textures: Vec<Rc<Texture>> = vec![]; // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
-    let mut local_materials: Vec<Rc<RefCell<Material>>> = vec![]; // same thing with materials
+    let mut local_materials: Vec<Rc<RefCell<PbrMaterial>>> = vec![]; // same thing with materials
     let mut images: HashMap<u32, (DynamicImage, u32, u32, Format, ImageFormat)> =
         HashMap::with_capacity(gltf.images().len());
     for image in gltf.images() {
@@ -304,7 +304,7 @@ pub fn load_gltf(
     }
     for gltf_mat in gltf.materials() {
         if let Some(index) = gltf_mat.index() {
-            let mat = Material {
+            let mat = PbrMaterial {
                 dirty: true, // must get updated upon start in order to prime the uniform
                 id: 0, // will get overwritten by call to MaterialManager::add_material() below
                 name: gltf_mat.name().map(Box::from),
@@ -417,9 +417,9 @@ pub fn load_gltf(
 fn load_node(
     node: &Node,
     buffers: &Vec<Data>,
-    materials: &Vec<Rc<RefCell<Material>>>,
+    materials: &Vec<Rc<RefCell<PbrMaterial>>>,
     allocator: Arc<StandardMemoryAllocator>,
-    default_material: Rc<RefCell<Material>>,
+    default_material: Rc<RefCell<PbrMaterial>>,
     parent_transform: Mat4,
     num_lights: &mut u32,
 ) -> Model {

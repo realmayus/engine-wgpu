@@ -216,7 +216,15 @@ impl PBRPipelineProvider {
     }
 
 
-    fn render_pass(&self, encoder: &mut CommandEncoder, vertex_inputs: Vec<VertexInputs>, view: &TextureView) {
+    pub fn render_pass(&self,
+                   encoder: &mut CommandEncoder,
+                   vertex_inputs: &Vec<VertexInputs>,
+                   view: &TextureView,
+                   texture_views: &Vec<TextureView>,
+                   samplers: &Vec<Sampler>,
+                   mesh_info_buffers: &Vec<Buffer>,
+                   material_info_buffers: &Vec<Buffer>,
+                   camera_buffer: &Buffer) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {

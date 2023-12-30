@@ -28,3 +28,8 @@ pub struct SizedBuffer {
     pub buffer: Buffer,
     pub count: u32,
 }
+
+
+pub enum Material {
+    Pbr(scene::PbrMaterial),
+}
