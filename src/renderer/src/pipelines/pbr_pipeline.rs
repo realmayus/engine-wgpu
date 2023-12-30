@@ -251,13 +251,14 @@ impl PBRPipelineProvider {
         }
     }
     
-    pub fn render_meshes(&self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, mesh: &Vec<Mesh>) {
-        let vertex_inputs = VertexInputs::from_mesh(mesh, device);
+    pub fn render_meshes(&self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, meshes: &Vec<Mesh>) {
+        let vertex_inputs = meshes.iter().map(VertexInputs::from_mesh(meshes, device));
         
         self.render_pass(
             encoder,
             vertex_inputs,
-            
+            view,
+            meshes.iter().map()
         )
     }
 }

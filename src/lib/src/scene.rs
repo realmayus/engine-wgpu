@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex};
 use crate::{Dirtyable, Material, SizedBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use itertools::izip;
 use log::{debug, info, warn};
 use rand::Rng;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -144,6 +145,7 @@ pub struct Mesh {
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
     pub buffer: Buffer, // buffer containing the model transform and material info
+    pub vertex_inputs: Option<VertexInputs>,
 }
 impl Mesh {
     pub fn from(
@@ -154,8 +156,17 @@ impl Mesh {
         material: Rc<RefCell<PbrMaterial>>,
         uvs: Vec<Vec2>,
         global_transform: Mat4,
-        buffer: Buffer,
+        device: &Device,
     ) -> Self {
+        let buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Mesh Buffer"),
+            contents: bytemuck::cast_slice(&[MeshInfo::from_data(
+                material.borrow().id,
+                global_transform.to_cols_array_2d(),
+            )]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let vertex_inputs = VertexInputs::from_mesh()
         Self {
             id: rand::thread_rng().gen_range(0u32..1u32 << 31),
             dirty: true,
@@ -295,18 +306,6 @@ impl Debug for Model {
     }
 }
 
-impl Clone for Model {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            meshes: self.meshes.clone(),
-            children: self.children.clone(),
-            name: self.name.clone(),
-            light: self.light.clone(),
-            local_transform: self.local_transform,
-        }
-    }
-}
 
 pub struct Scene {
     pub id: u32,
@@ -458,10 +457,9 @@ impl World {
     }
 
     // TODO Optimization: the performance of this must be terrible!
-    pub fn pbr_meshes(&self) -> Filter<impl Iterator<Item=&Mesh> + Sized, fn(&&Mesh) -> bool> {
+    pub fn pbr_meshes(&self) -> impl Iterator<Item = &Mesh> {
         self.get_active_scene().iter_meshes().filter(|mesh| match *mesh.material.borrow() {
             Material::Pbr(_) => true,
-            _ => false,
         })
     }
 }
@@ -473,22 +471,15 @@ pub struct VertexInputs {
 }
 
 impl VertexInputs {
-    pub fn from_mesh(mesh: &Mesh, device: &Device) -> Self {
+    pub fn from_mesh(vertices: &Vec<Vec3>, normals: &Vec<Vec3>, tangents: &Vec<Vec4>, uvs: &Vec<Vec2>, indices: &Vec<u32>, device: &Device) -> Self {
         let mut buffers = vec![];
-        for (a, b, c, d) in mesh
-            .vertices
-            .as_slice()
-            .iter()
-            .zip(&mesh.normals)
-            .zip(&mesh.tangents)
-            .zip(&mesh.uvs)
-            .flatten()
+        for (position, normal, tangent, uv) in izip!(vertices, normals, tangents, uvs)
         {
             buffers.push(PbrVertex {
-                position: *a,
-                normal: *b,
-                tangent: *c,
-                uv: *d,
+                position: (*position).into(),
+                normal: (*normal).into(),
+                tangent: (*tangent).into(),
+                uv: (*uv).into(),
             });
         }
 
@@ -501,7 +492,7 @@ impl VertexInputs {
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(
-                &mesh.indices.iter().map(|i| *i as u16).collect::<Vec<u16>>(),
+                &indices.iter().map(|i| *i as u16).collect::<Vec<u16>>(),
             ),
             usage: wgpu::BufferUsages::INDEX,
         });
@@ -509,11 +500,11 @@ impl VertexInputs {
         Self {
             vertex_buffer: SizedBuffer {
                 buffer: vertex_buffer,
-                count: mesh.vertices.len() as u32,
+                count: vertices.len() as u32,
             },
             index_buffer: SizedBuffer {
                 buffer: index_buffer,
-                count: mesh.indices.len() as u32,
+                count: indices.len() as u32,
             },
         }
     }
