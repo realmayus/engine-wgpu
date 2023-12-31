@@ -1,4 +1,4 @@
-use wgpu::Buffer;
+use wgpu::{Buffer, Queue};
 
 pub mod scene;
 pub mod scene_serde;
@@ -20,7 +20,7 @@ pub trait Dirtyable {
     /**
     Call to update buffers. Sets dirty to false.
     */
-    fn update(&mut self);
+    fn update(&mut self, queue: &Queue);
 }
 
 // A buffer that also stores the number of elements in it.
@@ -32,4 +32,17 @@ pub struct SizedBuffer {
 
 pub enum Material {
     Pbr(scene::PbrMaterial),
+}
+impl Material {
+    pub fn id(&self) -> u32 {
+        match self {
+            Material::Pbr(pbr) => pbr.id,
+        }
+    }
+    
+    pub fn name(&self) -> &Option<Box<str>> {
+        match self {
+            Material::Pbr(pbr) => &pbr.name,
+        }
+    }
 }

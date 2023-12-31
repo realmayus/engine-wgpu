@@ -13,7 +13,7 @@ use itertools::izip;
 use log::{debug, info, warn};
 use rand::Rng;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Device};
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Device, Queue};
 use crate::texture::{Texture, TextureKind};
 
 pub struct PbrMaterial {
@@ -94,23 +94,23 @@ impl Dirtyable for PbrMaterial {
         self.dirty = dirty
     }
 
-    fn update(&mut self) {
-        debug!("Updated material #{}", self.id);
+    fn update(&mut self, queue: &Queue) {
         self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.albedo_texture = self.albedo_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.albedo = self.albedo.to_array();
-        mapping.metal_roughness_texture = self
+        let mut uniform = MaterialInfo::default();
+        uniform.albedo_texture = self.albedo_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(0);
+        uniform.albedo = self.albedo.to_array();
+        uniform.metal_roughness_texture = self
             .metallic_roughness_texture
             .as_ref()
             .map(|t| t.id.unwrap())
             .unwrap_or(0u16);
-        mapping.metal_roughness_factors = self.metallic_roughness_factors.to_array();
-        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(1);
-        mapping.occlusion_texture = self.occlusion_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.occlusion_factor = self.occlusion_factor;
-        mapping.emission_texture = self.emissive_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.emission_factors = self.emissive_factors.to_array();
+        uniform.metal_roughness_factors = self.metallic_roughness_factors.to_array();
+        uniform.normal_texture = self.normal_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(1);
+        uniform.occlusion_texture = self.occlusion_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(0);
+        uniform.occlusion_factor = self.occlusion_factor;
+        uniform.emission_texture = self.emissive_texture.as_ref().map(|t| t.id.unwrap()).unwrap_or(0);
+        uniform.emission_factors = self.emissive_factors.to_array();
+        info!("Updated material #{}", self.id);
     }
 }
 
@@ -153,7 +153,7 @@ impl Mesh {
         indices: Vec<u32>,
         normals: Vec<Vec3>,
         tangents: Vec<Vec4>,
-        material: Rc<RefCell<PbrMaterial>>,
+        material: Rc<RefCell<Material>>,
         uvs: Vec<Vec2>,
         global_transform: Mat4,
         device: &Device,
@@ -161,12 +161,20 @@ impl Mesh {
         let buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Mesh Buffer"),
             contents: bytemuck::cast_slice(&[MeshInfo::from_data(
-                material.borrow().id,
+                material.borrow().id(),
                 global_transform.to_cols_array_2d(),
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let vertex_inputs = VertexInputs::from_mesh()
+        let vertex_inputs = VertexInputs::from_mesh(
+            &vertices,
+            &normals,
+            &tangents,
+            &uvs,
+            &indices,
+            device,
+        );
+
         Self {
             id: rand::thread_rng().gen_range(0u32..1u32 << 31),
             dirty: true,
@@ -178,6 +186,7 @@ impl Mesh {
             uvs,
             global_transform,
             buffer,
+            vertex_inputs: Some(vertex_inputs),
         }
     }
 }
@@ -190,11 +199,14 @@ impl Dirtyable for Mesh {
         self.dirty = dirty
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, queue: &Queue) {
         self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.model_transform = self.global_transform.to_cols_array_2d();
-        mapping.material = self.material.borrow().id;
+        let uniform = MeshInfo::from_data(
+            self.material.borrow().id(),
+            self.global_transform.to_cols_array_2d(),
+        );
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
+        info!("Updated mesh {}", self.id);
     }
 }
 impl Debug for Mesh {
@@ -206,13 +218,12 @@ impl Debug for Mesh {
             self.normals.len(),
             self.tangents.len(),
             self.indices.len(),
-            self.material.borrow().name.clone().unwrap_or_default(),
+            self.material.borrow().name().clone().unwrap_or_default(),
             self.global_transform,
         )
     }
 }
 
-#[derive(Clone)]
 pub struct PointLight {
     pub dirty: bool,
     pub global_transform: Mat4,
@@ -232,16 +243,18 @@ impl Dirtyable for PointLight {
         self.dirty = dirty;
     }
 
-    fn update(&mut self) {
-        info!("Updated light {}", self.index);
+    fn update(&mut self, queue: &Queue) {
         self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.transform = self.global_transform.to_cols_array_2d();
-        mapping.color = self.color.to_array();
-        mapping.light = self.index as u32;
-        mapping.intensity = self.intensity;
-        mapping.amount = self.amount;
-        mapping.range = self.range.unwrap_or(1.0);
+        let uniform = LightInfo {
+            transform: self.global_transform.to_cols_array_2d(),
+            color: self.color.to_array(),
+            light: self.index as u32,
+            intensity: self.intensity,
+            amount: self.amount,
+            range: self.range.unwrap_or(1.0),
+        };
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
+        info!("Updated light {}", self.index);
     }
 }
 
@@ -341,15 +354,6 @@ impl Debug for Scene {
     }
 }
 
-impl Clone for Scene {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            name: self.name.clone(),
-            models: self.models.clone(),
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct TextureManager {
@@ -435,8 +439,19 @@ impl MaterialManager {
         self.materials.iter()
     }
 
-    pub fn get_buffer_array(&self) -> Vec<Buffer> {
-        self.iter().map(|mat| mat.borrow().buffer.clone()).collect()
+    pub fn create_bind_group(&self, device: &Device, layout: &BindGroupLayout) -> wgpu::BindGroup {
+        device.create_bind_group(
+            &BindGroupDescriptor{
+                label: Some("PBR Materials Bind Group"),
+                layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::BufferArray(&self.materials.iter().map(|m| m.borrow().buffer.as_entire_buffer_binding()).collect::<Vec<_>>()),
+                    }
+                ],
+            }
+        )
     }
 }
 
