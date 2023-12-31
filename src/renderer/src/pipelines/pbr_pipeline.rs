@@ -14,7 +14,6 @@ Pipeline for physically-based rendering
 */
 pub struct PBRPipelineProvider {
     shader: ShaderModule,
-    cached_vertex_input_buffers: Vec<VertexInputs>,
     pipeline: Option<RenderPipeline>,
     pub pipeline_layout: PipelineLayout,
     pub mat_bind_group: BindGroup,
@@ -30,15 +29,12 @@ impl PBRPipelineProvider {
     // Creates all necessary bind groups and layouts for the pipeline
     pub fn new(
         device: &Device,
-        drawables: Vec<VertexInputs>,
-        mesh_info_buffers: Vec<Buffer>,
-        material_info_buffers: Vec<Buffer>,
+        mesh_info_buffers: &[Buffer],
+        material_info_buffers: &[Buffer],
         camera_buffer: Buffer,
         num_textures: u32,
-        num_materials: usize,
     ) -> Self {
         let shader = device.create_shader_module(include_wgsl!("assets/shaders/pbr.wgsl"));
-
 
         let tex_bind_group_layout = {
             let mut tex_bind_group_layout_entries = Vec::new();
@@ -79,7 +75,7 @@ impl PBRPipelineProvider {
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
-                    count: Some(num_materials.into()),
+                    count: Some(material_info_buffers.len().into()),
                 }
             ],
         });
@@ -159,7 +155,6 @@ impl PBRPipelineProvider {
 
         Self {
             shader,
-            cached_vertex_input_buffers: drawables,
             pipeline: None,
             pipeline_layout,
             mat_bind_group,

@@ -30,16 +30,16 @@ pub struct SizedBuffer {
 }
 
 
-pub enum Material {
-    Pbr(scene::PbrMaterial),
+pub enum Material<'a> {
+    Pbr(scene::PbrMaterial<'a>),
 }
-impl Material {
+impl Material<'_> {
     pub fn id(&self) -> u32 {
         match self {
             Material::Pbr(pbr) => pbr.id,
         }
     }
-    
+
     pub fn name(&self) -> &Option<Box<str>> {
         match self {
             Material::Pbr(pbr) => &pbr.name,

@@ -59,7 +59,7 @@ pub struct MaterialInfo {
     _padding: u16,
 }
 
-impl From<&PbrMaterial> for MaterialInfo {
+impl From<&PbrMaterial<'_>> for MaterialInfo {
     fn from(material: &PbrMaterial) -> Self {
         Self {
             albedo: material.albedo.to_array(),

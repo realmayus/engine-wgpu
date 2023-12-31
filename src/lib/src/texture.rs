@@ -33,7 +33,7 @@ impl Texture {
         Self::from_image(device, queue, &img, Some(label), texture_kind)
     }
 
-    fn from_image(
+    pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         img: &image::DynamicImage,

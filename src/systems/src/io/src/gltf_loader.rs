@@ -7,25 +7,22 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{fs, io};
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 
 use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use gltf::buffer::Data;
-use gltf::image::Source;
+use gltf::image::{Format, Source};
 use gltf::image::Source::View;
 use gltf::{Error, Node};
 use image::ImageFormat::{Jpeg, Png};
 use image::{DynamicImage, ImageFormat};
 use log::info;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
-use vulkano::format::Format;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
+use wgpu::{BindGroupLayout, Device, Queue};
+use wgpu::util::DeviceExt;
 
-use lib::scene::{PbrMaterial, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
+use lib::scene::{PbrMaterial, MaterialManager, Mesh, Model, Scene, TextureManager};
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use lib::texture::create_texture;
+use lib::texture::{Texture, TextureKind};
 use lib::util::extract_image_to_file;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
@@ -232,8 +229,9 @@ fn load_image(
 
 pub fn load_gltf(
     path: &Path,
-    allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    device: &Device,
+    queue: &Queue,
+    texture_bind_group_layout: &BindGroupLayout,
     texture_manager: &mut TextureManager,
     material_manager: &mut MaterialManager,
 ) -> Vec<Scene> {
@@ -242,15 +240,15 @@ pub fn load_gltf(
     info!("GLTF has {:?} scenes", gltf.scenes().len());
 
     let mut scenes: Vec<Scene> = vec![];
-    let mut local_textures: Vec<Rc<Texture>> = vec![]; // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
-    let mut local_materials: Vec<Rc<RefCell<PbrMaterial>>> = vec![]; // same thing with materials
+    let mut local_textures: Vec<&Texture> = vec![]; // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
+    let mut local_materials: Vec<&PbrMaterial> = vec![]; // same thing with materials
     let mut images: HashMap<u32, (DynamicImage, u32, u32, Format, ImageFormat)> =
         HashMap::with_capacity(gltf.images().len());
     for image in gltf.images() {
         images.insert(
             image.index() as u32,
             load_image(image.source(), Path::new(path).parent(), &buffers),
-        ); //TODO support relative paths
+        );
     }
 
     for gltf_texture in gltf.textures() {
@@ -284,27 +282,20 @@ pub fn load_gltf(
         };
 
         let path = extract_image_to_file(img_name.as_str(), &img, file_format);
-        let vk_texture = create_texture(
-            img.into_bytes(), //TODO: Texture load optimization: check if this clone is bad
-            format,
-            width,
-            height,
-            allocator.clone(),
-            cmd_buf_builder,
-        );
+        let texture = Texture::from_image(
+            device,
+            queue,
+            &img,
+            gltf_texture.name(),
+            TextureKind::Other,
+        ).expect("Couldn't create texture");
 
-        let texture = Texture::from(
-            vk_texture,
-            gltf_texture.name().map(Box::from),
-            gltf_texture.index() as u32,
-            path,
-        );
         let global_id = texture_manager.add_texture(texture);
         local_textures.insert(gltf_texture.index(), texture_manager.get_texture(global_id));
     }
     for gltf_mat in gltf.materials() {
         if let Some(index) = gltf_mat.index() {
-            let mat = PbrMaterial {
+            let mut mat = PbrMaterial {  // TODO only make initialization possible through material manager!
                 dirty: true, // must get updated upon start in order to prime the uniform
                 id: 0, // will get overwritten by call to MaterialManager::add_material() below
                 name: gltf_mat.name().map(Box::from),
@@ -362,21 +353,16 @@ pub fn load_gltf(
                             .clone()
                     }),
                 emissive_factors: gltf_mat.emissive_factor().into(),
-                buffer: Buffer::from_data(
-                    allocator.clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    MaterialInfo::default(),
-                )
-                .expect("Couldn't allocate MaterialInfo uniform"),
-            };
+                buffer: device.create_buffer_init(
+                    &wgpu::util::BufferInitDescriptor {
+                        label: Some("Material Buffer"),
+                        contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    }
+                ),
+                texture_bind_group: None,
+            }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
+            mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
             let global_id = material_manager.add_material(mat);
             local_materials.insert(index, material_manager.get_material(global_id));
         }
@@ -392,7 +378,6 @@ pub fn load_gltf(
                     &n,
                     &buffers,
                     &local_materials,
-                    allocator.clone(),
                     material_manager.get_default_material(),
                     Mat4::default(),
                     &mut num_lights,
@@ -418,7 +403,6 @@ fn load_node(
     node: &Node,
     buffers: &Vec<Data>,
     materials: &Vec<Rc<RefCell<PbrMaterial>>>,
-    allocator: Arc<StandardMemoryAllocator>,
     default_material: Rc<RefCell<PbrMaterial>>,
     parent_transform: Mat4,
     num_lights: &mut u32,

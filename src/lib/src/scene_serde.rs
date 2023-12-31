@@ -1,4 +1,4 @@
-use crate::scene::PointLight;
+/*use crate::scene::PointLight;
 use std::cell::RefCell;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -480,3 +480,4 @@ impl PointLight {
         }
     }
 }
+*/

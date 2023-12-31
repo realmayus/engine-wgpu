@@ -1,11 +1,7 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
-use std::sync::Arc;
-use bytemuck::bytes_of_mut;
 use wgpu::{Buffer, Device};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
 
 use lib::shader_types::CameraUniform;
 

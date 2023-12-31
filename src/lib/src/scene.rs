@@ -16,26 +16,26 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, Device, Queue};
 use crate::texture::{Texture, TextureKind};
 
-pub struct PbrMaterial {
+pub struct PbrMaterial<'a> {
     pub dirty: bool,
     pub id: u32,
     pub name: Option<Box<str>>,
-    pub albedo_texture: Option<Rc<Texture>>,
+    pub albedo_texture: Option<&'a Texture>,
     pub albedo: Vec4, // this scales the RGBA components of the base_texture if defined; otherwise defines the color
-    pub metallic_roughness_texture: Option<Rc<Texture>>,
+    pub metallic_roughness_texture: Option<&'a Texture>,
     pub metallic_roughness_factors: Vec2, // this scales the metallic & roughness components of the metallic_roughness_texture if defined; otherwise defines the reflection characteristics
-    pub normal_texture: Option<Rc<Texture>>,
-    pub occlusion_texture: Option<Rc<Texture>>,
+    pub normal_texture: Option<&'a Texture>,
+    pub occlusion_texture: Option<&'a Texture>,
     pub occlusion_factor: f32,
-    pub emissive_texture: Option<Rc<Texture>>,
+    pub emissive_texture: Option<&'a Texture>,
     pub emissive_factors: Vec3,
     pub buffer: Buffer,
     pub texture_bind_group: Option<wgpu::BindGroup>,
 }
 
-impl PbrMaterial {
+impl<'a, 'b: 'a> PbrMaterial<'a> {
     pub fn from_default(
-        base_texture: Option<Rc<Texture>>,
+        base_texture: Option<&'b Texture>,
         buffer: Buffer,
     ) -> Self {
         Self {
@@ -58,14 +58,13 @@ impl PbrMaterial {
 
     pub fn create_texture_bind_group(&mut self, device: &Device, layout: &BindGroupLayout, tex_mgr: &TextureManager) {
         let mut entries = vec![];
-        for rc_tex in [
+        for Texture{view, sampler, .. } in [
             tex_mgr.unwrap_default(&self.albedo_texture, TextureKind::Albedo),
             tex_mgr.unwrap_default(&self.normal_texture, TextureKind::Normal),
             tex_mgr.unwrap_default(&self.metallic_roughness_texture, TextureKind::MetalRoughness),
             tex_mgr.unwrap_default(&self.occlusion_texture, TextureKind::Occlusion),
             tex_mgr.unwrap_default(&self.emissive_texture, TextureKind::Emission),
         ] {
-            let Texture{view, sampler, .. } = rc_tex.as_ref();
             entries.push(BindGroupEntry {
                 binding: entries.len() as u32,
                 resource: BindingResource::TextureView(&view),
@@ -85,7 +84,7 @@ impl PbrMaterial {
     }
 }
 
-impl Dirtyable for PbrMaterial {
+impl Dirtyable for PbrMaterial<'_> {
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -114,7 +113,7 @@ impl Dirtyable for PbrMaterial {
     }
 }
 
-impl Debug for PbrMaterial {
+impl Debug for PbrMaterial<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // -1 means no texture, -2 means there is a texture but its ID is None fsr...
         write!(
@@ -134,26 +133,26 @@ impl Debug for PbrMaterial {
     }
 }
 
-pub struct Mesh {
+pub struct Mesh<'a> {
     dirty: bool,
     pub id: u32, // for key purposes in GUIs and stuff
     pub vertices: Vec<Vec3>,
     pub indices: Vec<u32>,
     pub normals: Vec<Vec3>,
     pub tangents: Vec<Vec4>,
-    pub material: Rc<RefCell<Material>>,
+    pub material: &'a Material<'a>,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
     pub buffer: Buffer, // buffer containing the model transform and material info
     pub vertex_inputs: Option<VertexInputs>,
 }
-impl Mesh {
+impl<'a, 'b: 'a> Mesh<'a> {
     pub fn from(
         vertices: Vec<Vec3>,
         indices: Vec<u32>,
         normals: Vec<Vec3>,
         tangents: Vec<Vec4>,
-        material: Rc<RefCell<Material>>,
+        material: &'b Material,
         uvs: Vec<Vec2>,
         global_transform: Mat4,
         device: &Device,
@@ -161,7 +160,7 @@ impl Mesh {
         let buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Mesh Buffer"),
             contents: bytemuck::cast_slice(&[MeshInfo::from_data(
-                material.borrow().id(),
+                material.id(),
                 global_transform.to_cols_array_2d(),
             )]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -190,7 +189,7 @@ impl Mesh {
         }
     }
 }
-impl Dirtyable for Mesh {
+impl Dirtyable for Mesh<'_> {
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -202,14 +201,14 @@ impl Dirtyable for Mesh {
     fn update(&mut self, queue: &Queue) {
         self.set_dirty(false);
         let uniform = MeshInfo::from_data(
-            self.material.borrow().id(),
+            self.material.id(),
             self.global_transform.to_cols_array_2d(),
         );
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
         info!("Updated mesh {}", self.id);
     }
 }
-impl Debug for Mesh {
+impl Debug for Mesh<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -218,7 +217,7 @@ impl Debug for Mesh {
             self.normals.len(),
             self.tangents.len(),
             self.indices.len(),
-            self.material.borrow().name().clone().unwrap_or_default(),
+            self.material.name().clone().unwrap_or_default(),
             self.global_transform,
         )
     }
@@ -258,19 +257,19 @@ impl Dirtyable for PointLight {
     }
 }
 
-pub struct Model {
+pub struct Model<'a> {
     pub id: u32,
-    pub meshes: Vec<Mesh>,
-    pub children: Vec<Model>,
+    pub meshes: Vec<Mesh<'a>>,
+    pub children: Vec<Model<'a>>,
     pub name: Option<Box<str>>,
     pub local_transform: Mat4,
     pub light: Option<PointLight>,
 }
-impl Model {
+impl<'a, 'b: 'a> Model<'a> {
     pub fn from(
-        meshes: Vec<Mesh>,
+        meshes: Vec<Mesh<'b>>,
         name: Option<Box<str>>,
-        children: Vec<Model>,
+        children: Vec<Model<'b>>,
         local_transform: Mat4,
         light: Option<PointLight>,
     ) -> Self {
@@ -303,7 +302,7 @@ impl Model {
     }
 }
 
-impl Debug for Model {
+impl Debug for Model<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -320,14 +319,14 @@ impl Debug for Model {
 }
 
 
-pub struct Scene {
+pub struct Scene<'a> {
     pub id: u32,
-    pub models: Vec<Model>,
+    pub models: Vec<Model<'a>>,
     pub name: Option<Box<str>>,
 }
 
-impl Scene {
-    pub fn from(models: Vec<Model>, name: Option<Box<str>>) -> Self {
+impl<'a, 'b: 'a> Scene<'a> {
+    pub fn from(models: Vec<Model<'b>>, name: Option<Box<str>>) -> Self {
         Self {
             id: rand::thread_rng().gen_range(0u32..1u32 << 31),
             models,
@@ -339,7 +338,7 @@ impl Scene {
     }
 }
 
-impl Debug for Scene {
+impl Debug for Scene<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -357,7 +356,7 @@ impl Debug for Scene {
 
 #[derive(Default)]
 pub struct TextureManager {
-    textures: Vec<Rc<Texture>>,
+    textures: Vec<Texture>,
 }
 
 impl TextureManager {
@@ -367,79 +366,83 @@ impl TextureManager {
     pub fn add_texture(&mut self, mut texture: Texture) -> u32 {
         let id = self.textures.len();
         texture.id = Some(id as u16);
-        self.textures.push(Rc::from(texture));
+        self.textures.push(texture);
         id as u32
     }
 
-    pub fn get_texture(&self, id: u32) -> Rc<Texture> {
-        self.textures[id as usize].clone()
+    pub fn get_texture(&self, id: u32) -> &Texture {
+        &self.textures[id as usize]
     }
 
-    pub fn iter(&self) -> Iter<'_, Rc<Texture>> {
+    pub fn iter(&self) -> Iter<'_, Texture> {
         self.textures.iter()
     }
 
-    pub fn default_tex(&self, texture_kind: TextureKind) -> Rc<Texture> {
+    pub fn default_tex(&self, texture_kind: TextureKind) -> &Texture {
         match texture_kind {
             TextureKind::Albedo => {
-                self.textures[0].clone()
+                &self.textures[0]
             }
             TextureKind::Normal => {
-                self.textures[0].clone()
+                &self.textures[0]
             }
             TextureKind::MetalRoughness => {
-                self.textures[0].clone()
+                &self.textures[0]
             }
             TextureKind::Occlusion => {
-                self.textures[0].clone()
+                &self.textures[0]
             }
             TextureKind::Emission => {
-                self.textures[0].clone()
+                &self.textures[0]
             }
             TextureKind::Depth => {
-                self.textures[0].clone()
+                &self.textures[0]
             }
             TextureKind::Other => {
                 warn!("No default texture for texture kind {:?}", texture_kind);
-                self.textures[0].clone()
+                &self.textures[0]
             }
         }
     }
 
-    pub fn unwrap_default(&self, texture: &Option<Rc<Texture>>, texture_kind: TextureKind) -> Rc<Texture> {
+    pub fn unwrap_default<'a>(&'a self, texture: &Option<&'a Texture>, texture_kind: TextureKind) -> &Texture {
         texture.unwrap_or_else(|| self.default_tex(texture_kind))
     }
 }
 
 #[derive(Default)]
-pub struct MaterialManager {
-    materials: Vec<Rc<RefCell<PbrMaterial>>>,
+pub struct MaterialManager<'a> {
+    materials: Vec<PbrMaterial<'a>>,
 }
 
-impl MaterialManager {
+impl<'a, 'b: 'a> MaterialManager<'a> {
     pub fn new() -> Self {
         Self { materials: vec![] }
     }
-    pub fn add_material(&mut self, mut material: PbrMaterial) -> u32 {
+    pub fn add_material(&mut self, mut material: PbrMaterial<'b>) -> u32 {
         let id = self.materials.len();
         material.id = id as u32;
-        self.materials.push(Rc::new(RefCell::new(material)));
+        self.materials.push(material);
         id as u32
     }
 
-    pub fn get_material(&self, id: u32) -> Rc<RefCell<PbrMaterial>> {
-        self.materials[id as usize].clone()
+    pub fn get_material(&self, id: u32) -> &PbrMaterial {
+        &self.materials[id as usize]
     }
 
-    pub fn get_default_material(&self) -> Rc<RefCell<PbrMaterial>> {
-        self.materials[0].clone()
+    pub fn get_default_material(&self) -> &PbrMaterial {
+        &self.materials[0]
     }
 
-    pub fn iter(&self) -> Iter<'_, Rc<RefCell<PbrMaterial>>> {
+    pub fn iter(&self) -> Iter<'_, PbrMaterial> {
         self.materials.iter()
     }
 
     pub fn create_bind_group(&self, device: &Device, layout: &BindGroupLayout) -> wgpu::BindGroup {
+        let mut entries = vec![];
+        for rc_mat in self.materials.iter() {
+            entries.push(rc_mat.buffer.as_entire_buffer_binding());
+        }
         device.create_bind_group(
             &BindGroupDescriptor{
                 label: Some("PBR Materials Bind Group"),
@@ -447,7 +450,7 @@ impl MaterialManager {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: BindingResource::BufferArray(&self.materials.iter().map(|m| m.borrow().buffer.as_entire_buffer_binding()).collect::<Vec<_>>()),
+                        resource: BindingResource::BufferArray(&entries),
                     }
                 ],
             }
@@ -455,25 +458,21 @@ impl MaterialManager {
     }
 }
 
-pub struct World {
-    pub scenes: Vec<Scene>,
+pub struct World<'a> {
+    pub scenes: Vec<Scene<'a>>,
     pub active_scene: usize,
-    pub materials: MaterialManager,
+    pub materials: MaterialManager<'a>,
     pub textures: TextureManager,
 }
 
-impl World {
+impl<'a> World<'a> {
     pub fn get_active_scene(&self) -> &Scene {
         self.scenes.get(self.active_scene).unwrap()
     }
 
-    pub fn get_active_scene_mut(&mut self) -> &mut Scene {
-        self.scenes.get_mut(self.active_scene).unwrap()
-    }
-
     // TODO Optimization: the performance of this must be terrible!
     pub fn pbr_meshes(&self) -> impl Iterator<Item = &Mesh> {
-        self.get_active_scene().iter_meshes().filter(|mesh| match *mesh.material.borrow() {
+        self.get_active_scene().iter_meshes().filter(|mesh| match *mesh.material {
             Material::Pbr(_) => true,
         })
     }

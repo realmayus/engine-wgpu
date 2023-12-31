@@ -13,9 +13,7 @@ use crate::pipelines::{PipelineProvider, PipelineProviderKind};
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 
 pub mod camera;
-pub mod initialization;
 pub mod pipelines;
-pub mod render_loop;
 
 pub trait Hook {
     fn setup() -> World;
@@ -102,6 +100,9 @@ impl RenderInitState {
             surface_config,
             size,
             depth_texture,
+            pbr_pipeline: pipeline,
+            camera: Camera::new_default(size.width as f32, size.height as f32, device.clone()),
+            world,
         }
     }
 
