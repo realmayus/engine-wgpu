@@ -1,7 +1,8 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
-use wgpu::{Buffer, Device, Queue};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{Buffer, Device, Queue};
+use winit::event::{KeyboardInput, ModifiersState, VirtualKeyCode};
 
 use lib::shader_types::CameraUniform;
 
@@ -18,6 +19,30 @@ pub struct KeyState {
     pub right_pressed: bool,
     pub middle_pressed: bool,
     pub shift_pressed: bool,
+}
+
+impl KeyState {
+    pub(crate) fn from_winit(input: &KeyboardInput, old: &KeyState) -> KeyState {
+        let mut new = KeyState::default();
+        match input.virtual_keycode {
+            None => {}
+            Some(k) => match k {
+                VirtualKeyCode::S => new.down_pressed = true,
+                VirtualKeyCode::W => new.up_pressed = true,
+                VirtualKeyCode::A => new.left_pressed = true,
+                VirtualKeyCode::D => new.right_pressed = true,
+                _ => {}
+            },
+        }
+        // copy old modifiers (separate winit event)
+        new.shift_pressed = old.shift_pressed;
+
+        new
+    }
+
+    pub(crate) fn set_modifiers(&mut self, state: &ModifiersState) {
+        self.shift_pressed = state.shift()
+    }
 }
 
 pub struct Camera {
@@ -40,11 +65,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new_default(
-        width: f32,
-        height: f32,
-        device: &Device,
-    ) -> Self {
+    pub fn new_default(width: f32, height: f32, device: &Device) -> Self {
         let eye: Vec3 = (0.3, 0.3, 1.0).into();
         let target: Vec3 = (0.0, 0.0, 0.0).into();
         let up = Vec4::from(GLOBAL_Y).xyz();
@@ -62,13 +83,11 @@ impl Camera {
         data.proj_view = (proj * view * scale).to_cols_array_2d();
         data.view_position = (Vec4::from((eye, 1.0))).into();
 
-        let camera_buffer = device.create_buffer_init(
-            &BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[data]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+        let camera_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[data]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         Camera {
             eye,

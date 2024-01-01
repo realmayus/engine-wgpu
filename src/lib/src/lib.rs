@@ -1,4 +1,5 @@
 use wgpu::{Buffer, Queue};
+use crate::scene::{MaterialManager, TextureManager};
 
 pub mod scene;
 pub mod scene_serde;
@@ -20,7 +21,7 @@ pub trait Dirtyable {
     /**
     Call to update buffers. Sets dirty to false.
     */
-    fn update(&mut self, queue: &Queue);
+    fn update(&mut self, queue: &Queue, texture_manager: &TextureManager, material_manager: &MaterialManager);
 }
 
 // A buffer that also stores the number of elements in it.
@@ -29,20 +30,19 @@ pub struct SizedBuffer {
     pub count: u32,
 }
 
-
-pub enum Material<'a> {
-    Pbr(scene::PbrMaterial<'a>),
+pub enum Material {
+    Pbr(scene::PbrMaterial),
 }
-impl Material<'_> {
-    pub fn id(&self) -> u32 {
+impl Material {
+    pub fn shader_id(&self) -> u32 {
         match self {
-            Material::Pbr(pbr) => pbr.id,
+            Material::Pbr(pbr) => pbr.shader_id,
         }
     }
-    
-    pub fn set_id(&mut self, id: u32) {
+
+    pub fn set_shader_id(&mut self, id: u32) {
         match self {
-            Material::Pbr(pbr) => pbr.id = id
+            Material::Pbr(pbr) => pbr.shader_id = id,
         }
     }
 
@@ -51,11 +51,10 @@ impl Material<'_> {
             Material::Pbr(pbr) => &pbr.name,
         }
     }
-    
+
     pub fn buffer(&self) -> &Buffer {
         match self {
             Material::Pbr(pbr) => &pbr.buffer,
         }
     }
-    
 }

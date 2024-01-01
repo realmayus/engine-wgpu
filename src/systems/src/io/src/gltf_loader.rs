@@ -1,25 +1,24 @@
-use std::{fs, io};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
-
-use base64::{Engine as _, engine::general_purpose};
+use std::{fs, io};
+use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use gltf::{Error, Node};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
+use gltf::{Error, Node};
 use image::DynamicImage;
 use image::ImageFormat::{Jpeg, Png};
 use log::info;
-use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
 
-use lib::Material;
+use lib::scene::{MatId, PointLight, World};
 use lib::scene::{MaterialManager, Mesh, Model, PbrMaterial, Scene, TextureManager};
-use lib::scene::PointLight;
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use lib::texture::{Texture, TextureKind};
+use lib::Material;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where
@@ -95,12 +94,8 @@ impl<'a> Scheme<'a> {
     }
 }
 
-fn load_image(
-    source: Source<'_>,
-    base: Option<&Path>,
-    buffer_data: &[Data],
-) -> DynamicImage {
-    let (decoded_image, file_format) = match source {
+fn load_image(source: Source<'_>, base: Option<&Path>, buffer_data: &[Data]) -> DynamicImage {
+    let (decoded_image, ..) = match source {
         Source::Uri { uri, mime_type } if base.is_some() => match Scheme::parse(uri) {
             Scheme::Data(Some(mime), base64) => {
                 let encoded_image = general_purpose::STANDARD
@@ -156,37 +151,48 @@ fn load_image(
     decoded_image
 }
 
-pub fn load_gltf<'a>(
+pub fn load_gltf(
     path: &Path,
     device: &Device,
     queue: &Queue,
     texture_bind_group_layout: &BindGroupLayout,
-    texture_manager: &'a mut TextureManager,
-    material_manager: &'a mut MaterialManager<'a>,
-) -> Vec<Scene<'a>> {
+    texture_manager: &mut TextureManager,
+    material_manager: &mut MaterialManager,
+) -> Vec<Scene> {
     let (gltf, buffers, _) = gltf::import(path).unwrap(); // todo skip loading of images on gltf lib side
 
     info!("GLTF has {:?} scenes", gltf.scenes().len());
 
     let mut scenes: Vec<Scene> = vec![];
-    let mut images: HashMap<u32, DynamicImage> =
-        HashMap::with_capacity(gltf.images().len());
+    let mut images: HashMap<u32, DynamicImage> = HashMap::with_capacity(gltf.images().len());
     for image in gltf.images() {
         images.insert(
             image.index() as u32,
             load_image(image.source(), Path::new(path).parent(), &buffers),
         );
     }
-
     // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
-    let local_textures = gltf.textures().map(|gltf_texture| {
-        let img = images
-            .remove(&(gltf_texture.source().index() as u32))
-            .unwrap();
+    let local_textures = gltf
+        .textures()
+        .map(|gltf_texture| {
+            let img = images
+                .remove(&(gltf_texture.source().index() as u32))
+                .unwrap();
 
-        let img_name = if let Some(name) = gltf_texture.name() {
-            format!(
-                "{}_{}",
+            let img_name = if let Some(name) = gltf_texture.name() {
+                format!(
+                    "{}_{}",
+                    Path::new(path)
+                        .file_name()
+                        .map(|s| s.to_str())
+                        .unwrap_or(Some(""))
+                        .unwrap_or("")
+                        .split('.')
+                        .next()
+                        .unwrap(),
+                    name
+                ) //TODO fix this abomination
+            } else {
                 Path::new(path)
                     .file_name()
                     .map(|s| s.to_str())
@@ -194,113 +200,91 @@ pub fn load_gltf<'a>(
                     .unwrap_or("")
                     .split('.')
                     .next()
-                    .unwrap(),
-                name
-            ) //TODO fix this abomination
-        } else {
-            Path::new(path)
-                .file_name()
-                .map(|s| s.to_str())
-                .unwrap_or(Some(""))
-                .unwrap_or("")
-                .split('.')
-                .next()
-                .unwrap()
-                .to_string()
-        };
+                    .unwrap()
+                    .to_string()
+            };
 
-        // let path = extract_image_to_file(img_name.as_str(), &img, file_format);  // TODO store path in texture? for serde
-        let texture = Texture::from_image(
-            device,
-            queue,
-            &img,
-            gltf_texture.name(),
-            TextureKind::Other,
-        ).expect("Couldn't create texture");
+            // let path = extract_image_to_file(img_name.as_str(), &img, file_format);  // TODO store path in texture? for serde
+            let texture =
+                Texture::from_image(device, queue, &img, gltf_texture.name(), TextureKind::Other)
+                    .expect("Couldn't create texture");
 
         let global_id = texture_manager.add_texture(texture);
         (gltf_texture.index(), global_id)
     }).collect::<HashMap<_,_>>();
 
-    let local_materials = gltf.materials().filter(|m| m.index().is_some()).map(|gltf_mat| {
-        let index = gltf_mat.index().unwrap();
-        let mut mat = PbrMaterial {  // TODO only make initialization possible through material manager!
-            dirty: true, // must get updated upon start in order to prime the uniform
-            id: 0, // will get overwritten by call to MaterialManager::add_material() below
-            name: gltf_mat.name().map(Box::from),
-            albedo_texture: gltf_mat
-                .pbr_metallic_roughness()
-                .base_color_texture()
-                .map(|t| t.texture().index())
-                .map(|id| {
-                    texture_manager.get_texture(
-                        *local_textures
-                            .get(&id)
-                            .expect("Couldn't find base texture")
-                    )
-                }),
-            albedo: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
-            metallic_roughness_texture: gltf_mat
-                .pbr_metallic_roughness()
-                .metallic_roughness_texture()
-                .map(|t| t.texture().index())
-                .map(|id| {
-                    texture_manager.get_texture(
-                        *local_textures
-                            .get(&id)
-                            .expect("Couldn't find metallic roughness texture")
-                    )
-                }),
-            metallic_roughness_factors: Vec2::from((
-                gltf_mat.pbr_metallic_roughness().metallic_factor(),
-                gltf_mat.pbr_metallic_roughness().roughness_factor(),
-            )),
-            normal_texture: gltf_mat
-                .normal_texture()
-                .map(|t| t.texture().index())
-                .map(|id| {
-                    texture_manager.get_texture(
-                        *local_textures
-                            .get(&id)
-                            .expect("Couldn't find normal texture")
-                    )
-                }),
-            occlusion_texture: gltf_mat
-                .occlusion_texture()
-                .map(|t| t.texture().index())
-                .map(|id| {
-                    texture_manager.get_texture(
-                        *local_textures
-                            .get(&id)
-                            .expect("Couldn't find occlusion texture")
-                    )
-                }),
-            occlusion_factor: 1.0, // TODO: Impl: try to read strength from glTF
-            emissive_texture: gltf_mat
-                .emissive_texture()
-                .map(|t| t.texture().index())
-                .map(|id| {
-                    texture_manager.get_texture(
-                        *local_textures
-                            .get(&id)
-                            .expect("Couldn't find emissive texture")
-                    )
-                }),
-            emissive_factors: gltf_mat.emissive_factor().into(),
-            buffer: device.create_buffer_init(
-                &BufferInitDescriptor {
-                    label: Some("Material Buffer"),
-                    contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
-                    usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-                }
-            ),
-            texture_bind_group: None,
-        }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
-        mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
-        let global_id = material_manager.add_material(Material::Pbr(mat));
-        (index, global_id)
+    let local_materials =
+        gltf.materials()
+            .filter(|m| m.index().is_some())
+            .map(|gltf_mat| {
+                let index = gltf_mat.index().unwrap();
+                let mut mat = PbrMaterial {
+                    // TODO only make initialization possible through material manager!
+                    dirty: true, // must get updated upon start in order to prime the uniform
+                    shader_id: 0, // will get overwritten by call to MaterialManager::add_material() below
+                    name: gltf_mat.name().map(Box::from),
+                    albedo_texture: gltf_mat
+                        .pbr_metallic_roughness()
+                        .base_color_texture()
+                        .map(|t| t.texture().index())
+                        .map(|id| {
+                            *local_textures.get(&id).expect("Couldn't find base texture")
+                        }),
+                    albedo: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
+                    metallic_roughness_texture: gltf_mat
+                        .pbr_metallic_roughness()
+                        .metallic_roughness_texture()
+                        .map(|t| t.texture().index())
+                        .map(|id| {
+                                *local_textures
+                                    .get(&id)
+                                    .expect("Couldn't find metallic roughness texture")
 
-    }).collect::<HashMap<_, _>>();
+                        }),
+                    metallic_roughness_factors: Vec2::from((
+                        gltf_mat.pbr_metallic_roughness().metallic_factor(),
+                        gltf_mat.pbr_metallic_roughness().roughness_factor(),
+                    )),
+                    normal_texture: gltf_mat.normal_texture().map(|t| t.texture().index()).map(
+                        |id| {
+                                *local_textures
+                                    .get(&id)
+                                    .expect("Couldn't find normal texture")
+
+                        },
+                    ),
+                    occlusion_texture: gltf_mat
+                        .occlusion_texture()
+                        .map(|t| t.texture().index())
+                        .map(|id| {
+                                *local_textures
+                                    .get(&id)
+                                    .expect("Couldn't find occlusion texture")
+
+                        }),
+                    occlusion_factor: 1.0, // TODO: Impl: try to read strength from glTF
+                    emissive_texture: gltf_mat
+                        .emissive_texture()
+                        .map(|t| t.texture().index())
+                        .map(|id| {
+                                *local_textures
+                                    .get(&id)
+                                    .expect("Couldn't find emissive texture")
+
+                        }),
+                    emissive_factors: gltf_mat.emissive_factor().into(),
+                    buffer: device.create_buffer_init(&BufferInitDescriptor {
+                        label: Some("Material Buffer"),
+                        contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
+                        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                    }),
+                    texture_bind_group: None,
+                }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
+                mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
+                let global_id = material_manager.add_material(Material::Pbr(mat));
+                (index, global_id)
+            })
+            .collect::<HashMap<_, _>>();
 
     for scene in gltf.scenes() {
         info!("Scene has {:?} nodes", scene.nodes().len());
@@ -315,7 +299,7 @@ pub fn load_gltf<'a>(
                     material_manager,
                     Mat4::default(),
                     &mut num_lights,
-                    device
+                    device,
                 )
             })
             .collect();
@@ -334,15 +318,15 @@ pub fn load_gltf<'a>(
     scenes
 }
 
-fn load_node<'a>(
+fn load_node(
     node: &Node,
     buffers: &[Data],
-    materials: &HashMap<usize, u32>,
-    material_manager: &'a MaterialManager,
+    materials: &HashMap<usize, MatId>,
+    material_manager: &MaterialManager,
     parent_transform: Mat4,
     num_lights: &mut u32,
     device: &Device,
-) -> Model<'a> {
+) -> Model {
     let mut children: Vec<Model> = vec![];
     let local_transform = Mat4::from_cols_array_2d(&node.transform().matrix());
     for child in node.children() {
@@ -388,17 +372,8 @@ fn load_node<'a>(
             let mat = gltf_primitive
                 .material()
                 .index()
-                .map(|i| materials.get(&i).expect("Couldn't find material").clone());
-            meshes.push(Mesh::from(
-                positions,
-                indices,
-                normals,
-                tangents,
-                mat.map(|mat| material_manager.get_material(mat)).unwrap_or(material_manager.get_default_material()),
-                uvs,
-                global_transform,
-                device
-            ));
+                .map(|i| *materials.get(&i).expect("Couldn't find material"));
+            meshes.push(Mesh::from(positions, indices, normals, tangents, mat.unwrap_or(material_manager.default_material), material_manager, uvs, global_transform, device));
         }
     }
 
@@ -410,13 +385,11 @@ fn load_node<'a>(
         intensity: light.intensity(),
         range: light.range(),
         amount: *num_lights,
-        buffer: device.create_buffer_init(
-            &BufferInitDescriptor {
-                label: Some("LightInfo"),
-                contents: bytemuck::cast_slice(&[LightInfo::default()]),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            }
-        ),
+        buffer: device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("LightInfo"),
+            contents: bytemuck::cast_slice(&[LightInfo::default()]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        }),
     });
 
     if let Some(ref _light) = light {

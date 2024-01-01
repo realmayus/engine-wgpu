@@ -13,7 +13,7 @@ pub enum TextureKind {
 }
 
 pub struct Texture {
-    pub id: Option<u16>,  // only used for serde, as we now store bind groups directly in the texture, allowing us to bind a texture by reference whenever needed
+    pub id: Option<u32>, // only used for serde, as we now store bind groups directly in the texture, allowing us to bind a texture by reference whenever needed
     pub name: Option<String>,
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -27,7 +27,7 @@ impl Texture {
         queue: &wgpu::Queue,
         bytes: &[u8],
         label: &str,
-        texture_kind: TextureKind
+        texture_kind: TextureKind,
     ) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(device, queue, &img, Some(label), texture_kind)
