@@ -56,6 +56,7 @@ pub struct MaterialInfo {
     pub metal_roughness_texture: u32,
     pub occlusion_texture: u32,
     pub emission_texture: u32,
+    padding: u32,
 }
 
 impl Default for MaterialInfo {
@@ -70,6 +71,7 @@ impl Default for MaterialInfo {
             normal_texture: 1,
             occlusion_factor: 0.0,
             occlusion_texture: 0,
+            padding: 0,
         }
     }
 }
@@ -100,6 +102,7 @@ pub struct LightInfo {
     pub intensity: f32,
     pub range: f32,
     pub amount: u32,
+    pub(crate) padding: u32,
 }
 
 impl From<&PointLight> for LightInfo {
@@ -111,6 +114,7 @@ impl From<&PointLight> for LightInfo {
             intensity: light.intensity,
             range: light.range.unwrap_or(1.0),
             amount: light.amount,
+            padding: 0,
         }
     }
 }

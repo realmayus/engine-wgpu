@@ -26,6 +26,8 @@ pub struct PBRPipelineProvider {
     pub tex_bind_group_layout: wgpu::BindGroupLayout,
     mat_bind_group_layout: wgpu::BindGroupLayout,
     mesh_bind_group_layout: wgpu::BindGroupLayout,
+    pub light_bind_group: BindGroup,
+    pub light_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl PBRPipelineProvider {
@@ -34,6 +36,7 @@ impl PBRPipelineProvider {
         device: &Device,
         mesh_info_buffers: &[Buffer],
         material_info_buffers: &[Buffer],
+        light_info_buffers: &[Buffer],
         camera_buffer: &Buffer,
     ) -> Self {
         let shader =
@@ -41,7 +44,7 @@ impl PBRPipelineProvider {
 
         let tex_bind_group_layout = {
             let mut tex_bind_group_layout_entries = Vec::new();
-            for i in (0..10).step_by(2) {
+            for i in (0..9).step_by(2) {
                 tex_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
                     binding: i,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -109,7 +112,7 @@ impl PBRPipelineProvider {
             label: Some("PBR Mesh Bindgroup Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
@@ -167,6 +170,45 @@ impl PBRPipelineProvider {
             }],
         });
 
+        let light_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("PBR Lights Bindgroup Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: Some(NonZeroU32::new(1_000).unwrap()),
+            }],
+        });
+
+        let light_bind_group = {
+            let dummy_light = device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("Dummy Light Buffer"),
+                contents: bytemuck::cast_slice(&[LightInfo::default()]),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            });
+
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("PBR Light Bindgroup"),
+                layout: &light_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::BufferArray(
+                        &iter::once(dummy_light.as_entire_buffer_binding())
+                            .chain(
+                                light_info_buffers
+                                    .iter()
+                                    .map(|m| m.as_entire_buffer_binding()),
+                            )
+                            .collect::<Vec<_>>(),
+                    ),
+                }],
+            })
+        };
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
             bind_group_layouts: &[
@@ -174,6 +216,7 @@ impl PBRPipelineProvider {
                 &mat_bind_group_layout,
                 &mesh_bind_group_layout,
                 &cam_bind_group_layout,
+                &light_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -184,10 +227,12 @@ impl PBRPipelineProvider {
             pipeline_layout,
             mat_bind_group,
             mesh_bind_group,
+            light_bind_group,
             cam_bind_group,
             tex_bind_group_layout,
             mat_bind_group_layout,
             mesh_bind_group_layout,
+            light_bind_group_layout,
         }
     }
     fn update_mat_bind_group(&mut self, device: &Device, material_manager: &MaterialManager) {
@@ -262,6 +307,7 @@ impl PBRPipelineProvider {
         material_info_bind_group: &BindGroup,
         mesh_info_bind_group: &BindGroup,
         camera_bind_group: &BindGroup,
+        light_bind_group: &BindGroup,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
@@ -283,6 +329,7 @@ impl PBRPipelineProvider {
         render_pass.set_bind_group(1, material_info_bind_group, &[]);
         render_pass.set_bind_group(2, mesh_info_bind_group, &[]);
         render_pass.set_bind_group(3, camera_bind_group, &[]);
+        render_pass.set_bind_group(4, light_bind_group, &[]);
 
         for (
             i,
@@ -292,7 +339,7 @@ impl PBRPipelineProvider {
             },
         ) in vertex_inputs.enumerate()
         {
-            render_pass.set_bind_group(0, &textures_bind_groups[i], &[]);
+            render_pass.set_bind_group(0, textures_bind_groups[i], &[]);
 
             render_pass.set_vertex_buffer(0, vertex_buffer.buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -328,6 +375,7 @@ impl PBRPipelineProvider {
             &self.mat_bind_group,
             &self.mesh_bind_group,
             &self.cam_bind_group,
+            &self.light_bind_group,
         )
     }
 }

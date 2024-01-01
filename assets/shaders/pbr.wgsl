@@ -1,15 +1,51 @@
+struct VertexInput {
+    @builtin(instance_index) index: u32,
+    @location(0) position: vec3<f32>, // 3*4 = 12
+    @location(1) normal: vec3<f32>, // 12 + 3*4 = 24
+    @location(2) tangent: vec4<f32>,    // 24 + 4*4 = 40
+    @location(3) uv: vec2<f32> // 40 + 2*4 = 48
+}
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
+    @location(0) @interpolate(flat) index: u32,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) frag_pos_tan: vec3<f32>,
+    @location(3) view_pos_tan: vec3<f32>,
+    @location(4) t: vec3<f32>,
+    @location(5) b: vec3<f32>,
+    @location(6) n: vec3<f32>
 }
+
+struct MeshInfo {
+    material: u32,
+    model_transform: mat4x4<f32>
+}
+@group(2) @binding(0)
+var<storage, read> mesh_infos: array<MeshInfo>;
+
+struct Camera {
+    proj_view: mat4x4<f32>,
+    view_position: vec4<f32>,
+};
+@group(3) @binding(0)
+var<uniform> camera: Camera;
+
 @vertex
 fn vs_main(
-    @builtin(vertex_index) in_vertex_index: u32,
+    in: VertexInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    let x = f32(1 - i32(in_vertex_index)) * 0.5;
-    let y = f32(i32(in_vertex_index & 1u) * 2 - 1) * 0.5;
-    out.clip_position = vec4<f32>(x, y, 0.0, 1.0);
+    let model_transform = mesh_infos[in.index].model_transform;
+
+    out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position, 1.0);
+    out.index = in.index;
+    out.tex_coords = in.uv;
+
+    let bitangent = normalize(cross(in.normal, in.tangent.xyz) * in.tangent.w);
+    out.t = normalize((model_transform * vec4(in.tangent.xyz, 0.0)).xyz);
+    out.b = normalize((model_transform * vec4(bitangent, 0.0)).xyz);
+    out.n = normalize((model_transform * vec4(in.normal, 0.0)).xyz);
     return out;
 }
 
@@ -39,38 +75,24 @@ var t_emissive: texture_2d<f32>;
 var s_emissive: sampler;
 
 struct Material {
-    albedo: vec4<f32>,
-    emission_factors: vec3<f32>,
-    occlusion_factor: f32,
-    metal_roughness_factors: vec2<f32>,
-    albedo_texture: u32, // index of texture
-    normal_texture: u32,
-    metal_roughness_texture: u32,
-    occlusion_texture: u32,
-    emission_texture: u32,
+    albedo: vec4<f32>, // 4*4 = 16
+    emission_factors: vec3<f32>, // 16 + 3*4 = 28
+    occlusion_factor: f32, // 28 + 4 = 32
+    metal_roughness_factors: vec2<f32>, // 32 + 2*4 = 40
+    albedo_texture: u32, // index of texture in array // 40 + 4 = 44
+    normal_texture: u32, // 44 + 4 = 48
+    metal_roughness_texture: u32, // 48 + 4 = 52
+    occlusion_texture: u32, // 52 + 4 = 56
+    emission_texture: u32, // 56 + 4 = 60
 };
 
 @group(1) @binding(0)
 var<storage, read> materials: array<Material>;
 
 
-struct MeshInfo {
-    material: u32,
-    model_transform: mat4x4<f32>,
-}
-@group(2) @binding(0)
-var<storage, read> mesh_infos: array<MeshInfo>;
-
-struct Camera {
-    proj_view: mat4x4<f32>,
-    view_position: mat4x4<f32>,
-};
-@group(3) @binding(0)
-var<uniform> camera: Camera;
-
 struct LightInfo {
     transform: mat4x4<f32>,
-    color: vec4<f32>,
+    color: vec3<f32>,
     light: u32,
     intensity: f32,
     range: f32,
@@ -79,7 +101,110 @@ struct LightInfo {
 @group(4) @binding(0)
 var<storage, read> lights: array<LightInfo>;
 
+const PI = 3.14159265359;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    let tbn = transpose(mat3x3<f32>(in.t, in.b, in.n));
+    let mat_id = mesh_infos[in.index].material;
+    let material = materials[mat_id];
+
+    // load material values, if index 0, value will be 1 because of white default texture
+    var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) * material.albedo;
+    var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb;
+    // transform normal vector from [0,1] to range [-1,1]
+    normal = normal * 2.0 - 1.0;  // this normal is in tangent space
+
+    let metallic = textureSample(t_metallic, s_metallic, in.tex_coords).b * material.metal_roughness_factors.x;
+    let roughness = textureSample(t_metallic, s_metallic, in.tex_coords).g * material.metal_roughness_factors.y;
+    var occlusion = textureSample(t_occlusion, s_occlusion, in.tex_coords).r;
+    var emission = textureSample(t_emissive, s_emissive, in.tex_coords).rgb;
+    // convert to linear space
+    albedo = pow(albedo, vec4(2.2));
+    emission = pow(emission, vec3(2.2));
+    occlusion = pow(occlusion, 2.2);
+    let view_dir = normalize(in.view_pos_tan - in.frag_pos_tan);
+    // most dielectric surfaces look visually correct with f0 of 0.04
+    var f0 = vec3(0.04);
+    f0 = mix(f0, albedo.rgb, metallic);
+    var lo = vec3(0.0);
+    let light_amount = lights[0].amount + 1u;
+    // contribution of each light
+    for (var i = 1u; i < light_amount; i++) {  // skip first light, as it's a dummy
+        let light = lights[i];
+        // convert to tangent space
+        let light_pos_tan = tbn * (light.transform[3]).xyz;
+        let light_dir = normalize(light_pos_tan - in.frag_pos_tan);
+        let half_vec = normalize(view_dir + light_dir);
+
+        let dist = length(light_pos_tan - in.frag_pos_tan);
+        let attenuation = 1.0 / (dist * dist);
+        let radiance: vec3<f32> = light.color * 5.0 * attenuation;
+        // Fresnel equation F of DFG which is the specular part of BRDF
+        let reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), f0);
+        let normal_dist = distribution(normal, half_vec, roughness);
+        let geom = geometry_smith(normal, view_dir, light_dir, roughness);
+
+        // BRDF
+        let numerator = normal_dist * geom * reflect_ratio;
+        let denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0) + 0.0001;
+        let specular: vec3<f32> = numerator / denominator;
+
+        let k_specular = reflect_ratio;
+        var k_diffuse = vec3(1.0) - k_specular;
+        k_diffuse *= 1.0 - metallic;
+
+        let normal_dot_light: f32 = max(dot(normal, light_dir), 0.0);
+
+        let diffuse_albedo: vec3<f32> = k_diffuse * albedo.rgb;
+        let diffuse_albedo_by_pi: vec3<f32> = diffuse_albedo / PI;
+        lo += (diffuse_albedo_by_pi + specular) * radiance * normal_dot_light;
+    }
+
+    let ambient = vec3(0.001) * albedo.rgb * occlusion;
+    var color = ambient + lo + emission * material.emission_factors;
+    // reinhard tone mapping
+    color = color / (color + vec3(1.0));
+    // gamma correction
+    color = pow(color, vec3(1.0 / 2.2));
+    return vec4<f32>(color, 1.0);
+}
+
+// Fresnel-Schlick approximation
+// F0: base surface-reflectivity at 0 incidence (reflectivity when looking directly at it)
+// cosTheta: result of the dot product of the view direction and the halfway direction
+// Calculates how much the surface reflects vs refracts (basically specular vs diffuse)
+fn fresnel(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+    return f0 + (vec3(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+// Normal distribution function D of DFG (Trowbridge-Reitz GGX)
+// (n, h, a) = a^2 / pi*((n*h)^2 (a^2 - 1) + 1)^2
+// Approximates the relative surface area of microfacets exactly aligned to the (halfway) vector
+fn distribution(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
+    // squaring the roughness is not in the original formula but gives more accurate results
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let n_dot_h = max(dot(n, h), 0.0);
+    let n_dot_h2 = n_dot_h * n_dot_h;
+    let denom = n_dot_h2 * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+// n * v / ((n*v)(1-k) + k)
+// takes the microfacets and so selfshadowing into account
+fn geometry_schlick(n_dot_v: f32, roughness: f32) -> f32 {
+    let r = roughness + 1.0;
+    let k = (r * r) / 8.0;
+    return n_dot_v / (n_dot_v * (1.0 - k) + k);
+}
+
+// geometry function G in DFG
+// using schlicks method with both the view and light direction
+fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
+    let n_dot_v = max(dot(n, v), 0.0);
+    let n_dot_l = max(dot(n, l), 0.0);
+    let ggx1 = geometry_schlick(n_dot_v, roughness);
+    let ggx2 = geometry_schlick(n_dot_l, roughness);
+    return ggx1 * ggx2;
 }

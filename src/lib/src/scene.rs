@@ -270,6 +270,7 @@ impl Dirtyable for PointLight {
             intensity: self.intensity,
             amount: self.amount,
             range: self.range.unwrap_or(1.0),
+            padding: 0
         };
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
         info!("Updated light {}", self.index);

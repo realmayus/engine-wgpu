@@ -126,7 +126,7 @@ impl RenderState {
 
         let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
         //TODO create buffers for materials and textures (where do we store them? what if a new model with new textures is loaded?)
-        let mut pipeline = PBRPipelineProvider::new(&device, &[], &[], &camera.buffer);
+        let mut pipeline = PBRPipelineProvider::new(&device, &[], &[], &[], &camera.buffer);
         pipeline.create_pipeline(&device);
         Self {
             window,
