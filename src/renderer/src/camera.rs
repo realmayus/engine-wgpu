@@ -1,6 +1,6 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
-use wgpu::{Buffer, Device};
+use wgpu::{Buffer, Device, Queue};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use lib::shader_types::CameraUniform;
@@ -43,7 +43,7 @@ impl Camera {
     pub fn new_default(
         width: f32,
         height: f32,
-        device: Device,
+        device: &Device,
     ) -> Self {
         let eye: Vec3 = (0.3, 0.3, 1.0).into();
         let target: Vec3 = (0.0, 0.0, 0.0).into();
@@ -111,11 +111,12 @@ impl Camera {
         self.aspect = width / height;
     }
 
-    pub fn update_view(&self) {
+    pub fn update_view(&self, queue: &Queue) {
         let new_proj = self.build_projection();
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.proj_view = new_proj.to_cols_array_2d();
-        mapping.view_position = Vec4::from((self.eye, 1.0)).into();
+        let mut uniform = CameraUniform::new();
+        uniform.proj_view = new_proj.to_cols_array_2d();
+        uniform.view_position = Vec4::from((self.eye, 1.0)).into();
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]))
     }
 
     pub fn recv_input(&mut self, keys: &KeyState, change: Vec2, delta_time: f32) {

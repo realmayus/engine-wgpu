@@ -39,10 +39,23 @@ impl Material<'_> {
             Material::Pbr(pbr) => pbr.id,
         }
     }
+    
+    pub fn set_id(&mut self, id: u32) {
+        match self {
+            Material::Pbr(pbr) => pbr.id = id
+        }
+    }
 
     pub fn name(&self) -> &Option<Box<str>> {
         match self {
             Material::Pbr(pbr) => &pbr.name,
         }
     }
+    
+    pub fn buffer(&self) -> &Buffer {
+        match self {
+            Material::Pbr(pbr) => &pbr.buffer,
+        }
+    }
+    
 }

@@ -412,36 +412,36 @@ impl TextureManager {
 
 #[derive(Default)]
 pub struct MaterialManager<'a> {
-    materials: Vec<PbrMaterial<'a>>,
+    materials: Vec<Material<'a>>,
 }
 
 impl<'a, 'b: 'a> MaterialManager<'a> {
     pub fn new() -> Self {
         Self { materials: vec![] }
     }
-    pub fn add_material(&mut self, mut material: PbrMaterial<'b>) -> u32 {
+    pub fn add_material(&mut self, mut material: Material<'b>) -> u32 {
         let id = self.materials.len();
-        material.id = id as u32;
+        material.set_id(id as u32);
         self.materials.push(material);
         id as u32
     }
 
-    pub fn get_material(&self, id: u32) -> &PbrMaterial {
+    pub fn get_material(&self, id: u32) -> &Material {
         &self.materials[id as usize]
     }
 
-    pub fn get_default_material(&self) -> &PbrMaterial {
+    pub fn get_default_material(&self) -> &Material {
         &self.materials[0]
     }
 
-    pub fn iter(&self) -> Iter<'_, PbrMaterial> {
+    pub fn iter(&self) -> Iter<'_, Material> {
         self.materials.iter()
     }
 
     pub fn create_bind_group(&self, device: &Device, layout: &BindGroupLayout) -> wgpu::BindGroup {
         let mut entries = vec![];
-        for rc_mat in self.materials.iter() {
-            entries.push(rc_mat.buffer.as_entire_buffer_binding());
+        for mat in self.materials.iter() {
+            entries.push(mat.buffer().as_entire_buffer_binding());
         }
         device.create_bind_group(
             &BindGroupDescriptor{
@@ -457,6 +457,7 @@ impl<'a, 'b: 'a> MaterialManager<'a> {
         )
     }
 }
+
 
 pub struct World<'a> {
     pub scenes: Vec<Scene<'a>>,
@@ -475,6 +476,17 @@ impl<'a> World<'a> {
         self.get_active_scene().iter_meshes().filter(|mesh| match *mesh.material {
             Material::Pbr(_) => true,
         })
+    }
+}
+
+impl Default for World<'_> {
+    fn default() -> Self {
+        Self {
+            scenes: vec![],
+            active_scene: 0,
+            materials: MaterialManager::new(),
+            textures: TextureManager::new(),
+        }
     }
 }
 

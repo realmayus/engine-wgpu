@@ -2,7 +2,7 @@ use crate::scene::PbrMaterial;
 use crate::scene::PointLight;
 use glam::Mat4;
 
-trait Vertex {
+pub trait Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4];
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }
@@ -122,7 +122,7 @@ impl MeshInfo {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightInfo {
     pub transform: [[f32; 4]; 4],
     pub color: [f32; 3],

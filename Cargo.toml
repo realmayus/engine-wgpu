@@ -23,4 +23,4 @@ rfd = "0.11.4"
 members = [
     "src/renderer",
     "src/systems",
-    "src/lib"]
+    "src/lib", "example"]

@@ -1,22 +1,21 @@
-use std::sync::Arc;
-
-use anyhow::*;
+use std::path::Path;
+use anyhow::Result;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
-use lib::scene::{Texture, VertexInputs, World};
-
+use lib::scene::{World};
+use lib::texture::{Texture};
+use systems::io::gltf_loader::load_gltf;
 use crate::camera::{Camera, KeyState};
-use crate::pipelines::{PipelineProvider, PipelineProviderKind};
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 
 pub mod camera;
 pub mod pipelines;
 
 pub trait Hook {
-    fn setup() -> World;
+    fn setup(&self, state: &mut RenderState);
 
     fn update(
         &mut self,
@@ -25,7 +24,7 @@ pub trait Hook {
     );
 }
 
-pub struct RenderInitState {
+pub struct RenderState<'a> {
     pub device: Device,
     surface: Surface,
     surface_config: SurfaceConfiguration,
@@ -35,11 +34,11 @@ pub struct RenderInitState {
     depth_texture: Texture,
     pbr_pipeline: PBRPipelineProvider,
     camera: Camera,
-    world: World,
+    world: World<'a>,
 }
 
-impl RenderInitState {
-    async fn new(window: Window, hook: impl Hook) -> Self {
+impl<'a> RenderState<'a> {
+    async fn new(window: Window) -> Self {
         let size = window.inner_size();
         assert_ne!(size.width, 0);
         assert_ne!(size.height, 0);
@@ -67,7 +66,7 @@ impl RenderInitState {
                 limits: wgpu::Limits::default(),
             },
             None,
-        );
+        ).await.unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -88,10 +87,11 @@ impl RenderInitState {
         };
         surface.configure(&device, &surface_config);
         let depth_texture = Texture::create_depth_texture(&device, &surface_config, "depth_texture");
-        let world = hook.setup();
+        let world = World::default();
 
+        let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
         //TODO create buffers for materials and textures (where do we store them? what if a new model with new textures is loaded?)
-        let pipeline = PBRPipelineProvider::new(&device, vec![], vec![], vec![], vec![], vec![], (), 0, 0);
+        let pipeline = PBRPipelineProvider::new(&device, &[], &[], &camera.buffer);
         Self {
             window,
             surface,
@@ -101,11 +101,15 @@ impl RenderInitState {
             size,
             depth_texture,
             pbr_pipeline: pipeline,
-            camera: Camera::new_default(size.width as f32, size.height as f32, device.clone()),
+            camera,
             world,
         }
     }
-
+    pub fn load_default_scene(&'a mut self, device: &Device, queue: &Queue) {
+        let mut scenes = load_gltf(Path::new("../../../assets/models/cube.glb"), device, queue, &self.pbr_pipeline.tex_bind_group_layout, &mut self.world.textures, &mut self.world.materials);
+        let first = scenes.remove(0);
+        self.world.scenes.push(first);
+    }
     pub fn window(&self) -> &Window {
         &self.window
     }
@@ -135,9 +139,10 @@ impl RenderInitState {
         });
 
         {
-            self.pbr_pipeline.render_pass(
+            self.pbr_pipeline.render_meshes(
                 &mut encoder,
-                &self.world.pbr_meshes().map(|m| VertexInputs::from_mesh(m, &self.device)).collect::<Vec<VertexInputs>>(),
+                &view,
+                &self.world.pbr_meshes().collect::<Vec<_>>(),
             )
         }
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -147,11 +152,12 @@ impl RenderInitState {
 
 }
 
-pub async fn run() {
+pub async fn run(hook: impl Hook + 'static) {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let mut state = RenderInitState::new(window).await;
+    let mut state = RenderState::new(window).await;
+    hook.setup(&mut state);
     event_loop.run(move |event, _, control_flow| {
         match event {
             Event::WindowEvent {
@@ -194,94 +200,4 @@ pub async fn run() {
             _ => {}
         }
     });
-}
-
-
-fn get_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Arc<RenderPass> {
-    vulkano::single_pass_renderpass!(
-        device,
-        attachments: {
-            color: {
-                format: swapchain.image_format(), // set the format the same as the swapchain
-                samples: 1,
-                load_op: Clear,
-                store_op: Store,
-            },
-            depth: {
-                format: Format::D16_UNORM,
-                samples: 1,
-                load_op: Clear,
-                store_op: DontCare,
-            }
-        },
-        pass: {
-            color: [color],
-            depth_stencil: {depth},
-        },
-    )
-        .unwrap()
-}
-
-fn get_framebuffers(
-    images: &[Arc<Image>],
-    render_pass: &Arc<RenderPass>,
-    depth_buffer: Arc<ImageView>,
-) -> (Vec<Arc<Framebuffer>>, Vec<Arc<ImageView>>) {
-    images
-        .iter()
-        .map(|image| {
-            let view = ImageView::new_default(image.clone()).unwrap();
-            (
-                Framebuffer::new(
-                    render_pass.clone(),
-                    FramebufferCreateInfo {
-                        attachments: vec![view.clone(), depth_buffer.clone()],
-                        ..Default::default()
-                    },
-                )
-                    .unwrap(),
-                view.clone(),
-            )
-        })
-        .unzip()
-}
-
-fn get_finalized_render_passes(
-    framebuffers: Vec<Arc<Framebuffer>>,
-    cmd_buf_allocator: &StandardCommandBufferAllocator,
-    queue_family_index: u32,
-    pipeline_providers: &mut [PipelineProviderKind],
-) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-    framebuffers
-        .iter()
-        .map(|framebuffer| {
-            let mut builder = AutoCommandBufferBuilder::primary(
-                cmd_buf_allocator,
-                queue_family_index,
-                CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
-            )
-                .unwrap();
-
-            builder
-                .begin_render_pass(
-                    RenderPassBeginInfo {
-                        clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                    },
-                    SubpassBeginInfo {
-                        contents: SubpassContents::Inline,
-                        ..Default::default()
-                    },
-                )
-                .unwrap();
-
-            for pipeline_provider in &mut *pipeline_providers {
-                pipeline_provider.render_pass(&mut builder);
-            }
-
-            builder.end_render_pass(SubpassEndInfo::default()).unwrap();
-
-            builder.build().unwrap()
-        })
-        .collect()
 }

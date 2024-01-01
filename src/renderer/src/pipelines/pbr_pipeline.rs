@@ -1,8 +1,9 @@
 use std::cell::Ref;
+use std::num::NonZeroU32;
 use log::debug;
-use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, Device, include_wgsl, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView};
+use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color, CommandEncoder, Device, include_wgsl, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView};
 use wgpu::SamplerBindingType::Filtering;
-use wgpu::VertexStepMode::Vertex;
+use lib::shader_types::{PbrVertex, Vertex};
 use lib::Material;
 
 
@@ -19,7 +20,7 @@ pub struct PBRPipelineProvider {
     pub mat_bind_group: BindGroup,
     pub mesh_bind_group: BindGroup,
     pub cam_bind_group: BindGroup,
-    tex_bind_group_layout: wgpu::BindGroupLayout,
+    pub tex_bind_group_layout: wgpu::BindGroupLayout,
     mat_bind_group_layout: wgpu::BindGroupLayout,
     mesh_bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -31,10 +32,9 @@ impl PBRPipelineProvider {
         device: &Device,
         mesh_info_buffers: &[Buffer],
         material_info_buffers: &[Buffer],
-        camera_buffer: Buffer,
-        num_textures: u32,
+        camera_buffer: &Buffer,
     ) -> Self {
-        let shader = device.create_shader_module(include_wgsl!("assets/shaders/pbr.wgsl"));
+        let shader = device.create_shader_module(include_wgsl!("../../../../assets/shaders/pbr.wgsl"));
 
         let tex_bind_group_layout = {
             let mut tex_bind_group_layout_entries = Vec::new();
@@ -50,7 +50,7 @@ impl PBRPipelineProvider {
                     count: None,
                 });
                 tex_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-                    binding: i + num_textures,
+                    binding: i + 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(Filtering),
                     count: None,
@@ -75,7 +75,7 @@ impl PBRPipelineProvider {
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
-                    count: Some(material_info_buffers.len().into()),
+                    count: Some(NonZeroU32::new(material_info_buffers.len() as u32).unwrap()),
                 }
             ],
         });
@@ -86,7 +86,7 @@ impl PBRPipelineProvider {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::BufferArray(&material_info_buffers.into()),
+                    resource: wgpu::BindingResource::BufferArray(&material_info_buffers.iter().map(|m| m.as_entire_buffer_binding()).collect::<Vec<_>>()),
                 },
             ],
         });
@@ -102,7 +102,7 @@ impl PBRPipelineProvider {
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
-                    count: Some(mesh_info_buffers.len().into()), // TODO support 0 meshes
+                    count: Some(NonZeroU32::new(mesh_info_buffers.len() as u32).unwrap()), // TODO support 0 meshes
                 }
             ],
         });
@@ -113,7 +113,7 @@ impl PBRPipelineProvider {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::BufferArray(&mesh_info_buffers.into()),
+                    resource: wgpu::BindingResource::BufferArray(&mesh_info_buffers.iter().map(|m| m.as_entire_buffer_binding()).collect::<Vec<_>>()),
                 },
             ],
         });
@@ -170,14 +170,14 @@ impl PBRPipelineProvider {
     }
 
     fn update_mesh_bind_group(&mut self, device: &Device, meshes: &[Mesh]) {
-        let mesh_info_buffers = meshes.iter().map(|m| m.buffer.as_ref().unwrap()).collect::<Vec<&Buffer>>();
+        let mesh_info_buffers = meshes.iter().map(|m| m.buffer.as_entire_buffer_binding()).collect::<Vec<BufferBinding>>();
         self.mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("PBR Mesh Bindgroup"),
             layout: &self.mesh_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::BufferArray(&mesh_info_buffers.into()),
+                    resource: wgpu::BindingResource::BufferArray(&mesh_info_buffers),
                 },
             ],
         });
@@ -192,7 +192,7 @@ impl PBRPipelineProvider {
                 module: &self.shader,
                 entry_point: "vs_main",
                 buffers: &[
-                    Vertex::desc(),
+                    PbrVertex::desc(),
                 ],
             },
             fragment: Some(wgpu::FragmentState {
@@ -227,16 +227,15 @@ impl PBRPipelineProvider {
     }
 
 
-    pub fn render_pass(&self,
+    pub fn render_pass<'a>(&self,
                        encoder: &mut CommandEncoder,
-                       vertex_inputs: impl Iterator<Item=VertexInputs>,
+                       vertex_inputs: impl Iterator<Item=&'a VertexInputs>,
                        view: &TextureView,
-                       textures_bind_groups: &[BindGroup],
+                       textures_bind_groups: &[&BindGroup],
                        material_info_bind_group: &BindGroup,
                        mesh_info_bind_group: &BindGroup,
                        camera_bind_group: &BindGroup) {
-        assert_eq!(vertex_inputs.len(), mesh_info_bind_group.len());
-        
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -261,21 +260,21 @@ impl PBRPipelineProvider {
         for (i, VertexInputs {vertex_buffer, index_buffer}) in vertex_inputs.enumerate() {
             render_pass.set_bind_group(0, &textures_bind_groups[i], &[]);
 
-            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, vertex_buffer.buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             render_pass.draw_indexed(0..index_buffer.count, i as i32, 0..1);
         }
     }
     
-    pub fn render_meshes(&self, encoder: &mut CommandEncoder, view: &TextureView, meshes: &[Mesh]) {
-        let vertex_inputs = meshes.iter().map(|m| m.vertex_inputs.unwrap()).collect();
-        let textures_bind_groups = meshes.iter().map(|m| match *m.material.borrow() {
+    pub fn render_meshes(&self, encoder: &mut CommandEncoder, view: &TextureView, meshes: &[&Mesh]) {
+        let vertex_inputs = meshes.iter().map(|m| m.vertex_inputs.as_ref().unwrap());
+        let textures_bind_groups = meshes.iter().map(|m| match m.material {
             Material::Pbr(ref mat) => {
-                mat.texture_bind_group.expect("PBR material must have a texture bind group")
+                mat.texture_bind_group.as_ref().expect("PBR material must have a texture bind group")
             },
             _ => panic!("Unsupported material type for PBR pipeline")
-        }).collect();
+        }).collect::<Vec<_>>();
 
         self.render_pass(
             encoder,
