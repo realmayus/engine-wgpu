@@ -57,4 +57,16 @@ impl Material {
             Material::Pbr(pbr) => &pbr.buffer,
         }
     }
+
+    pub fn update(&mut self, queue: &Queue) {
+        match self {
+            Material::Pbr(pbr) => pbr.update(queue),
+        }
+    }
+
+    pub fn dirty(&self) -> bool {
+        match self {
+            Material::Pbr(pbr) => pbr.dirty(),
+        }
+    }
 }

@@ -46,6 +46,9 @@ fn vs_main(
     out.t = normalize((model_transform * vec4(in.tangent.xyz, 0.0)).xyz);
     out.b = normalize((model_transform * vec4(bitangent, 0.0)).xyz);
     out.n = normalize((model_transform * vec4(in.normal, 0.0)).xyz);
+    let tbn = transpose(mat3x3<f32>(out.t, out.b, out.n));
+    out.frag_pos_tan = tbn * (model_transform * vec4(in.position, 1.0)).xyz;
+    out.view_pos_tan = tbn * camera.view_position.xyz;
     return out;
 }
 
@@ -79,11 +82,6 @@ struct Material {
     emission_factors: vec3<f32>, // 16 + 3*4 = 28
     occlusion_factor: f32, // 28 + 4 = 32
     metal_roughness_factors: vec2<f32>, // 32 + 2*4 = 40
-    albedo_texture: u32, // index of texture in array // 40 + 4 = 44
-    normal_texture: u32, // 44 + 4 = 48
-    metal_roughness_texture: u32, // 48 + 4 = 52
-    occlusion_texture: u32, // 52 + 4 = 56
-    emission_texture: u32, // 56 + 4 = 60
 };
 
 @group(1) @binding(0)
@@ -110,7 +108,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let material = materials[mat_id];
 
     // load material values, if index 0, value will be 1 because of white default texture
-    var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) * material.albedo;
+    var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) /** material.albedo*/;
     var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb;
     // transform normal vector from [0,1] to range [-1,1]
     normal = normal * 2.0 - 1.0;  // this normal is in tangent space
@@ -161,14 +159,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         lo += (diffuse_albedo_by_pi + specular) * radiance * normal_dot_light;
     }
 
-    let ambient = vec3(0.001) * albedo.rgb * occlusion;
+    let ambient = vec3(0.1) * albedo.rgb * occlusion;
     var color = ambient + lo + emission * material.emission_factors;
     // reinhard tone mapping
     color = color / (color + vec3(1.0));
     // gamma correction
     color = pow(color, vec3(1.0 / 2.2));
-//    return vec4<f32>(color, 1.0);
-    return vec4(1.0);
+    return vec4<f32>(color, 1.0);
 }
 
 // Fresnel-Schlick approximation

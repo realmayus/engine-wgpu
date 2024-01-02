@@ -47,7 +47,7 @@ impl PbrMaterial {
             metallic_roughness_factors: Vec2::from((0.5, 0.5)),
             normal_texture: None,
             occlusion_texture: None,
-            occlusion_factor: 0.0,
+            occlusion_factor: 1.0,
             emissive_texture: None,
             emissive_factors: Vec3::from((0.0, 0.0, 0.0)),
             buffer,
@@ -87,51 +87,23 @@ impl PbrMaterial {
             entries: &entries,
         }));
     }
-}
 
-impl Dirtyable for PbrMaterial {
-    fn dirty(&self) -> bool {
+    pub(crate) fn update(&mut self, queue: &Queue) {
+        self.set_dirty(false);
+        let mut uniform = MaterialInfo::default();
+        uniform.albedo = self.albedo.to_array();
+        uniform.metal_roughness_factors = self.metallic_roughness_factors.to_array();
+        uniform.occlusion_factor = self.occlusion_factor;
+        uniform.emission_factors = self.emissive_factors.to_array();
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
+        info!("Updated material #{}", self.shader_id);
+    }
+    pub fn dirty(&self) -> bool {
         self.dirty
     }
 
     fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty
-    }
-
-    fn update(&mut self, queue: &Queue, texture_manager: &TextureManager, material_manager: &MaterialManager) {
-        self.set_dirty(false);
-        let mut uniform = MaterialInfo::default();
-        uniform.albedo_texture = self
-            .albedo_texture
-            .as_ref()
-            .map(|t| texture_manager.get_texture(t).id.unwrap())
-            .unwrap_or(0);
-        uniform.albedo = self.albedo.to_array();
-        uniform.metal_roughness_texture = self
-            .metallic_roughness_texture
-            .as_ref()
-            .map(|t| texture_manager.get_texture(t).id.unwrap())
-            .unwrap_or(0);
-        uniform.metal_roughness_factors = self.metallic_roughness_factors.to_array();
-        uniform.normal_texture = self
-            .normal_texture
-            .as_ref()
-            .map(|t| texture_manager.get_texture(t).id.unwrap())
-            .unwrap_or(1);
-        uniform.occlusion_texture = self
-            .occlusion_texture
-            .as_ref()
-            .map(|t| texture_manager.get_texture(t).id.unwrap())
-            .unwrap_or(0);
-        uniform.occlusion_factor = self.occlusion_factor;
-        uniform.emission_texture = self
-            .emissive_texture
-            .as_ref()
-            .map(|t| texture_manager.get_texture(t).id.unwrap())
-            .unwrap_or(0);
-        uniform.emission_factors = self.emissive_factors.to_array();
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
-        info!("Updated material #{}", self.shader_id);
     }
 }
 
@@ -492,6 +464,12 @@ impl MaterialManager {
                 resource: BindingResource::BufferArray(&entries),
             }],
         })
+    }
+
+    pub fn update_dirty(&mut self, queue: &Queue) {
+        for (_, mat) in self.materials.iter_mut().filter(|(_, m)| m.dirty()) {
+            mat.update(queue);
+        }
     }
 }
 

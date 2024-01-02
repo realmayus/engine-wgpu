@@ -1,6 +1,5 @@
 use anyhow::Result;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -150,6 +149,7 @@ impl RenderState {
             queue: &self.queue,
         });
         self.pbr_pipeline.update_mesh_bind_group(&self.device, self.world.pbr_meshes());
+        self.world.materials.update_dirty(&self.queue);
         self.pbr_pipeline.update_mat_bind_group(&self.device, &self.world.materials);
     }
     pub fn window(&self) -> &Window {

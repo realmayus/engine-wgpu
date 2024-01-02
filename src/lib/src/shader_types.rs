@@ -51,27 +51,17 @@ pub struct MaterialInfo {
     pub emission_factors: [f32; 3],
     pub occlusion_factor: f32,
     pub metal_roughness_factors: [f32; 2],
-    pub albedo_texture: u32, // index of texture
-    pub normal_texture: u32,
-    pub metal_roughness_texture: u32,
-    pub occlusion_texture: u32,
-    pub emission_texture: u32,
-    padding: u32,
+    padding: [f32; 2],
 }
 
 impl Default for MaterialInfo {
     fn default() -> Self {
         Self {
             albedo: [1.0; 4],
-            albedo_texture: 0,
             metal_roughness_factors: [0.5; 2],
-            metal_roughness_texture: 0,
             emission_factors: [0.0; 3],
-            emission_texture: 0,
-            normal_texture: 1,
-            occlusion_factor: 0.0,
-            occlusion_texture: 0,
-            padding: 0,
+            occlusion_factor: 1.0,
+            padding: [0.0; 2],
         }
     }
 }

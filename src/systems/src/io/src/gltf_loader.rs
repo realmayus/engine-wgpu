@@ -218,6 +218,7 @@ pub fn load_gltf(
             .filter(|m| m.index().is_some())
             .map(|gltf_mat| {
                 let index = gltf_mat.index().unwrap();
+                println!("GLTF Material: {:?}", gltf_mat.pbr_metallic_roughness().base_color_factor());
                 let mut mat = PbrMaterial {
                     // TODO only make initialization possible through material manager!
                     dirty: true, // must get updated upon start in order to prime the uniform
