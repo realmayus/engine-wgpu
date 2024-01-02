@@ -235,14 +235,13 @@ impl PBRPipelineProvider {
             light_bind_group_layout,
         }
     }
-    fn update_mat_bind_group(&mut self, device: &Device, material_manager: &MaterialManager) {
+    pub fn update_mat_bind_group(&mut self, device: &Device, material_manager: &MaterialManager) {
         self.mat_bind_group =
             material_manager.create_bind_group(device, &self.mat_bind_group_layout);
     }
 
-    fn update_mesh_bind_group(&mut self, device: &Device, meshes: &[Mesh]) {
+    pub fn update_mesh_bind_group<'a>(&mut self, device: &Device, meshes: impl Iterator<Item = &'a Mesh>) {
         let mesh_info_buffers = meshes
-            .iter()
             .map(|m| m.buffer.as_entire_buffer_binding())
             .collect::<Vec<BufferBinding>>();
         self.mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -309,6 +308,8 @@ impl PBRPipelineProvider {
         camera_bind_group: &BindGroup,
         light_bind_group: &BindGroup,
     ) {
+        let vertex_inputs = vertex_inputs.collect::<Vec<_>>();
+        println!("{} vertex inputs", vertex_inputs.len());
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -337,7 +338,7 @@ impl PBRPipelineProvider {
                 vertex_buffer,
                 index_buffer,
             },
-        ) in vertex_inputs.enumerate()
+        ) in vertex_inputs.iter().enumerate()
         {
             render_pass.set_bind_group(0, textures_bind_groups[i], &[]);
 

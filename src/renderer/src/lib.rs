@@ -30,7 +30,7 @@ pub struct SetupData<'a> {
 impl SetupData<'_> {
     pub fn load_default_scene(&self, world: &mut World) {
         let mut scenes = load_gltf(
-            Path::new("assets/models/cube.glb"),
+            Path::new("assets/models/cube_light_tan.glb"),
             self.device,
             self.queue,
             self.tex_bind_group_layout,
@@ -149,6 +149,8 @@ impl RenderState {
             device: &self.device,
             queue: &self.queue,
         });
+        self.pbr_pipeline.update_mesh_bind_group(&self.device, self.world.pbr_meshes());
+        self.pbr_pipeline.update_mat_bind_group(&self.device, &self.world.materials);
     }
     pub fn window(&self) -> &Window {
         &self.window

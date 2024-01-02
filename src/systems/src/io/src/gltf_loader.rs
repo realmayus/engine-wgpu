@@ -276,7 +276,7 @@ pub fn load_gltf(
                     buffer: device.create_buffer_init(&BufferInitDescriptor {
                         label: Some("Material Buffer"),
                         contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
-                        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                     }),
                     texture_bind_group: None,
                 }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)

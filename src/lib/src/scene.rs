@@ -130,6 +130,7 @@ impl Dirtyable for PbrMaterial {
             .map(|t| texture_manager.get_texture(t).id.unwrap())
             .unwrap_or(0);
         uniform.emission_factors = self.emissive_factors.to_array();
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
         info!("Updated material #{}", self.shader_id);
     }
 }
@@ -190,8 +191,9 @@ impl Mesh {
                 material_manager.get_material(material).shader_id(),
                 global_transform.to_cols_array_2d(),
             )]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
+
         let vertex_inputs =
             VertexInputs::from_mesh(&vertices, &normals, &tangents, &uvs, &indices, device);
 
@@ -450,7 +452,7 @@ impl MaterialManager {
             device.create_buffer_init(&BufferInitDescriptor {
                 label: Some("Default Material Buffer"),
                 contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST
             }),
         )));
         Self {
@@ -539,7 +541,7 @@ impl VertexInputs {
                 uv: (*uv).into(),
             });
         }
-
+        println!("Buffers: {:?}", buffers);
         let vertex_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&buffers),
