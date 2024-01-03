@@ -244,7 +244,7 @@ impl Dirtyable for PointLight {
             intensity: self.intensity,
             amount: self.amount,
             range: self.range.unwrap_or(1.0),
-            padding: 0
+            ..Default::default()
         };
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
         info!("Updated light {}", self.index);
@@ -519,7 +519,6 @@ impl VertexInputs {
                 uv: (*uv).into(),
             });
         }
-        println!("Buffers: {:?}", buffers);
         let vertex_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&buffers),

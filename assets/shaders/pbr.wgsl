@@ -108,7 +108,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let material = materials[mat_id];
 
     // load material values, if index 0, value will be 1 because of white default texture
-    var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) /** material.albedo*/;
+    var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) * material.albedo;
     var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb;
     // transform normal vector from [0,1] to range [-1,1]
     normal = normal * 2.0 - 1.0;  // this normal is in tangent space

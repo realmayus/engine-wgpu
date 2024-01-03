@@ -49,9 +49,11 @@ impl CameraUniform {
 pub struct MaterialInfo {
     pub albedo: [f32; 4],
     pub emission_factors: [f32; 3],
+    padding1: f32,
     pub occlusion_factor: f32,
+    padding2: [f32; 3],
     pub metal_roughness_factors: [f32; 2],
-    padding: [f32; 2],
+    padding3: [f32; 2],
 }
 
 impl Default for MaterialInfo {
@@ -61,7 +63,9 @@ impl Default for MaterialInfo {
             metal_roughness_factors: [0.5; 2],
             emission_factors: [0.0; 3],
             occlusion_factor: 1.0,
-            padding: [0.0; 2],
+            padding1: 0.0,
+            padding2: [0.0; 3],
+            padding3: [0.0; 2],
         }
     }
 }
@@ -88,11 +92,15 @@ impl MeshInfo {
 pub struct LightInfo {
     pub transform: [[f32; 4]; 4],
     pub color: [f32; 3],
+    pub padding1: f32,
     pub light: u32,
+    pub padding2: [f32; 3],
     pub intensity: f32,
+    pub padding3: [f32; 3],
     pub range: f32,
+    pub padding4: [f32; 3],
     pub amount: u32,
-    pub(crate) padding: u32,
+    pub padding5: [f32; 3],
 }
 
 impl From<&PointLight> for LightInfo {
@@ -104,7 +112,7 @@ impl From<&PointLight> for LightInfo {
             intensity: light.intensity,
             range: light.range.unwrap_or(1.0),
             amount: light.amount,
-            padding: 0,
+            ..Default::default()
         }
     }
 }

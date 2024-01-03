@@ -1,7 +1,9 @@
 use anyhow::Result;
 use std::path::Path;
+use std::time::Instant;
+use glam::Vec2;
 use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
@@ -151,6 +153,7 @@ impl RenderState {
         self.pbr_pipeline.update_mesh_bind_group(&self.device, self.world.pbr_meshes());
         self.world.materials.update_dirty(&self.queue);
         self.pbr_pipeline.update_mat_bind_group(&self.device, &self.world.materials);
+        self.camera.update_view(&self.queue);
     }
     pub fn window(&self) -> &Window {
         &self.window
@@ -169,8 +172,10 @@ impl RenderState {
         false
     }
 
-    fn update(&mut self, keys: &KeyState, delta_time: f32) {
+    fn update(&mut self, keys: &KeyState, delta_time: f32, cursor_delta: Vec2) {
         self.hook.update(keys, delta_time);
+        self.camera.recv_input(keys, cursor_delta, delta_time);
+        self.camera.update_view(&self.queue);
     }
 
     fn render(&mut self) -> Result<(), SurfaceError> {
@@ -204,9 +209,11 @@ pub async fn run(hook: impl Hook + 'static) {
 
     let mut state = RenderState::new(window, hook).await;
     let mut keys = KeyState::default();
+    let mut cursor_pos = Vec2::default();
+    let mut cursor_delta = Vec2::default();
+    let mut delta_time = 0.0;
     state.setup();
     event_loop.run(move |event, _, control_flow| {
-        let now = std::time::Instant::now();
         match event {
             Event::WindowEvent {
                 ref event,
@@ -224,8 +231,12 @@ pub async fn run(hook: impl Hook + 'static) {
                                 },
                             ..
                         } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::KeyboardInput { input, .. } => {
-                            keys = KeyState::from_winit(input, &keys)
+                        WindowEvent::KeyboardInput { input: KeyboardInput {
+                            state,
+                            virtual_keycode: Some(keycode),
+                            ..
+                        },  .. } => {
+                            keys.update_keys(*keycode, *state);
                         }
                         WindowEvent::ModifiersChanged(state) => keys.set_modifiers(state),
                         WindowEvent::Resized(physical_size) => {
@@ -234,22 +245,34 @@ pub async fn run(hook: impl Hook + 'static) {
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                             state.resize(**new_inner_size);
                         }
+                        WindowEvent::CursorMoved { position, .. } => {
+                            let new_pos = Vec2::new(position.x as f32 / state.surface_config.width as f32, position.y as f32 / state.surface_config.height as f32);
+                            cursor_delta = cursor_pos - new_pos;
+                            cursor_pos = new_pos;
+                        }
+                        WindowEvent::MouseInput { state, button, ..} => {
+                            keys.update_mouse(state, button);
+                        }
 
                         _ => {}
                     }
                 }
             }
+            Event::MainEventsCleared => {
+                state.window().request_redraw();
+                state.update(&keys, delta_time, cursor_delta);
+                cursor_delta = Vec2::default();
+            }
             Event::RedrawRequested(window_id) if window_id == state.window().id() => {
-                state.update(&keys, now.elapsed().as_secs_f32());
+                let time = Instant::now();
                 match state.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     Err(e) => eprintln!("{:?}", e),
                 }
-            }
-            Event::MainEventsCleared => {
-                state.window().request_redraw();
+                let elapsed = time.elapsed().as_micros() as f32;
+                delta_time = elapsed / 1_000_000.0;
             }
             _ => {}
         }

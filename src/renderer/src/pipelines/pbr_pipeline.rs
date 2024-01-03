@@ -309,7 +309,6 @@ impl PBRPipelineProvider {
         light_bind_group: &BindGroup,
     ) {
         let vertex_inputs = vertex_inputs.collect::<Vec<_>>();
-        println!("{} vertex inputs", vertex_inputs.len());
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("PBR Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {

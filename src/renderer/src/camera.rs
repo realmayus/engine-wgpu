@@ -2,7 +2,7 @@ use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, Device, Queue};
-use winit::event::{KeyboardInput, ModifiersState, VirtualKeyCode};
+use winit::event::{ElementState, KeyboardInput, ModifiersState, MouseButton, VirtualKeyCode};
 
 use lib::shader_types::CameraUniform;
 
@@ -11,7 +11,7 @@ const GLOBAL_Y: [f32; 4] = [0.0, -1.0, 0.0, 1.0];
 const GLOBAL_Z: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 const EPS: f32 = 0.01;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct KeyState {
     pub up_pressed: bool,
     pub down_pressed: bool,
@@ -22,22 +22,24 @@ pub struct KeyState {
 }
 
 impl KeyState {
-    pub(crate) fn from_winit(input: &KeyboardInput, old: &KeyState) -> KeyState {
-        let mut new = KeyState::default();
-        match input.virtual_keycode {
-            None => {}
-            Some(k) => match k {
-                VirtualKeyCode::S => new.down_pressed = true,
-                VirtualKeyCode::W => new.up_pressed = true,
-                VirtualKeyCode::A => new.left_pressed = true,
-                VirtualKeyCode::D => new.right_pressed = true,
-                _ => {}
-            },
+    pub(crate) fn update_keys(&mut self, keycode: VirtualKeyCode, state: ElementState) {
+        let pressed = state == winit::event::ElementState::Pressed;
+        match keycode {
+            VirtualKeyCode::W => self.up_pressed = pressed,
+            VirtualKeyCode::S => self.down_pressed = pressed,
+            VirtualKeyCode::A => self.left_pressed = pressed,
+            VirtualKeyCode::D => self.right_pressed = pressed,
+            VirtualKeyCode::Space => self.middle_pressed = pressed,
+            _ => (),
         }
-        // copy old modifiers (separate winit event)
-        new.shift_pressed = old.shift_pressed;
+    }
 
-        new
+    pub(crate) fn update_mouse(&mut self, state: &ElementState, button: &MouseButton) {
+        let pressed = state == &ElementState::Pressed;
+        match button {
+            MouseButton::Middle => self.middle_pressed = pressed,
+            _ => (),
+        }
     }
 
     pub(crate) fn set_modifiers(&mut self, state: &ModifiersState) {
@@ -62,6 +64,7 @@ pub struct Camera {
     pub fps: bool,
     /// the camera's transform matrix / world to view matrix
     pub view: Mat4,
+    dirty: bool,
 }
 
 impl Camera {
@@ -102,6 +105,7 @@ impl Camera {
             speed: 0.5,
             fps: false,
             view,
+            dirty: false
         }
     }
 
@@ -116,6 +120,7 @@ impl Camera {
         self.speed = 0.5;
         self.fps = !self.fps;
         self.view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        self.dirty = true;
     }
 
     pub(crate) fn build_projection(&self) -> Mat4 {
@@ -128,9 +133,12 @@ impl Camera {
 
     pub fn update_aspect(&mut self, width: f32, height: f32) {
         self.aspect = width / height;
+        self.dirty = true;
     }
 
-    pub fn update_view(&self, queue: &Queue) {
+    pub fn update_view(&mut self, queue: &Queue) {
+        if !self.dirty { return }
+        self.dirty = false;
         let new_proj = self.build_projection();
         let mut uniform = CameraUniform::new();
         uniform.proj_view = new_proj.to_cols_array_2d();
@@ -158,21 +166,25 @@ impl Camera {
             let translation = self.direction.normalize() * self.speed * delta_time * 10.;
             debug!("{translation}");
             self.eye += translation;
+            self.dirty = true;
         }
         if keys.down_pressed {
             let translation = self.direction.normalize() * self.speed * delta_time * 10.;
             debug!("{translation}");
             self.eye -= translation;
+            self.dirty = true;
         }
         if keys.left_pressed {
             let translation = right * self.speed * delta_time * 0.5;
             debug!("{translation}");
             self.eye -= translation;
+            self.dirty = true;
         }
         if keys.right_pressed {
             let translation = right * self.speed * delta_time * 0.5;
             debug!("{translation}");
             self.eye += translation;
+            self.dirty = true;
         }
         if cursor_delta.length() != 0.0 {
             let rotation_up =
@@ -181,12 +193,15 @@ impl Camera {
                 Mat4::from_axis_angle(right, -cursor_delta.y.to_degrees() * delta_time);
 
             self.direction = (rotation_right * rotation_up * as_4(self.direction)).xyz();
+            self.dirty = true;
         }
-        self.view = Mat4::look_at_rh(
-            self.eye,
-            self.eye + self.direction.normalize(),
-            global_up.xyz(),
-        );
+        if self.dirty {
+            self.view = Mat4::look_at_rh(
+                self.eye,
+                self.eye + self.direction.normalize(),
+                global_up.xyz(),
+            );
+        }
     }
 
     /// __Moves the camera using arcball rotation and panning__.
@@ -202,9 +217,11 @@ impl Camera {
 
         if keys.up_pressed && distance > self.speed {
             self.eye += forward_norm * self.speed * delta_time * 10.;
+            self.dirty = true;
         }
         if keys.down_pressed {
             self.eye -= forward_norm * self.speed * delta_time * 10.;
+            self.dirty = true;
         }
 
         let translation = Mat4::from_translation(
@@ -215,6 +232,7 @@ impl Camera {
             if keys.shift_pressed {
                 self.target = transform(translation, self.target);
                 self.eye = transform(translation, self.eye);
+                self.dirty = true;
             } else {
                 let target_to_cam = self.eye - self.target;
                 let right = target_to_cam.cross(global_up.xyz()).normalize();
@@ -231,9 +249,12 @@ impl Camera {
                 self.direction = self.target - self.eye;
                 let x_axis = new_focus_to_cam.xyz().cross(global_up.xyz()).normalize();
                 self.up = new_focus_to_cam.xyz().cross(x_axis).normalize();
+                self.dirty = true;
             }
         }
-        self.view = Mat4::look_at_rh(self.eye, self.target, global_up.xyz());
+        if self.dirty {
+            self.view = Mat4::look_at_rh(self.eye, self.target, global_up.xyz());
+        }
     }
 }
 
