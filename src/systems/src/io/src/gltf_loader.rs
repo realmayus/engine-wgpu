@@ -304,16 +304,6 @@ pub fn load_gltf(
                 )
             })
             .collect();
-
-        models = models
-            .into_iter()
-            .map(|mut model| {
-                if let Some(ref mut light) = model.light {
-                    light.amount = num_lights;
-                }
-                model
-            })
-            .collect();
         scenes.push(Scene::from(models, scene.name().map(Box::from)));
     }
     scenes
@@ -378,20 +368,14 @@ fn load_node(
         }
     }
 
-    let light = node.light().map(|light| PointLight {
-        dirty: true,
-        global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
-        index: light.index(),
-        color: Vec3::from(light.color()),
-        intensity: light.intensity(),
-        range: light.range(),
-        amount: *num_lights,
-        buffer: device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("LightInfo"),
-            contents: bytemuck::cast_slice(&[LightInfo::default()]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        }),
-    });
+    let light = node.light().map(|light| PointLight::new(
+        parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
+        light.index(),
+        Vec3::from(light.color()),
+        light.intensity(),
+        light.range(),
+        device,
+    ));
 
     if let Some(ref _light) = light {
         *num_lights += 1;

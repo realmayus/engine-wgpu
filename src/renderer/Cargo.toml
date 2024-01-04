@@ -11,6 +11,8 @@ systems = { path = "../systems" }
 lib = { path = "../lib" }
 log = "0.4.19"
 wgpu = "0.18.0"
+egui = "0.24.1"
+egui-winit = "0.24.1"
 egui-wgpu = { version = "0.24.1", features = ["winit"] }
 winit = "0.28.7"
 anyhow = "1.0.77"

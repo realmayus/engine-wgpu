@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::Path;
 use std::time::Instant;
 use glam::Vec2;
-use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
+use wgpu::{Color, Device, Limits, Queue, RenderPassDescriptor, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
@@ -12,9 +12,11 @@ use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 use lib::scene::{MaterialManager, TextureManager, World};
 use lib::texture::Texture;
 use systems::io::gltf_loader::load_gltf;
+use crate::gui::EguiContext;
 
 pub mod camera;
 pub mod pipelines;
+mod gui;
 
 pub trait Hook {
     fn setup<'a>(&self, world: &'a mut World, data: SetupData);
@@ -31,7 +33,8 @@ pub struct SetupData<'a> {
 impl SetupData<'_> {
     pub fn load_default_scene(&self, world: &mut World) {
         let mut scenes = load_gltf(
-            Path::new("assets/models/cube_light_tan.glb"),
+            // Path::new("assets/models/cube_light_tan.glb"),
+            Path::new("assets/models/DamagedHelmetTangents.glb"),
             self.device,
             self.queue,
             self.tex_bind_group_layout,
@@ -129,6 +132,7 @@ impl RenderState {
         //TODO create buffers for materials and textures (where do we store them? what if a new model with new textures is loaded?)
         let mut pipeline = PBRPipelineProvider::new(&device, &[], &[], &[], &camera.buffer);
         pipeline.create_pipeline(&device);
+
         Self {
             window,
             surface,
@@ -154,6 +158,8 @@ impl RenderState {
         self.world.materials.update_dirty(&self.queue);
         self.pbr_pipeline.update_mat_bind_group(&self.device, &self.world.materials);
         self.camera.update_view(&self.queue);
+        let light_count = self.pbr_pipeline.update_lights_bind_group(&self.device, &self.world);
+        self.camera.update_light_count(light_count);
     }
     pub fn window(&self) -> &Window {
         &self.window
@@ -176,8 +182,8 @@ impl RenderState {
         self.hook.update(keys, delta_time);
         self.camera.recv_input(keys, cursor_delta, delta_time);
         self.camera.update_view(&self.queue);
+        self.world.update_lights(&self.queue);
     }
-
     fn render(&mut self) -> Result<(), SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -195,7 +201,9 @@ impl RenderState {
                 &view,
                 &self.world.pbr_meshes().collect::<Vec<_>>(),
                 &self.world.materials,
-            )
+            );
+            // let mut bufs = self.egui_ctx.render(&view, &mut encoder, &self.window, Self::gui);
+            // buffers.append(&mut bufs);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();

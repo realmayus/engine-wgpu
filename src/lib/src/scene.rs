@@ -224,7 +224,39 @@ pub struct PointLight {
     pub intensity: f32,
     pub range: Option<f32>,
     pub buffer: Buffer,
-    pub amount: u32,
+}
+
+impl PointLight {
+    pub fn new(
+        global_transform: Mat4,
+        index: usize,
+        color: Vec3,
+        intensity: f32,
+        range: Option<f32>,
+        device: &Device,
+    ) -> Self {
+        let buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Point Light Buffer"),
+            contents: bytemuck::cast_slice(&[LightInfo {
+                transform: global_transform.to_cols_array_2d(),
+                color: color.to_array(),
+                light: index as u32,
+                intensity,
+                range: range.unwrap_or(10.0),
+                ..Default::default()
+            }]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        Self {
+            dirty: true,
+            global_transform,
+            index,
+            color,
+            intensity,
+            range,
+            buffer,
+        }
+    }
 }
 impl Dirtyable for PointLight {
     fn dirty(&self) -> bool {
@@ -242,12 +274,11 @@ impl Dirtyable for PointLight {
             color: self.color.to_array(),
             light: self.index as u32,
             intensity: self.intensity,
-            amount: self.amount,
-            range: self.range.unwrap_or(1.0),
+            range: self.range.unwrap_or(10.0),
             ..Default::default()
         };
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
-        info!("Updated light {}", self.index);
+        println!("Updated light {}: {:?}", self.index, uniform);
     }
 }
 
@@ -492,6 +523,19 @@ impl World {
             .filter(|mesh| match *self.materials.get_material(mesh.material) {
                 Material::Pbr(_) => true,
             })
+    }
+
+    pub fn update_lights(&mut self, queue: &Queue) {  // TODO optimization: more efficient way of keeping track of lights
+        let lights = self.scenes[self.active_scene]
+            .models
+            .iter_mut()
+            .filter(|model| model.light.is_some())
+            .filter_map(|model| model.light.as_mut()).collect::<Vec<_>>();
+        for light in lights {
+            if light.dirty() {
+                light.update(queue, &self.textures, &self.materials);
+            }
+        }
     }
 }
 

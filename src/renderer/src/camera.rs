@@ -65,6 +65,7 @@ pub struct Camera {
     /// the camera's transform matrix / world to view matrix
     pub view: Mat4,
     dirty: bool,
+    light_count: u32,
 }
 
 impl Camera {
@@ -105,8 +106,18 @@ impl Camera {
             speed: 0.5,
             fps: false,
             view,
-            dirty: false
+            dirty: false,
+            light_count: 0,
         }
+    }
+
+    /**
+    Call this whenever the number of lights in the scene changes. This value gets passed to the fragment shader.
+    */
+    pub fn update_light_count(&mut self, num_lights: u32) {
+        println!("Light count updated to {}", num_lights);
+        self.light_count = num_lights;
+        self.dirty = true;
     }
 
     pub fn reset(&mut self) {
@@ -143,6 +154,7 @@ impl Camera {
         let mut uniform = CameraUniform::new();
         uniform.proj_view = new_proj.to_cols_array_2d();
         uniform.view_position = Vec4::from((self.eye, 1.0)).into();
+        uniform.num_lights = self.light_count;
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]))
     }
 

@@ -14,7 +14,8 @@ struct VertexOutput {
     @location(3) view_pos_tan: vec3<f32>,
     @location(4) t: vec3<f32>,
     @location(5) b: vec3<f32>,
-    @location(6) n: vec3<f32>
+    @location(6) n: vec3<f32>,
+    @location(7) @interpolate(flat) num_lights: u32,
 }
 
 struct MeshInfo {
@@ -27,6 +28,7 @@ var<storage, read> mesh_infos: array<MeshInfo>;
 struct Camera {
     proj_view: mat4x4<f32>,
     view_position: vec4<f32>,
+    num_lights: u32,
 };
 @group(3) @binding(0)
 var<uniform> camera: Camera;
@@ -49,6 +51,7 @@ fn vs_main(
     let tbn = transpose(mat3x3<f32>(out.t, out.b, out.n));
     out.frag_pos_tan = tbn * (model_transform * vec4(in.position, 1.0)).xyz;
     out.view_pos_tan = tbn * camera.view_position.xyz;
+    out.num_lights = camera.num_lights;  // camera is only accessible in vertex shader
     return out;
 }
 
@@ -94,7 +97,6 @@ struct LightInfo {
     light: u32,
     intensity: f32,
     range: f32,
-    amount: u32,
 };
 @group(4) @binding(0)
 var<storage, read> lights: array<LightInfo>;
@@ -111,7 +113,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) * material.albedo;
     var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb;
     // transform normal vector from [0,1] to range [-1,1]
-    normal = normal * 2.0 - 1.0;  // this normal is in tangent space
+    normal = normalize(normal * 2.0 - 1.0);  // this normal is in tangent space
 
     let metallic = textureSample(t_metallic, s_metallic, in.tex_coords).b * material.metal_roughness_factors.x;
     let roughness = textureSample(t_metallic, s_metallic, in.tex_coords).g * material.metal_roughness_factors.y;
@@ -126,9 +128,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var f0 = vec3(0.04);
     f0 = mix(f0, albedo.rgb, metallic);
     var lo = vec3(0.0);
-    let light_amount = lights[0].amount + 1u;
+
     // contribution of each light
-    for (var i = 1u; i < light_amount; i++) {  // skip first light, as it's a dummy
+    for (var i = 1u; i < in.num_lights + 1u; i++) {  // skip first light, as it's a dummy
         let light = lights[i];
         // convert to tangent space
         let light_pos_tan = tbn * (light.transform[3]).xyz;
@@ -157,9 +159,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let diffuse_albedo: vec3<f32> = k_diffuse * albedo.rgb;
         let diffuse_albedo_by_pi: vec3<f32> = diffuse_albedo / PI;
         lo += (diffuse_albedo_by_pi + specular) * radiance * normal_dot_light;
+//        return vec4<f32>(f32(i) / 2.0);
     }
 
-    let ambient = vec3(0.1) * albedo.rgb * occlusion;
+    let ambient = vec3(0.001) * albedo.rgb * occlusion;
     var color = ambient + lo + emission * material.emission_factors;
     // reinhard tone mapping
     color = color / (color + vec3(1.0));

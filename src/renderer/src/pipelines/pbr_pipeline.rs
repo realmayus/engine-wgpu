@@ -6,12 +6,9 @@ use std::iter;
 use std::num::NonZeroU32;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::SamplerBindingType::Filtering;
-use wgpu::{
-    include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color,
-    CommandEncoder, Device, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView,
-};
+use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color, CommandEncoder, Device, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView, BindGroupLayout, BindGroupDescriptor, BindGroupEntry, BindingResource};
 
-use lib::scene::{MaterialManager, Mesh, VertexInputs};
+use lib::scene::{MaterialManager, Mesh, VertexInputs, World};
 
 /**
 Pipeline for physically-based rendering
@@ -240,6 +237,33 @@ impl PBRPipelineProvider {
             material_manager.create_bind_group(device, &self.mat_bind_group_layout);
     }
 
+    pub fn update_lights_bind_group(&mut self, device: &Device, world: &World) -> u32 {
+        let mut entries = vec![];
+        let dummy_light = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Dummy Light Buffer"),
+            contents: bytemuck::cast_slice(&[LightInfo::default()]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        entries.push(dummy_light.as_entire_buffer_binding());
+        let mut num_lights = 0;
+        for model in world.get_active_scene().models.iter().filter(|model| model.light.is_some()) {
+            let light = model.light.as_ref().unwrap();
+            entries.push(light.buffer.as_entire_buffer_binding());
+            num_lights += 1;
+        }
+        self.light_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Point Lights Bind Group"),
+            layout: &self.light_bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::BufferArray(&entries),
+            }],
+        });
+        println!("Light bind group got updated, containing {} lights", entries.len());
+        num_lights
+    }
+
+
     pub fn update_mesh_bind_group<'a>(&mut self, device: &Device, meshes: impl Iterator<Item = &'a Mesh>) {
         let mesh_info_buffers = meshes
             .map(|m| m.buffer.as_entire_buffer_binding())
@@ -297,7 +321,7 @@ impl PBRPipelineProvider {
         );
     }
 
-    pub fn render_pass<'a>(
+    fn render_pass<'a>(
         &self,
         encoder: &mut CommandEncoder,
         vertex_inputs: impl Iterator<Item = &'a VertexInputs>,

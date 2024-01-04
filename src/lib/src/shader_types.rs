@@ -34,12 +34,16 @@ impl Vertex for PbrVertex {
 pub struct CameraUniform {
     pub proj_view: [[f32; 4]; 4],
     pub view_position: [f32; 4],
+    pub num_lights: u32,
+    pub padding: [u32; 3],
 }
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
             proj_view: Mat4::default().to_cols_array_2d(),
             view_position: [0.0; 4],
+            num_lights: 0,
+            padding: [0; 3],
         }
     }
 }
@@ -99,8 +103,6 @@ pub struct LightInfo {
     pub padding3: [f32; 3],
     pub range: f32,
     pub padding4: [f32; 3],
-    pub amount: u32,
-    pub padding5: [f32; 3],
 }
 
 impl From<&PointLight> for LightInfo {
@@ -111,7 +113,6 @@ impl From<&PointLight> for LightInfo {
             light: light.index as u32,
             intensity: light.intensity,
             range: light.range.unwrap_or(1.0),
-            amount: light.amount,
             ..Default::default()
         }
     }
