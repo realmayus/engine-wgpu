@@ -23,7 +23,7 @@ struct MeshInfo {
     model_transform: mat4x4<f32>
 }
 @group(2) @binding(0)
-var<storage, read> mesh_infos: array<MeshInfo>;
+var<storage, read> mesh_infos: binding_array<MeshInfo>;
 
 struct Camera {
     proj_view: mat4x4<f32>,
@@ -88,7 +88,7 @@ struct Material {
 };
 
 @group(1) @binding(0)
-var<storage, read> materials: array<Material>;
+var<storage, read> materials: binding_array<Material>;
 
 
 struct LightInfo {
@@ -98,7 +98,7 @@ struct LightInfo {
     range: f32,
 };
 @group(4) @binding(0)
-var<storage, read> lights: array<LightInfo>;
+var<storage, read> lights: binding_array<LightInfo>;
 
 const PI = 3.14159265359;
 
@@ -107,6 +107,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tbn = transpose(mat3x3<f32>(in.t, in.b, in.n));
     let mat_id = mesh_infos[in.index].material;
     let material = materials[mat_id];
+
 
     // load material values, if index 0, value will be 1 because of white default texture
     var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) * material.albedo;
@@ -158,7 +159,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let diffuse_albedo: vec3<f32> = k_diffuse * albedo.rgb;
         let diffuse_albedo_by_pi: vec3<f32> = diffuse_albedo / PI;
         lo += (diffuse_albedo_by_pi + specular) * radiance * normal_dot_light;
-//        return vec4<f32>(f32(i) / 2.0);
     }
 
     let ambient = vec3(0.001) * albedo.rgb * occlusion;

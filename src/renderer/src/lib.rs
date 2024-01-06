@@ -33,8 +33,8 @@ pub struct SetupData<'a> {
 impl SetupData<'_> {
     pub fn load_default_scene(&self, world: &mut World) {
         let mut scenes = load_gltf(
-            Path::new("assets/models/cube_light_tan.glb"),
-            // Path::new("assets/models/sphere.gltf"),
+            // Path::new("assets/models/cube_light_tan.glb"),
+            Path::new("assets/models/DamagedHelmetTangents.glb"),
             self.device,
             self.queue,
             self.tex_bind_group_layout,
@@ -53,7 +53,6 @@ pub struct RenderState {
     size: winit::dpi::PhysicalSize<u32>,
     pub window: Window,
     queue: Queue,
-    depth_texture: Texture,
     pbr_pipeline: PBRPipelineProvider,
     camera: Camera,
     world: World,
@@ -94,6 +93,7 @@ impl RenderState {
                     label: None,
                     features: wgpu::Features::BUFFER_BINDING_ARRAY
                         | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
+                    | wgpu::Features::UNIFORM_BUFFER_AND_STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING
                         | wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
                     limits,
                 },
@@ -119,8 +119,6 @@ impl RenderState {
             view_formats: vec![],
         };
         surface.configure(&device, &surface_config);
-        let depth_texture =
-            Texture::create_depth_texture(&device, &surface_config, "depth_texture");
         let world = World {
             scenes: vec![],
             active_scene: 0,
@@ -130,7 +128,7 @@ impl RenderState {
 
         let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
         //TODO create buffers for materials and textures (where do we store them? what if a new model with new textures is loaded?)
-        let mut pipeline = PBRPipelineProvider::new(&device, &[], &[], &[], &camera.buffer);
+        let mut pipeline = PBRPipelineProvider::new(&device, &surface_config, &[], &[], &[], &camera.buffer);
         pipeline.create_pipeline(&device);
 
         Self {
@@ -140,7 +138,6 @@ impl RenderState {
             queue,
             surface_config,
             size,
-            depth_texture,
             pbr_pipeline: pipeline,
             camera,
             world,

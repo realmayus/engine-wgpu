@@ -6,9 +6,10 @@ use std::iter;
 use std::num::NonZeroU32;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::SamplerBindingType::Filtering;
-use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color, CommandEncoder, Device, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView, BindGroupLayout, BindGroupDescriptor, BindGroupEntry, BindingResource};
+use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color, CommandEncoder, Device, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView, BindGroupLayout, BindGroupDescriptor, BindGroupEntry, BindingResource, TextureFormat, SurfaceConfiguration, DepthStencilState, RenderPassDepthStencilAttachment};
 
 use lib::scene::{MaterialManager, Mesh, VertexInputs, World};
+use lib::texture::Texture;
 
 /**
 Pipeline for physically-based rendering
@@ -25,12 +26,14 @@ pub struct PBRPipelineProvider {
     mesh_bind_group_layout: wgpu::BindGroupLayout,
     pub light_bind_group: BindGroup,
     pub light_bind_group_layout: wgpu::BindGroupLayout,
+    pub depth_texture: Texture,
 }
 
 impl PBRPipelineProvider {
     // Creates all necessary bind groups and layouts for the pipeline
     pub fn new(
         device: &Device,
+        config: &SurfaceConfiguration,
         mesh_info_buffers: &[Buffer],
         material_info_buffers: &[Buffer],
         light_info_buffers: &[Buffer],
@@ -38,6 +41,8 @@ impl PBRPipelineProvider {
     ) -> Self {
         let shader =
             device.create_shader_module(include_wgsl!("../../../../assets/shaders/pbr.wgsl"));
+        let depth_texture =
+            Texture::create_depth_texture(device, config, "depth_texture");
 
         let tex_bind_group_layout = {
             let mut tex_bind_group_layout_entries = Vec::new();
@@ -218,6 +223,7 @@ impl PBRPipelineProvider {
             push_constant_ranges: &[],
         });
 
+
         Self {
             shader,
             pipeline: None,
@@ -230,6 +236,7 @@ impl PBRPipelineProvider {
             mat_bind_group_layout,
             mesh_bind_group_layout,
             light_bind_group_layout,
+            depth_texture,
         }
     }
     pub fn update_mat_bind_group(&mut self, device: &Device, material_manager: &MaterialManager) {
@@ -310,7 +317,13 @@ impl PBRPipelineProvider {
                     // Requires Features::CONSERVATIVE_RASTERIZATION
                     conservative: false,
                 },
-                depth_stencil: None,
+                depth_stencil: Some(DepthStencilState {
+                    format: Texture::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
                 multisample: wgpu::MultisampleState {
                     count: 1,
                     mask: !0,
@@ -343,7 +356,14 @@ impl PBRPipelineProvider {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
         });
