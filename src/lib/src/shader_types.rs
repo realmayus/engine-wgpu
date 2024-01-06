@@ -97,8 +97,6 @@ pub struct LightInfo {
     pub transform: [[f32; 4]; 4],
     pub color: [f32; 3],
     pub padding1: f32,
-    pub light: u32,
-    pub padding2: [f32; 3],
     pub intensity: f32,
     pub padding3: [f32; 3],
     pub range: f32,
@@ -110,7 +108,6 @@ impl From<&PointLight> for LightInfo {
         Self {
             transform: light.global_transform.to_cols_array_2d(),
             color: light.color.to_array(),
-            light: light.index as u32,
             intensity: light.intensity,
             range: light.range.unwrap_or(1.0),
             ..Default::default()

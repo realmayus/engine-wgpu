@@ -33,8 +33,8 @@ pub struct SetupData<'a> {
 impl SetupData<'_> {
     pub fn load_default_scene(&self, world: &mut World) {
         let mut scenes = load_gltf(
-            // Path::new("assets/models/cube_light_tan.glb"),
-            Path::new("assets/models/DamagedHelmetTangents.glb"),
+            Path::new("assets/models/cube_light_tan.glb"),
+            // Path::new("assets/models/sphere.gltf"),
             self.device,
             self.queue,
             self.tex_bind_group_layout,

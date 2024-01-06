@@ -94,7 +94,6 @@ var<storage, read> materials: array<Material>;
 struct LightInfo {
     transform: mat4x4<f32>,
     color: vec3<f32>,
-    light: u32,
     intensity: f32,
     range: f32,
 };

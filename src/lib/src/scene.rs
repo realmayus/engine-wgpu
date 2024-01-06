@@ -240,7 +240,6 @@ impl PointLight {
             contents: bytemuck::cast_slice(&[LightInfo {
                 transform: global_transform.to_cols_array_2d(),
                 color: color.to_array(),
-                light: index as u32,
                 intensity,
                 range: range.unwrap_or(10.0),
                 ..Default::default()
@@ -272,7 +271,6 @@ impl Dirtyable for PointLight {
         let uniform = LightInfo {
             transform: self.global_transform.to_cols_array_2d(),
             color: self.color.to_array(),
-            light: self.index as u32,
             intensity: self.intensity,
             range: self.range.unwrap_or(10.0),
             ..Default::default()
