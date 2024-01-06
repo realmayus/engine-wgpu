@@ -32,10 +32,10 @@ impl Vertex for PbrVertex {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
-    pub proj_view: [[f32; 4]; 4],
-    pub view_position: [f32; 4],
-    pub num_lights: u32,
-    pub padding: [u32; 3],
+    pub proj_view: [[f32; 4]; 4], // s64 o0
+    pub view_position: [f32; 4], // s16 o64
+    pub num_lights: u32,  // s4 o80
+    pub padding: [u32; 3],  // total size: 96
 }
 impl CameraUniform {
     pub fn new() -> Self {
@@ -51,13 +51,11 @@ impl CameraUniform {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialInfo {
-    pub albedo: [f32; 4],
-    pub emission_factors: [f32; 3],
-    padding1: f32,
-    pub occlusion_factor: f32,
-    padding2: [f32; 3],
-    pub metal_roughness_factors: [f32; 2],
-    padding3: [f32; 2],
+    pub albedo: [f32; 4],  // s16 o0
+    pub emission_factors: [f32; 3], // s12 o16
+    pub occlusion_factor: f32,  // s4 o28
+    pub metal_roughness_factors: [f32; 2],  // s8 o32
+    padding3: [f32; 2],  // total size: 48
 }
 
 impl Default for MaterialInfo {
@@ -67,8 +65,6 @@ impl Default for MaterialInfo {
             metal_roughness_factors: [0.5; 2],
             emission_factors: [0.0; 3],
             occlusion_factor: 1.0,
-            padding1: 0.0,
-            padding2: [0.0; 3],
             padding3: [0.0; 2],
         }
     }
@@ -77,9 +73,9 @@ impl Default for MaterialInfo {
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshInfo {
-    pub material: u32,
+    pub material: u32,  // s4 o0
     _align: [u32; 3],
-    pub model_transform: [[f32; 4]; 4],
+    pub model_transform: [[f32; 4]; 4],  // s64 o16 -> total size: 80
 }
 impl MeshInfo {
     pub fn from_data(material: u32, model_transform: [[f32; 4]; 4]) -> Self {
@@ -94,13 +90,11 @@ impl MeshInfo {
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightInfo {
-    pub transform: [[f32; 4]; 4],
-    pub color: [f32; 3],
-    pub padding1: f32,
-    pub intensity: f32,
-    pub padding3: [f32; 3],
-    pub range: f32,
-    pub padding4: [f32; 3],
+    pub transform: [[f32; 4]; 4],  // s64 o0
+    pub color: [f32; 3],  // s12 o64
+    pub intensity: f32,  // s4 o76
+    pub range: f32,  // s4 o80
+    pub padding4: [f32; 3],  // total size: 96
 }
 
 impl From<&PointLight> for LightInfo {
