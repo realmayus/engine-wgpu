@@ -23,7 +23,7 @@ struct MeshInfo {
     model_transform: mat4x4<f32>
 }
 @group(2) @binding(0)
-var<storage, read> mesh_infos: binding_array<MeshInfo>;
+var<storage, read> mesh_infos: array<MeshInfo>;
 
 struct Camera {
     proj_view: mat4x4<f32>,
@@ -88,7 +88,7 @@ struct Material {
 };
 
 @group(1) @binding(0)
-var<storage, read> materials: binding_array<Material>;
+var<storage, read> materials: array<Material>;
 
 
 struct LightInfo {
@@ -98,7 +98,7 @@ struct LightInfo {
     range: f32,
 };
 @group(4) @binding(0)
-var<storage, read> lights: binding_array<LightInfo>;
+var<storage, read> lights: array<LightInfo>;
 
 const PI = 3.14159265359;
 

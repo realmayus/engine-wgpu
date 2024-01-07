@@ -6,10 +6,11 @@ use wgpu::{Color, Device, Limits, Queue, RenderPassDescriptor, Surface, SurfaceC
 use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
+use lib::managers::{MaterialManager, TextureManager};
 
 use crate::camera::{Camera, KeyState};
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
-use lib::scene::{MaterialManager, TextureManager, World};
+use lib::scene::{World};
 use lib::texture::Texture;
 use systems::io::gltf_loader::load_gltf;
 use crate::gui::EguiContext;
@@ -122,7 +123,7 @@ impl RenderState {
         let world = World {
             scenes: vec![],
             active_scene: 0,
-            materials: MaterialManager::new(&device),
+            materials: MaterialManager::new(&device, &queue),
             textures: TextureManager::new(&device, &queue),
         };
 
@@ -151,12 +152,13 @@ impl RenderState {
             device: &self.device,
             queue: &self.queue,
         });
-        self.pbr_pipeline.update_mesh_bind_group(&self.device, self.world.pbr_meshes());
+        self.pbr_pipeline.update_mesh_bind_group(&self.device, &self.world.get_active_scene().mesh_buffer);
         self.world.materials.update_dirty(&self.queue);
+        self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
         self.pbr_pipeline.update_mat_bind_group(&self.device, &self.world.materials);
         self.camera.update_view(&self.queue);
-        let light_count = self.pbr_pipeline.update_lights_bind_group(&self.device, &self.world);
-        self.camera.update_light_count(light_count);
+        self.pbr_pipeline.update_lights_bind_group(&self.device, &self.world.get_active_scene().light_buffer);
+        self.camera.update_light_count(self.world.get_active_scene().light_buffer.len());
     }
     pub fn window(&self) -> &Window {
         &self.window
@@ -179,7 +181,7 @@ impl RenderState {
         self.hook.update(keys, delta_time);
         self.camera.recv_input(keys, cursor_delta, delta_time);
         self.camera.update_view(&self.queue);
-        self.world.update_lights(&self.queue);
+        self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
     }
     fn render(&mut self) -> Result<(), SurfaceError> {
         let output = self.surface.get_current_texture()?;

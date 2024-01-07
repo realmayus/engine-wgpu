@@ -1,6 +1,7 @@
-use crate::scene::{MaterialManager, PbrMaterial};
+use crate::scene::{Mesh, PbrMaterial};
 use crate::scene::PointLight;
 use glam::Mat4;
+use crate::managers::MaterialManager;
 
 pub trait Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4];
@@ -58,6 +59,30 @@ pub struct MaterialInfo {
     padding3: [f32; 2],  // total size: 48
 }
 
+impl From<&PbrMaterial> for MaterialInfo {
+    fn from(material: &PbrMaterial) -> Self {
+        Self {
+            albedo: material.albedo.to_array(),
+            emission_factors: material.emissive_factors.into(),
+            occlusion_factor: material.occlusion_factor,
+            metal_roughness_factors: material.metallic_roughness_factors.into(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&mut PbrMaterial> for MaterialInfo {
+    fn from(material: &mut PbrMaterial) -> Self {
+        Self {
+            albedo: material.albedo.to_array(),
+            emission_factors: material.emissive_factors.into(),
+            occlusion_factor: material.occlusion_factor,
+            metal_roughness_factors: material.metallic_roughness_factors.into(),
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for MaterialInfo {
     fn default() -> Self {
         Self {
@@ -78,14 +103,15 @@ pub struct MeshInfo {
     pub model_transform: [[f32; 4]; 4],  // s64 o16 -> total size: 80
 }
 impl MeshInfo {
-    pub fn from_data(material: u32, model_transform: [[f32; 4]; 4]) -> Self {
+    pub fn from_mesh(mesh: &Mesh, material_manager: &MaterialManager) -> Self {
         Self {
-            material,
+            material: material_manager.get_material(mesh.material).shader_id(),
             _align: [0; 3],
-            model_transform,
+            model_transform: mesh.global_transform.to_cols_array_2d(),
         }
     }
 }
+
 
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

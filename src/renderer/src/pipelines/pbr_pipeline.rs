@@ -7,8 +7,10 @@ use std::num::NonZeroU32;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::SamplerBindingType::Filtering;
 use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color, CommandEncoder, Device, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView, BindGroupLayout, BindGroupDescriptor, BindGroupEntry, BindingResource, TextureFormat, SurfaceConfiguration, DepthStencilState, RenderPassDepthStencilAttachment};
+use lib::buffer_array::DynamicBufferArray;
+use lib::managers::MaterialManager;
 
-use lib::scene::{MaterialManager, Mesh, VertexInputs, World};
+use lib::scene::{Mesh, VertexInputs, World};
 use lib::texture::Texture;
 
 /**
@@ -244,43 +246,26 @@ impl PBRPipelineProvider {
             material_manager.create_bind_group(device, &self.mat_bind_group_layout);
     }
 
-    pub fn update_lights_bind_group(&mut self, device: &Device, world: &World) -> u32 {
-        let mut entries = vec![];
-        let dummy_light = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Dummy Light Buffer"),
-            contents: bytemuck::cast_slice(&[LightInfo::default()]),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        });
-        entries.push(dummy_light.as_entire_buffer_binding());
-        let mut num_lights = 0;
-        for model in world.get_active_scene().models.iter().filter(|model| model.light.is_some()) {
-            let light = model.light.as_ref().unwrap();
-            entries.push(light.buffer.as_entire_buffer_binding());
-            num_lights += 1;
-        }
+    pub fn update_lights_bind_group(&mut self, device: &Device, light_buffer: &DynamicBufferArray<LightInfo>) {
         self.light_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("Point Lights Bind Group"),
             layout: &self.light_bind_group_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
-                resource: BindingResource::BufferArray(&entries),
+                resource: light_buffer.binding_resource(),
             }],
         });
-        println!("Light bind group got updated, containing {} lights", entries.len());
-        num_lights
+        println!("Light bind group got updated, containing {} lights", light_buffer.len());
     }
 
 
-    pub fn update_mesh_bind_group<'a>(&mut self, device: &Device, meshes: impl Iterator<Item = &'a Mesh>) {
-        let mesh_info_buffers = meshes
-            .map(|m| m.buffer.as_entire_buffer_binding())
-            .collect::<Vec<BufferBinding>>();
-        self.mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    pub fn update_mesh_bind_group(&mut self, device: &Device, mesh_buffer: &DynamicBufferArray<MeshInfo>) {
+        self.mesh_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("PBR Mesh Bindgroup"),
             layout: &self.mesh_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
+            entries: &[BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::BufferArray(&mesh_info_buffers),
+                resource: mesh_buffer.binding_resource()
             }],
         });
     }

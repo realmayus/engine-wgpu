@@ -115,6 +115,9 @@ impl Camera {
     Call this whenever the number of lights in the scene changes. This value gets passed to the fragment shader.
     */
     pub fn update_light_count(&mut self, num_lights: u32) {
+        if self.light_count == num_lights {
+            return;
+        }
         println!("Light count updated to {}", num_lights);
         self.light_count = num_lights;
         self.dirty = true;

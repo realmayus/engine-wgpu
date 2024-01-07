@@ -1,11 +1,12 @@
-use wgpu::{Buffer, Queue};
-use crate::scene::{MaterialManager, TextureManager};
+use wgpu::{Buffer};
 
 pub mod scene;
 pub mod scene_serde;
 pub mod shader_types;
 pub mod texture;
 pub mod util;
+pub mod buffer_array;
+pub mod managers;
 
 pub trait Dirtyable {
     /**
@@ -17,11 +18,6 @@ pub trait Dirtyable {
     Sets object due for update
     */
     fn set_dirty(&mut self, dirty: bool);
-
-    /**
-    Call to update buffers. Sets dirty to false.
-    */
-    fn update(&mut self, queue: &Queue, texture_manager: &TextureManager, material_manager: &MaterialManager);
 }
 
 // A buffer that also stores the number of elements in it.
@@ -49,18 +45,6 @@ impl Material {
     pub fn name(&self) -> &Option<Box<str>> {
         match self {
             Material::Pbr(pbr) => &pbr.name,
-        }
-    }
-
-    pub fn buffer(&self) -> &Buffer {
-        match self {
-            Material::Pbr(pbr) => &pbr.buffer,
-        }
-    }
-
-    pub fn update(&mut self, queue: &Queue) {
-        match self {
-            Material::Pbr(pbr) => pbr.update(queue),
         }
     }
 

@@ -13,9 +13,10 @@ use image::ImageFormat::{Jpeg, Png};
 use log::info;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
+use lib::managers::{MaterialManager, MatId, TextureManager};
 
-use lib::scene::{MatId, PointLight, World};
-use lib::scene::{MaterialManager, Mesh, Model, PbrMaterial, Scene, TextureManager};
+use lib::scene::{PointLight};
+use lib::scene::{Mesh, Model, PbrMaterial, Scene};
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
 use lib::texture::{Texture, TextureKind};
 use lib::Material;
@@ -274,15 +275,10 @@ pub fn load_gltf(
 
                         }),
                     emissive_factors: gltf_mat.emissive_factor().into(),
-                    buffer: device.create_buffer_init(&BufferInitDescriptor {
-                        label: Some("Material Buffer"),
-                        contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
-                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                    }),
                     texture_bind_group: None,
                 }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
                 mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
-                let global_id = material_manager.add_material(Material::Pbr(mat));
+                let global_id = material_manager.add_material(Material::Pbr(mat), device, queue);
                 (index, global_id)
             })
             .collect::<HashMap<_, _>>();
@@ -290,7 +286,7 @@ pub fn load_gltf(
     for scene in gltf.scenes() {
         info!("Scene has {:?} nodes", scene.nodes().len());
         let mut num_lights = 0;
-        let mut models: Vec<Model> = scene
+        let models: Vec<Model> = scene
             .nodes()
             .map(|n| {
                 load_node(
@@ -304,7 +300,7 @@ pub fn load_gltf(
                 )
             })
             .collect();
-        scenes.push(Scene::from(models, scene.name().map(Box::from)));
+        scenes.push(Scene::from(device, queue, models, material_manager, scene.name().map(Box::from)));
     }
     scenes
 }
@@ -364,7 +360,7 @@ fn load_node(
                 .material()
                 .index()
                 .map(|i| *materials.get(&i).expect("Couldn't find material"));
-            meshes.push(Mesh::from(positions, indices, normals, tangents, mat.unwrap_or(material_manager.default_material), material_manager, uvs, global_transform, device));
+            meshes.push(Mesh::from(positions, indices, normals, tangents, mat.unwrap_or(material_manager.default_material), uvs, global_transform, device));
         }
     }
 
