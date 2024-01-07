@@ -341,7 +341,7 @@ fn load_node(
             let mut uvs: Vec<Vec2> = vec![];
             let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             if let Some(iter) = reader.read_tex_coords(0) {
-                uvs = iter.into_f32().map(Vec2::from).collect();
+                uvs = iter.into_f32().map(|[u, v]| Vec2::from((u, v))).collect();
             }
             if let Some(iter) = reader.read_positions() {
                 positions = iter.map(Vec3::from).collect();

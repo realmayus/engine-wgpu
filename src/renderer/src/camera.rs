@@ -79,8 +79,8 @@ impl Camera {
         let zfar = 100.0;
 
         let mut data = CameraUniform::new();
-        let proj = Mat4::perspective_rh_gl(fovy, aspect, znear, zfar);
-        let view = Mat4::look_at_rh(eye, target, up);
+        let proj = Mat4::perspective_lh(fovy, aspect, znear, zfar);
+        let view = Mat4::look_at_lh(eye, target, up);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
 
         debug!("Creating view proj: {:?}", proj * view * scale);
@@ -133,14 +133,14 @@ impl Camera {
         self.zfar = 100.0;
         self.speed = 0.5;
         self.fps = !self.fps;
-        self.view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        self.view = Mat4::look_at_lh(self.eye, self.target, self.up);
         self.dirty = true;
     }
 
     pub(crate) fn build_projection(&self) -> Mat4 {
         let view = self.view;
         let proj =
-            Mat4::perspective_rh_gl(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
+            Mat4::perspective_lh(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
         proj * view * scale
     }
@@ -211,7 +211,7 @@ impl Camera {
             self.dirty = true;
         }
         if self.dirty {
-            self.view = Mat4::look_at_rh(
+            self.view = Mat4::look_at_lh(
                 self.eye,
                 self.eye + self.direction.normalize(),
                 global_up.xyz(),
@@ -268,7 +268,7 @@ impl Camera {
             }
         }
         if self.dirty {
-            self.view = Mat4::look_at_rh(self.eye, self.target, global_up.xyz());
+            self.view = Mat4::look_at_lh(self.eye, self.target, global_up.xyz());
         }
     }
 }

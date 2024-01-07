@@ -130,7 +130,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var lo = vec3(0.0);
 
     // contribution of each light
-    for (var i = 1u; i < in.num_lights + 1u; i++) {  // skip first light, as it's a dummy
+    for (var i = 0u; i < in.num_lights; i++) {
         let light = lights[i];
         // convert to tangent space
         let light_pos_tan = tbn * (light.transform[3]).xyz;
@@ -168,6 +168,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // gamma correction
     color = pow(color, vec3(1.0 / 2.2));
     return vec4<f32>(color, 1.0);
+
 }
 
 // Fresnel-Schlick approximation

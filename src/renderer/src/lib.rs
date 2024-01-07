@@ -36,6 +36,7 @@ impl SetupData<'_> {
         let mut scenes = load_gltf(
             // Path::new("assets/models/cube_light_tan.glb"),
             Path::new("assets/models/DamagedHelmetTangents.glb"),
+            // Path::new("assets/models/monkeyabuse.glb"),
             self.device,
             self.queue,
             self.tex_bind_group_layout,
