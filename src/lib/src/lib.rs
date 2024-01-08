@@ -7,6 +7,7 @@ pub mod texture;
 pub mod util;
 pub mod buffer_array;
 pub mod managers;
+mod geometry;
 
 pub trait Dirtyable {
     /**

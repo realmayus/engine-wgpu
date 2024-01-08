@@ -180,6 +180,7 @@ pub struct PointLight {
     pub intensity: f32,
     pub range: Option<f32>,
     pub buffer: Buffer,
+    // pub shadow_view: Option<Texture>,
 }
 
 impl PointLight {

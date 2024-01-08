@@ -17,6 +17,7 @@ new_key_type! { pub struct MatId; }
 pub struct TextureManager {
     textures: SlotMap<TexId, Texture>,
     default_albedo: TexId,
+    default_normal: TexId,
 }
 
 impl TextureManager {
@@ -29,8 +30,18 @@ impl TextureManager {
             Some("Default Albedo Texture"),
             TextureKind::Albedo,
         ).expect("Couldn't load default texture");
+
+        let default_normal = Texture::from_image(
+            device,
+            queue,
+            &image::load_from_memory(include_bytes!("../../../assets/textures/default_normal.png")).unwrap(),
+            Some("Default Normal Texture"),
+            TextureKind::Normal,
+        ).expect("Couldn't load default normal texture");
+
         Self {
             default_albedo: textures.insert(default_albedo),
+            default_normal: textures.insert(default_normal),
             textures,
         }
     }
@@ -52,7 +63,7 @@ impl TextureManager {
     pub fn default_tex(&self, texture_kind: TextureKind) -> &Texture {
         match texture_kind {
             TextureKind::Albedo => &self.textures[self.default_albedo],
-            TextureKind::Normal => &self.textures[self.default_albedo],  // TODO support other default texture kinds
+            TextureKind::Normal => &self.textures[self.default_normal],  // TODO support other default texture kinds
             TextureKind::MetalRoughness => &self.textures[self.default_albedo],
             TextureKind::Occlusion => &self.textures[self.default_albedo],
             TextureKind::Emission => &self.textures[self.default_albedo],
