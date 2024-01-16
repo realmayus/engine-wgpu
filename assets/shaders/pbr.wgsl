@@ -114,61 +114,64 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb;
     // transform normal vector from [0,1] to range [-1,1]
     normal = normalize(normal * 2.0 - 1.0);  // this normal is in tangent space
+    normal = tbn * normal;
 
-    let metallic = textureSample(t_metallic, s_metallic, in.tex_coords).b * material.metal_roughness_factors.x;
-    let roughness = textureSample(t_metallic, s_metallic, in.tex_coords).g * material.metal_roughness_factors.y;
-    var occlusion = textureSample(t_occlusion, s_occlusion, in.tex_coords).r;
-    var emission = textureSample(t_emissive, s_emissive, in.tex_coords).rgb;
-    // convert to linear space
-    albedo = pow(albedo, vec4(2.2));
-    emission = pow(emission, vec3(2.2));
-    occlusion = pow(occlusion, 2.2);
-    let view_dir = normalize(in.view_pos_tan - in.frag_pos_tan);
-    // most dielectric surfaces look visually correct with f0 of 0.04
-    var f0 = vec3(0.04);
-    f0 = mix(f0, albedo.rgb, metallic);
-    var lo = vec3(0.0);
+    return vec4(normal, 1.0);
 
-    // contribution of each light
-    for (var i = 0u; i < in.num_lights; i++) {
-        let light = lights[i];
-        // convert to tangent space
-        let light_pos_tan = tbn * (light.transform[3]).xyz;
-        let light_dir = normalize(light_pos_tan - in.frag_pos_tan);
-        let half_vec = normalize(view_dir + light_dir);
-
-        let dist = length(light_pos_tan - in.frag_pos_tan);
-        let attenuation = 1.0 / (dist * dist);
-        let radiance: vec3<f32> = light.color * 5.0 * attenuation;
-        // Fresnel equation F of DFG which is the specular part of BRDF
-        let reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), f0);
-        let normal_dist = distribution(normal, half_vec, roughness);
-        let geom = geometry_smith(normal, view_dir, light_dir, roughness);
-
-        // BRDF
-        let numerator = normal_dist * geom * reflect_ratio;
-        let denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0) + 0.0001;
-        let specular: vec3<f32> = numerator / denominator;
-
-        let k_specular = reflect_ratio;
-        var k_diffuse = vec3(1.0) - k_specular;
-        k_diffuse *= 1.0 - metallic;
-
-        let normal_dot_light: f32 = max(dot(normal, light_dir), 0.0);
-
-        let diffuse_albedo: vec3<f32> = k_diffuse * albedo.rgb;
-        let diffuse_albedo_by_pi: vec3<f32> = diffuse_albedo / PI;
-        lo += (diffuse_albedo_by_pi + specular) * radiance * normal_dot_light;
-    }
-
-    let ambient = vec3(0.001) * albedo.rgb * occlusion;
-    var color = ambient + lo + emission * material.emission_factors;
-    // reinhard tone mapping
-    color = color / (color + vec3(1.0));
-    // gamma correction
-    color = pow(color, vec3(1.0 / 2.2));
-    return vec4<f32>(color, 1.0);
-
+//    let metallic = textureSample(t_metallic, s_metallic, in.tex_coords).b * material.metal_roughness_factors.x;
+//    let roughness = textureSample(t_metallic, s_metallic, in.tex_coords).g * material.metal_roughness_factors.y;
+//    var occlusion = textureSample(t_occlusion, s_occlusion, in.tex_coords).r;
+//    var emission = textureSample(t_emissive, s_emissive, in.tex_coords).rgb;
+//    // convert to linear space
+//    albedo = pow(albedo, vec4(2.2));
+//    emission = pow(emission, vec3(2.2));
+//    occlusion = pow(occlusion, 2.2);
+//    let view_dir = normalize(in.view_pos_tan - in.frag_pos_tan);
+//    // most dielectric surfaces look visually correct with f0 of 0.04
+//    var f0 = vec3(0.04);
+//    f0 = mix(f0, albedo.rgb, metallic);
+//    var lo = vec3(0.0);
+//
+//    // contribution of each light
+//    for (var i = 0u; i < in.num_lights; i++) {
+//        let light = lights[i];
+//        // convert to tangent space
+//        let light_pos_tan = tbn * (light.transform[3]).xyz;
+//        let light_dir = normalize(light_pos_tan - in.frag_pos_tan);
+//        let half_vec = normalize(view_dir + light_dir);
+//
+//        let dist = length(light_pos_tan - in.frag_pos_tan);
+//        let attenuation = 1.0 / (dist * dist);
+//        let radiance: vec3<f32> = light.color * 5.0 * attenuation;
+//        // Fresnel equation F of DFG which is the specular part of BRDF
+//        let reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), f0);
+//        let normal_dist = distribution(normal, half_vec, roughness);
+//        let geom = geometry_smith(normal, view_dir, light_dir, roughness);
+//
+//        // BRDF
+//        let numerator = normal_dist * geom * reflect_ratio;
+//        let denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0) + 0.0001;
+//        let specular: vec3<f32> = numerator / denominator;
+//
+//        let k_specular = reflect_ratio;
+//        var k_diffuse = vec3(1.0) - k_specular;
+//        k_diffuse *= 1.0 - metallic;
+//
+//        let normal_dot_light: f32 = max(dot(normal, light_dir), 0.0);
+//
+//        let diffuse_albedo: vec3<f32> = k_diffuse * albedo.rgb;
+//        let diffuse_albedo_by_pi: vec3<f32> = diffuse_albedo / PI;
+//        lo += (diffuse_albedo_by_pi + specular) * radiance * normal_dot_light;
+//    }
+//
+//    let ambient = vec3(0.001) * albedo.rgb * occlusion;
+//    var color = ambient + lo + emission * material.emission_factors;
+//    // reinhard tone mapping
+//    color = color / (color + vec3(1.0));
+//    // gamma correction
+//    color = pow(color, vec3(1.0 / 2.2));
+//    return vec4<f32>(color, 1.0);
+//
 }
 
 // Fresnel-Schlick approximation

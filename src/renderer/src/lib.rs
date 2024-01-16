@@ -27,6 +27,9 @@ pub trait Hook {
 
 pub struct SetupData<'a> {
     pub tex_bind_group_layout: &'a wgpu::BindGroupLayout,
+    pub material_bind_group_layout: &'a wgpu::BindGroupLayout,
+    pub mesh_bind_group_layout: &'a wgpu::BindGroupLayout,
+    pub light_bind_group_layout: &'a wgpu::BindGroupLayout,
     pub device: &'a Device,
     pub queue: &'a Queue,
 }
@@ -40,6 +43,9 @@ impl SetupData<'_> {
             self.device,
             self.queue,
             self.tex_bind_group_layout,
+            self.material_bind_group_layout,
+            self.mesh_bind_group_layout,
+            self.light_bind_group_layout,
             &mut world.textures,
             &mut world.materials,
         );
@@ -84,7 +90,6 @@ impl RenderState {
             .unwrap();
 
         let limits = Limits {
-            max_storage_buffers_per_shader_stage: 1_000,
             max_bind_groups: 5,
             ..Default::default()
         };
@@ -93,11 +98,8 @@ impl RenderState {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::BUFFER_BINDING_ARRAY
-                        | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
-                    | wgpu::Features::UNIFORM_BUFFER_AND_STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING
-                        | wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
                     limits,
+                    ..Default::default()
                 },
                 None,
             )
@@ -121,17 +123,21 @@ impl RenderState {
             view_formats: vec![],
         };
         surface.configure(&device, &surface_config);
+
+
+        let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
+        let mut pbr_pipeline = PBRPipelineProvider::new(&device, &surface_config, &camera.buffer);
+        pbr_pipeline.create_pipeline(&device);
+
+        let materials = MaterialManager::new(&device, &queue, &pbr_pipeline.mat_bind_group_layout);
+        let textures = TextureManager::new(&device, &queue, &pbr_pipeline.tex_bind_group_layout);
         let world = World {
             scenes: vec![],
             active_scene: 0,
-            materials: MaterialManager::new(&device, &queue),
-            textures: TextureManager::new(&device, &queue),
+            materials,
+            textures,
         };
 
-        let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
-        //TODO create buffers for materials and textures (where do we store them? what if a new model with new textures is loaded?)
-        let mut pipeline = PBRPipelineProvider::new(&device, &surface_config, &[], &[], &[], &camera.buffer);
-        pipeline.create_pipeline(&device);
 
         Self {
             window,
@@ -140,7 +146,7 @@ impl RenderState {
             queue,
             surface_config,
             size,
-            pbr_pipeline: pipeline,
+            pbr_pipeline,
             camera,
             world,
             hook: Box::from(hook),
@@ -150,15 +156,15 @@ impl RenderState {
     fn setup(&mut self) {
         self.hook.setup(&mut self.world, SetupData {
             tex_bind_group_layout: &self.pbr_pipeline.tex_bind_group_layout,
+            material_bind_group_layout: &self.pbr_pipeline.mat_bind_group_layout,
+            mesh_bind_group_layout: &self.pbr_pipeline.mesh_bind_group_layout,
+            light_bind_group_layout: &self.pbr_pipeline.light_bind_group_layout,
             device: &self.device,
             queue: &self.queue,
         });
-        self.pbr_pipeline.update_mesh_bind_group(&self.device, &self.world.get_active_scene().mesh_buffer);
         self.world.materials.update_dirty(&self.queue);
         self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
-        self.pbr_pipeline.update_mat_bind_group(&self.device, &self.world.materials);
         self.camera.update_view(&self.queue);
-        self.pbr_pipeline.update_lights_bind_group(&self.device, &self.world.get_active_scene().light_buffer);
         self.camera.update_light_count(self.world.get_active_scene().light_buffer.len());
     }
     pub fn window(&self) -> &Window {
@@ -201,6 +207,9 @@ impl RenderState {
                 &view,
                 &self.world.pbr_meshes().collect::<Vec<_>>(),
                 &self.world.materials,
+                &self.world.materials.buffer,
+                &self.world.get_active_scene().mesh_buffer,
+                &self.world.get_active_scene().light_buffer,
             );
             // let mut bufs = self.egui_ctx.render(&view, &mut encoder, &self.window, Self::gui);
             // buffers.append(&mut bufs);

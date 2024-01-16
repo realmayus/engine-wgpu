@@ -21,7 +21,7 @@ pub struct TextureManager {
 }
 
 impl TextureManager {
-    pub fn new(device: &Device, queue: &Queue) -> Self {
+    pub fn new(device: &Device, queue: &Queue, x: &BindGroupLayout) -> Self {
         let mut textures = SlotMap::with_key();
         let default_albedo = Texture::from_image(
             device,
@@ -88,15 +88,15 @@ impl TextureManager {
 pub struct MaterialManager {
     materials: SlotMap<MatId, Material>,
     pub default_material: MatId,
-    buffer: DynamicBufferArray<MaterialInfo>
+    pub buffer: DynamicBufferArray<MaterialInfo>
 }
 
 impl MaterialManager {
-    pub fn new(device: &Device, queue: &Queue) -> Self {
+    pub fn new(device: &Device, queue: &Queue, bind_group_layout: &BindGroupLayout) -> Self {
         let mut materials = SlotMap::with_key();
         let pbr_mat = PbrMaterial::from_default(None);
-        let mut buffer = DynamicBufferArray::new(device, Some("Material Buffer".to_string()), BufferUsages::STORAGE | BufferUsages::COPY_DST);
-        buffer.push(device, queue, &[MaterialInfo::from(&pbr_mat)]);
+        let mut buffer = DynamicBufferArray::new(device, Some("Material Buffer".to_string()), BufferUsages::STORAGE | BufferUsages::COPY_DST, bind_group_layout);
+        buffer.push(device, queue, &[MaterialInfo::from(&pbr_mat)], bind_group_layout);
         let default_material = materials.insert(Material::Pbr(pbr_mat));
 
         Self {
@@ -105,13 +105,13 @@ impl MaterialManager {
             buffer,
         }
     }
-    pub fn add_material(&mut self, mut material: Material, device: &Device, queue: &Queue) -> MatId {
+    pub fn add_material(&mut self, mut material: Material, device: &Device, queue: &Queue, bind_group_layout: &BindGroupLayout) -> MatId {
         println!("Adding material: {:?}", material.name());
         let shader_id = self.materials.len();
         material.set_shader_id(shader_id as u32);
         match &material {
             Material::Pbr(pbr) => {
-                self.buffer.push(device, queue, &[MaterialInfo::from(pbr)]);
+                self.buffer.push(device, queue, &[MaterialInfo::from(pbr)], bind_group_layout);
             }
         }
         let mat_id = self.materials.insert(material);
@@ -128,17 +128,6 @@ impl MaterialManager {
 
     pub fn iter(&self) -> impl Iterator<Item = &Material> {
         self.materials.values()
-    }
-
-    pub fn create_bind_group(&self, device: &Device, layout: &BindGroupLayout) -> wgpu::BindGroup {
-        device.create_bind_group(&BindGroupDescriptor {
-            label: Some("PBR Materials Bind Group"),
-            layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: self.buffer.buffer.as_entire_binding(),
-            }],
-        })
     }
 
     pub fn update_dirty(&mut self, queue: &Queue) {

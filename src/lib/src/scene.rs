@@ -294,16 +294,20 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn from(device: &Device, queue: &Queue, models: Vec<Model>, material_manager: &MaterialManager, name: Option<Box<str>>) -> Self {
+    pub fn from(device: &Device, queue: &Queue, models: Vec<Model>, material_manager: &MaterialManager, name: Option<Box<str>>, mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
+    ) -> Self {
         let mut mesh_buffer = DynamicBufferArray::new(
             device,
             Some("Mesh Buffer".to_string()),
             BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mesh_bind_group_layout
         );
         let mut light_buffer = DynamicBufferArray::new(
             device,
             Some("Light Buffer".to_string()),
             BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            light_bind_group_layout
         );
         for model in models.iter() {
             for mesh in model.meshes.iter() {
@@ -311,10 +315,11 @@ impl Scene {
                     device,
                     queue,
                     &[MeshInfo::from_mesh(mesh, material_manager)],
+                    mesh_bind_group_layout
                 );
             }
             if let Some(light) = &model.light {
-                light_buffer.push(device, queue, &[LightInfo::from(light)]);
+                light_buffer.push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
             }
         }
 
@@ -369,6 +374,7 @@ pub struct World {
 }
 
 impl World {
+
     pub fn get_active_scene(&self) -> &Scene {
         self.scenes.get(self.active_scene).unwrap()
     }

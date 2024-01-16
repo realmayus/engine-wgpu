@@ -20,13 +20,10 @@ pub struct PBRPipelineProvider {
     shader: ShaderModule,
     pipeline: Option<RenderPipeline>,
     pub pipeline_layout: PipelineLayout,
-    pub mat_bind_group: BindGroup,
-    pub mesh_bind_group: BindGroup,
     pub cam_bind_group: BindGroup,
     pub tex_bind_group_layout: wgpu::BindGroupLayout,
-    mat_bind_group_layout: wgpu::BindGroupLayout,
-    mesh_bind_group_layout: wgpu::BindGroupLayout,
-    pub light_bind_group: BindGroup,
+    pub(crate) mat_bind_group_layout: wgpu::BindGroupLayout,
+    pub(crate) mesh_bind_group_layout: wgpu::BindGroupLayout,
     pub light_bind_group_layout: wgpu::BindGroupLayout,
     pub depth_texture: Texture,
 }
@@ -36,9 +33,6 @@ impl PBRPipelineProvider {
     pub fn new(
         device: &Device,
         config: &SurfaceConfiguration,
-        mesh_info_buffers: &[Buffer],
-        material_info_buffers: &[Buffer],
-        light_info_buffers: &[Buffer],
         camera_buffer: &Buffer,
     ) -> Self {
         let shader =
@@ -83,34 +77,9 @@ impl PBRPipelineProvider {
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
-                count: Some(NonZeroU32::new(1_000).unwrap()),
+                count: None,
             }],
         });
-
-        let mat_bind_group = {
-            let dummy_material = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("Dummy Material Buffer"),
-                contents: bytemuck::cast_slice(&[MaterialInfo::default()]),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            });
-
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("PBR Material Bindgroup"),
-                layout: &mat_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::BufferArray(
-                        &iter::once(dummy_material.as_entire_buffer_binding())
-                            .chain(
-                                material_info_buffers
-                                    .iter()
-                                    .map(|m| m.as_entire_buffer_binding()),
-                            )
-                            .collect::<Vec<_>>(),
-                    ),
-                }],
-            })
-        };
 
         let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("PBR Mesh Bindgroup Layout"),
@@ -122,34 +91,9 @@ impl PBRPipelineProvider {
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
-                count: Some(NonZeroU32::new(1_000).unwrap()),
+                count: None,
             }],
         });
-
-        let mesh_bind_group = {
-            let dummy_mesh = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("Dummy Mesh Buffer"),
-                contents: bytemuck::cast_slice(&[MeshInfo::default()]),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            });
-
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("PBR Mesh Bindgroup"),
-                layout: &mesh_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::BufferArray(
-                        &iter::once(dummy_mesh.as_entire_buffer_binding())
-                            .chain(
-                                mesh_info_buffers
-                                    .iter()
-                                    .map(|m| m.as_entire_buffer_binding()),
-                            )
-                            .collect::<Vec<_>>(),
-                    ),
-                }],
-            })
-        };
 
         let cam_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("PBR Camera Bindgroup Layout"),
@@ -184,34 +128,10 @@ impl PBRPipelineProvider {
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
-                count: Some(NonZeroU32::new(1_000).unwrap()),
+                count: None,
             }],
         });
 
-        let light_bind_group = {
-            let dummy_light = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("Dummy Light Buffer"),
-                contents: bytemuck::cast_slice(&[LightInfo::default()]),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            });
-
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("PBR Light Bindgroup"),
-                layout: &light_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::BufferArray(
-                        &iter::once(dummy_light.as_entire_buffer_binding())
-                            .chain(
-                                light_info_buffers
-                                    .iter()
-                                    .map(|m| m.as_entire_buffer_binding()),
-                            )
-                            .collect::<Vec<_>>(),
-                    ),
-                }],
-            })
-        };
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
@@ -230,9 +150,6 @@ impl PBRPipelineProvider {
             shader,
             pipeline: None,
             pipeline_layout,
-            mat_bind_group,
-            mesh_bind_group,
-            light_bind_group,
             cam_bind_group,
             tex_bind_group_layout,
             mat_bind_group_layout,
@@ -240,34 +157,6 @@ impl PBRPipelineProvider {
             light_bind_group_layout,
             depth_texture,
         }
-    }
-    pub fn update_mat_bind_group(&mut self, device: &Device, material_manager: &MaterialManager) {
-        self.mat_bind_group =
-            material_manager.create_bind_group(device, &self.mat_bind_group_layout);
-    }
-
-    pub fn update_lights_bind_group(&mut self, device: &Device, light_buffer: &DynamicBufferArray<LightInfo>) {
-        self.light_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("Point Lights Bind Group"),
-            layout: &self.light_bind_group_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: light_buffer.binding_resource(),
-            }],
-        });
-        println!("Light bind group got updated, containing {} lights", light_buffer.len());
-    }
-
-
-    pub fn update_mesh_bind_group(&mut self, device: &Device, mesh_buffer: &DynamicBufferArray<MeshInfo>) {
-        self.mesh_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("PBR Mesh Bindgroup"),
-            layout: &self.mesh_bind_group_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: mesh_buffer.binding_resource()
-            }],
-        });
     }
 
     // (re-)creates the pipeline
@@ -383,6 +272,9 @@ impl PBRPipelineProvider {
         view: &TextureView,
         meshes: &[&Mesh],
         material_manager: &MaterialManager,
+        mat_buffer: &DynamicBufferArray<MaterialInfo>,
+        mesh_buffer: &DynamicBufferArray<MeshInfo>,
+        light_buffer: &DynamicBufferArray<LightInfo>,
     ) {
         let vertex_inputs = meshes.iter().map(|m| m.vertex_inputs.as_ref().unwrap());
         let textures_bind_groups = meshes
@@ -401,10 +293,10 @@ impl PBRPipelineProvider {
             vertex_inputs,
             view,
             &textures_bind_groups,
-            &self.mat_bind_group,
-            &self.mesh_bind_group,
+            &mat_buffer.bind_group,
+            &mesh_buffer.bind_group,
             &self.cam_bind_group,
-            &self.light_bind_group,
+            &light_buffer.bind_group,
         )
     }
 }

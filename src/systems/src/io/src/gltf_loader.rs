@@ -157,6 +157,9 @@ pub fn load_gltf(
     device: &Device,
     queue: &Queue,
     texture_bind_group_layout: &BindGroupLayout,
+    material_bind_group_layout: &BindGroupLayout,
+    mesh_bind_group_layout: &BindGroupLayout,
+    light_bind_group_layout: &BindGroupLayout,
     texture_manager: &mut TextureManager,
     material_manager: &mut MaterialManager,
 ) -> Vec<Scene> {
@@ -278,7 +281,7 @@ pub fn load_gltf(
                     texture_bind_group: None,
                 }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
                 mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
-                let global_id = material_manager.add_material(Material::Pbr(mat), device, queue);
+                let global_id = material_manager.add_material(Material::Pbr(mat), device, queue, material_bind_group_layout);
                 (index, global_id)
             })
             .collect::<HashMap<_, _>>();
@@ -300,7 +303,7 @@ pub fn load_gltf(
                 )
             })
             .collect();
-        scenes.push(Scene::from(device, queue, models, material_manager, scene.name().map(Box::from)));
+        scenes.push(Scene::from(device, queue, models, material_manager, scene.name().map(Box::from), mesh_bind_group_layout, light_bind_group_layout));
     }
     scenes
 }
