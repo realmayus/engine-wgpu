@@ -1,8 +1,8 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, Device, Queue};
-use winit::event::{ElementState, KeyboardInput, ModifiersState, MouseButton, VirtualKeyCode};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use winit::event::{ElementState, ModifiersState, MouseButton, VirtualKeyCode};
 
 use lib::shader_types::CameraUniform;
 
@@ -11,14 +11,38 @@ const GLOBAL_Y: [f32; 4] = [0.0, -1.0, 0.0, 1.0];
 const GLOBAL_Z: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 const EPS: f32 = 0.01;
 
+#[derive(Debug)]
+enum InputDevice {
+    Mouse {
+        middle_pressed: bool,
+    },
+}
+
+impl InputDevice {
+    fn pan(&self) -> bool {
+        match self {
+            InputDevice::Mouse { middle_pressed } => *middle_pressed,
+        }
+    }
+}
+
+impl Default for InputDevice {
+fn default() -> Self {
+        InputDevice::Mouse {
+            middle_pressed: false,
+        }
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct KeyState {
     pub up_pressed: bool,
     pub down_pressed: bool,
     pub left_pressed: bool,
     pub right_pressed: bool,
-    pub middle_pressed: bool,
     pub shift_pressed: bool,
+    pub input_device: InputDevice,
+    pub cmd_pressed: bool,
 }
 
 impl KeyState {
@@ -29,7 +53,7 @@ impl KeyState {
             VirtualKeyCode::S => self.down_pressed = pressed,
             VirtualKeyCode::A => self.left_pressed = pressed,
             VirtualKeyCode::D => self.right_pressed = pressed,
-            VirtualKeyCode::Space => self.middle_pressed = pressed,
+            // VirtualKeyCode::Space => self.middle_pressed = pressed,
             _ => (),
         }
     }
@@ -37,13 +61,15 @@ impl KeyState {
     pub(crate) fn update_mouse(&mut self, state: &ElementState, button: &MouseButton) {
         let pressed = state == &ElementState::Pressed;
         match button {
-            MouseButton::Middle => self.middle_pressed = pressed,
-            _ => (),
+            MouseButton::Middle => self.input_device = InputDevice::Mouse { middle_pressed: pressed },
+            MouseButton::Left if self.cmd_pressed || self.shift_pressed => self.input_device = InputDevice::Mouse { middle_pressed: pressed },
+            _ => self.input_device = InputDevice::Mouse { middle_pressed: false },
         }
     }
 
     pub(crate) fn set_modifiers(&mut self, state: &ModifiersState) {
-        self.shift_pressed = state.shift()
+        self.shift_pressed = state.shift();
+        self.cmd_pressed = state.logo();
     }
 }
 
@@ -243,7 +269,7 @@ impl Camera {
             (self.view * Vec4::from((change * delta_time * 20., 0.0, 0.0))).xyz(),
         );
 
-        if keys.middle_pressed && change.length() != 0.0 {
+        if keys.input_device.pan() && change.length() != 0.0 {
             if keys.shift_pressed {
                 self.target = transform(translation, self.target);
                 self.eye = transform(translation, self.eye);

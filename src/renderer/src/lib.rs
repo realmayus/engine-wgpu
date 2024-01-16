@@ -1,19 +1,19 @@
-use anyhow::Result;
 use std::path::Path;
 use std::time::Instant;
+
+use anyhow::Result;
 use glam::Vec2;
-use wgpu::{Color, Device, Limits, Queue, RenderPassDescriptor, Surface, SurfaceConfiguration, SurfaceError};
-use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
+use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
+use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
+
 use lib::managers::{MaterialManager, TextureManager};
+use lib::scene::World;
+use systems::io::gltf_loader::load_gltf;
 
 use crate::camera::{Camera, KeyState};
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
-use lib::scene::{World};
-use lib::texture::Texture;
-use systems::io::gltf_loader::load_gltf;
-use crate::gui::EguiContext;
 
 pub mod camera;
 pub mod pipelines;
@@ -262,15 +262,9 @@ pub async fn run(hook: impl Hook + 'static) {
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                             state.resize(**new_inner_size);
                         }
-                        WindowEvent::CursorMoved { position, .. } => {
-                            let new_pos = Vec2::new(position.x as f32 / state.surface_config.width as f32, position.y as f32 / state.surface_config.height as f32);
-                            cursor_delta = cursor_pos - new_pos;
-                            cursor_pos = new_pos;
-                        }
                         WindowEvent::MouseInput { state, button, ..} => {
                             keys.update_mouse(state, button);
                         }
-
                         _ => {}
                     }
                 }
@@ -290,6 +284,9 @@ pub async fn run(hook: impl Hook + 'static) {
                 }
                 let elapsed = time.elapsed().as_micros() as f32;
                 delta_time = elapsed / 1_000_000.0;
+            }
+            Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                cursor_delta = Vec2::new(delta.0 as f32 / state.surface_config.width as f32, delta.1 as f32 / state.surface_config.height as f32);
             }
             _ => {}
         }
