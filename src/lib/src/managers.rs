@@ -3,7 +3,7 @@ use crate::Material;
 use crate::scene::{PbrMaterial};
 use crate::shader_types::MaterialInfo;
 use crate::texture::{Texture, TextureKind};
-use log::{info, warn};
+use log::{debug, info, warn};
 use slotmap::basic::SlotMap;
 use slotmap::new_key_type;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BufferUsages, Device, Queue};
@@ -106,7 +106,7 @@ impl MaterialManager {
         }
     }
     pub fn add_material(&mut self, mut material: Material, device: &Device, queue: &Queue, bind_group_layout: &BindGroupLayout) -> MatId {
-        println!("Adding material: {:?}", material.name());
+        debug!("Adding material: {:?}", material.name());
         let shader_id = self.materials.len();
         material.set_shader_id(shader_id as u32);
         match &material {
@@ -114,8 +114,7 @@ impl MaterialManager {
                 self.buffer.push(device, queue, &[MaterialInfo::from(pbr)], bind_group_layout);
             }
         }
-        let mat_id = self.materials.insert(material);
-        mat_id
+        self.materials.insert(material)
     }
 
     pub fn get_material(&self, id: MatId) -> &Material {
@@ -132,7 +131,7 @@ impl MaterialManager {
 
     pub fn update_dirty(&mut self, queue: &Queue) {
         for (_, mat) in self.materials.iter_mut().filter(|(_, m)| m.dirty()) {
-            print!("Updating material {:?}...", mat.name());
+            debug!("Updating material {:?}...", mat.name());
             let Material::Pbr(mat) = mat;
             mat.dirty = false;
             let mat_id = mat.shader_id;

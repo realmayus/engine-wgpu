@@ -1,3 +1,4 @@
+use log::debug;
 use wgpu::{BindGroupLayout, Buffer, BufferAddress, Device, Queue};
 
 const PREALLOC_COUNT: usize = 16;
@@ -43,7 +44,7 @@ impl<T: bytemuck::Pod> DynamicBufferArray<T> {
     }
 
     pub fn push(&mut self, device: &Device, queue: &Queue, data: &[T], bind_group_layout: &BindGroupLayout) {
-        println!("Pushing {} elements to buffer (Count: {})", data.len(), self.count);
+        debug!("Pushing {} elements to buffer (Count: {})", data.len(), self.count);
         if self.count + data.len() as u32 > self.capacity {
             self.resize(device, queue, bind_group_layout);
         }
@@ -57,7 +58,7 @@ impl<T: bytemuck::Pod> DynamicBufferArray<T> {
     }
 
     fn resize(&mut self, device: &Device, queue: &Queue, bind_group_layout: &BindGroupLayout) {
-        println!("Resizing buffer {:?}", self.label);
+        debug!("Resizing buffer {:?}", self.label);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Buffer resize encoder"),
         });

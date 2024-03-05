@@ -10,8 +10,8 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) @interpolate(flat) index: u32,
     @location(1) tex_coords: vec2<f32>,
-    @location(2) frag_pos_tan: vec3<f32>,
-    @location(3) view_pos_tan: vec3<f32>,
+    @location(2) frag_pos: vec3<f32>,
+    @location(3) view_pos: vec3<f32>,
     @location(4) t: vec3<f32>,
     @location(5) b: vec3<f32>,
     @location(6) n: vec3<f32>,
@@ -21,7 +21,7 @@ struct VertexOutput {
 struct MeshInfo {
     material: u32,
     model_transform: mat4x4<f32>,
-    normal_matrix: mat3x3<f32>,
+    normal_matrix: mat4x4<f32>,  // model_transform.inverse().transpose()
 }
 @group(2) @binding(0)
 var<storage, read> mesh_infos: array<MeshInfo>;
@@ -44,18 +44,15 @@ fn vs_main(
     out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position, 1.0);
     out.index = in.index;
     out.tex_coords = in.uv;
-    let frag_pos = (model_transform * vec4<f32>(in.position, 1.0)).xyz;
-    let normalMatrix = mesh_infos[in.index].normal_matrix;
+    out.frag_pos = (model_transform * vec4<f32>(in.position, 1.0)).xyz;
 
-    out.t = normalize(normalMatrix * in.tangent.xyz);
-    out.n = normalize(normalMatrix * in.normal);
-    out.t = normalize(out.t - dot(out.t, out.n) * out.n);
-    out.b = cross(out.n, out.t);
-//    out.b = normalize(cross(in.normal, in.tangent.xyz) * in.tangent.w);
+    out.t = normalize((model_transform * vec4(in.tangent.xyz, 0.0)).xyz);
+    out.n = normalize((model_transform * vec4(in.normal, 0.0)).xyz);
+    let bitangent = cross(in.normal, in.tangent.xyz) * in.tangent.w;
+    out.b = normalize((model_transform * vec4(bitangent, 0.0)).xyz);
+
     // we can't just pass the matrix to the fragment shader due to size limitations
-    let tbn = transpose(mat3x3<f32>(out.t, out.b, out.n));
-    out.frag_pos_tan = tbn * frag_pos;
-    out.view_pos_tan = tbn * camera.view_position.xyz;
+    out.view_pos = camera.view_position.xyz;
     out.num_lights = camera.num_lights;  // camera is only accessible in vertex shader
     return out;
 }
@@ -109,17 +106,16 @@ const PI = 3.14159265359;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let tbn = transpose(mat3x3<f32>(in.t, in.b, in.n));
     let mat_id = mesh_infos[in.index].material;
     let material = materials[mat_id];
+    let tbn = mat3x3<f32>(in.t, in.b, in.n);
 
 
     // load material values, if index 0, value will be 1 because of white default texture
     var albedo = textureSample(t_albedo, s_albedo, in.tex_coords) * material.albedo;
-    var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb;
-    // transform normal vector from [0,1] to range [-1,1]
-    normal = normalize(normal * 2.0 - 1.0);
-
+    var normal = textureSample(t_normal, s_normal, in.tex_coords).rgb * 2.0;
+    normal = normal - vec3(1.0);
+    normal = normalize(tbn * normal);
 
     let metallic = textureSample(t_metallic, s_metallic, in.tex_coords).b * material.metal_roughness_factors.x;
     let roughness = textureSample(t_metallic, s_metallic, in.tex_coords).g * material.metal_roughness_factors.y;
@@ -129,7 +125,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     albedo = pow(albedo, vec4(2.2));
     emission = pow(emission, vec3(2.2));
     occlusion = pow(occlusion, 2.2);
-    let view_dir = normalize(in.view_pos_tan - in.frag_pos_tan);
+    let view_dir = normalize(in.view_pos - in.frag_pos);
     // most dielectric surfaces look visually correct with f0 of 0.04
     var f0 = vec3(0.04);
     f0 = mix(f0, albedo.rgb, metallic);
@@ -138,12 +134,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // contribution of each light
     for (var i = 0u; i < in.num_lights; i++) {
         let light = lights[i];
-        // convert to tangent space
-        let light_pos_tan = tbn * light.transform[3].xyz;
-        let light_dir = normalize(light_pos_tan - in.frag_pos_tan);
+        let light_pos = light.transform[3].xyz;
+        let light_dir = normalize(light_pos - in.frag_pos);
         let half_vec = normalize(view_dir + light_dir);
 
-        let dist = length(light_pos_tan - in.frag_pos_tan);
+        let dist = length(light_pos - in.frag_pos);
         let attenuation = 1.0 / (dist * dist);
         let radiance: vec3<f32> = light.color * 5.0 * attenuation;
         // Fresnel equation F of DFG which is the specular part of BRDF

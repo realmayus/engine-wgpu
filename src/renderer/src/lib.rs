@@ -1,7 +1,8 @@
-use std::path::Path;
+use std::sync::mpsc;
 use std::time::Instant;
 
 use anyhow::Result;
+use egui_wgpu::renderer::ScreenDescriptor;
 use glam::Vec2;
 use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
@@ -10,7 +11,6 @@ use winit::window::{Window, WindowBuilder};
 
 use lib::managers::{MaterialManager, TextureManager};
 use lib::scene::World;
-use systems::io::gltf_loader::load_gltf;
 
 use crate::camera::{Camera, KeyState};
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
@@ -18,40 +18,14 @@ use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 pub mod camera;
 pub mod pipelines;
 mod gui;
+pub mod commands;
 
 pub trait Hook {
-    fn setup<'a>(&self, world: &'a mut World, data: SetupData);
+    fn setup<'a>(&self, commands: mpsc::Sender<commands::Command>);
 
     fn update(&mut self, keys: &KeyState, delta_time: f32);
-}
 
-pub struct SetupData<'a> {
-    pub tex_bind_group_layout: &'a wgpu::BindGroupLayout,
-    pub material_bind_group_layout: &'a wgpu::BindGroupLayout,
-    pub mesh_bind_group_layout: &'a wgpu::BindGroupLayout,
-    pub light_bind_group_layout: &'a wgpu::BindGroupLayout,
-    pub device: &'a Device,
-    pub queue: &'a Queue,
-}
-
-impl SetupData<'_> {
-    pub fn load_default_scene(&self, world: &mut World) {
-        let mut scenes = load_gltf(
-            Path::new("assets/models/cube_light_tan.glb"),
-            // Path::new("assets/models/DamagedHelmetTangents.glb"),
-            // Path::new("assets/models/monkeyabuse.glb"),
-            self.device,
-            self.queue,
-            self.tex_bind_group_layout,
-            self.material_bind_group_layout,
-            self.mesh_bind_group_layout,
-            self.light_bind_group_layout,
-            &mut world.textures,
-            &mut world.materials,
-        );
-        let first = scenes.remove(0);
-        world.scenes.push(first);
-    }
+    fn update_ui(&mut self, ctx: &egui::Context, x: &mut World, x0: &mut Camera, sender: mpsc::Sender<commands::Command>);
 }
 
 pub struct RenderState {
@@ -65,6 +39,9 @@ pub struct RenderState {
     camera: Camera,
     world: World,
     hook: Box<dyn Hook>,
+    show_gui: bool,
+    egui: gui::EguiRenderer,
+    command_channel: (mpsc::Sender<commands::Command>, mpsc::Receiver<commands::Command>),
 }
 
 impl RenderState {
@@ -138,6 +115,14 @@ impl RenderState {
             textures,
         };
 
+        let egui = gui::EguiRenderer::new(
+            &device,
+            surface_config.format,
+            None,
+            1,
+            &window,
+        );
+
 
         Self {
             window,
@@ -149,19 +134,18 @@ impl RenderState {
             pbr_pipeline,
             camera,
             world,
+            show_gui: true,
             hook: Box::from(hook),
+            command_channel: mpsc::channel(),
+            egui,
         }
     }
 
     fn setup(&mut self) {
-        self.hook.setup(&mut self.world, SetupData {
-            tex_bind_group_layout: &self.pbr_pipeline.tex_bind_group_layout,
-            material_bind_group_layout: &self.pbr_pipeline.mat_bind_group_layout,
-            mesh_bind_group_layout: &self.pbr_pipeline.mesh_bind_group_layout,
-            light_bind_group_layout: &self.pbr_pipeline.light_bind_group_layout,
-            device: &self.device,
-            queue: &self.queue,
-        });
+        self.hook.setup(self.command_channel.0.clone());
+        while let Ok(command) = self.command_channel.1.try_recv() {
+            command.process(self);
+        }
         self.world.materials.update_dirty(&self.queue);
         self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
         self.camera.update_view(&self.queue);
@@ -181,7 +165,11 @@ impl RenderState {
     }
 
     fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        false
+        if !self.show_gui {
+            false
+        } else {
+            self.egui.handle_input(&self.window, event)
+        }
     }
 
     fn update(&mut self, keys: &KeyState, delta_time: f32, cursor_delta: Vec2) {
@@ -189,7 +177,11 @@ impl RenderState {
         self.camera.recv_input(keys, cursor_delta, delta_time);
         self.camera.update_view(&self.queue);
         self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
+        while let Ok(command) = self.command_channel.1.try_recv() {
+            command.process(self);
+        }
     }
+
     fn render(&mut self) -> Result<(), SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -214,6 +206,25 @@ impl RenderState {
             // let mut bufs = self.egui_ctx.render(&view, &mut encoder, &self.window, Self::gui);
             // buffers.append(&mut bufs);
         }
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [self.surface_config.width, self.surface_config.height],
+            pixels_per_point: self.window.scale_factor() as f32,
+        };
+
+        if self.show_gui {
+            self.egui.draw(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &self.window,
+                &view,
+                screen_descriptor,
+                |ui| {
+                    self.hook.update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone());
+                },
+            );
+        }
+
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         Ok(())
@@ -226,7 +237,6 @@ pub async fn run(hook: impl Hook + 'static) {
 
     let mut state = RenderState::new(window, hook).await;
     let mut keys = KeyState::default();
-    let mut cursor_pos = Vec2::default();
     let mut cursor_delta = Vec2::default();
     let mut delta_time = 0.0;
     state.setup();
@@ -241,18 +251,20 @@ pub async fn run(hook: impl Hook + 'static) {
                         WindowEvent::CloseRequested
                         | WindowEvent::KeyboardInput {
                             input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
                             ..
                         } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::KeyboardInput { input: KeyboardInput {
-                            state,
-                            virtual_keycode: Some(keycode),
-                            ..
-                        },  .. } => {
+                        WindowEvent::KeyboardInput {
+                            input: KeyboardInput {
+                                state,
+                                virtual_keycode: Some(keycode),
+                                ..
+                            }, ..
+                        } => {
                             keys.update_keys(*keycode, *state);
                         }
                         WindowEvent::ModifiersChanged(state) => keys.set_modifiers(state),
@@ -262,7 +274,7 @@ pub async fn run(hook: impl Hook + 'static) {
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                             state.resize(**new_inner_size);
                         }
-                        WindowEvent::MouseInput { state, button, ..} => {
+                        WindowEvent::MouseInput { state, button, .. } => {
                             keys.update_mouse(state, button);
                         }
                         _ => {}

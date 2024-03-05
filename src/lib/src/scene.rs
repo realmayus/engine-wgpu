@@ -117,7 +117,7 @@ pub struct Mesh {
     pub material: MatId,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4, // computed as product of the parent models' local transforms
-    pub normal_matrix: Mat3, // computed as inverse transpose of the global transform
+    pub normal_matrix: Mat4, // computed as inverse transpose of the global transform
     pub vertex_inputs: Option<VertexInputs>,
 }
 impl Mesh {
@@ -145,7 +145,7 @@ impl Mesh {
             material,
             uvs,
             global_transform,
-            normal_matrix: Mat3::from_mat4(global_transform).inverse().transpose(),
+            normal_matrix: global_transform.inverse().transpose(),
             vertex_inputs: Some(vertex_inputs),
         }
     }
@@ -174,6 +174,7 @@ impl Debug for Mesh {
     }
 }
 
+#[derive(Debug)]
 pub struct PointLight {
     pub dirty: bool,
     pub global_transform: Mat4,
@@ -259,7 +260,7 @@ impl Model {
     pub fn update_transforms(&mut self, parent: Mat4) {
         for mesh in self.meshes.as_mut_slice() {
             mesh.global_transform = parent * self.local_transform;
-            mesh.normal_matrix = Mat3::from_mat4(mesh.global_transform).inverse().transpose();
+            mesh.normal_matrix = mesh.global_transform.inverse().transpose();
             mesh.set_dirty(true);
         }
         for child in self.children.as_mut_slice() {

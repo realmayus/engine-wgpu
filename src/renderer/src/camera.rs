@@ -27,7 +27,7 @@ impl InputDevice {
 }
 
 impl Default for InputDevice {
-fn default() -> Self {
+    fn default() -> Self {
         InputDevice::Mouse {
             middle_pressed: false,
         }
@@ -47,7 +47,7 @@ pub struct KeyState {
 
 impl KeyState {
     pub(crate) fn update_keys(&mut self, keycode: VirtualKeyCode, state: ElementState) {
-        let pressed = state == winit::event::ElementState::Pressed;
+        let pressed = state == ElementState::Pressed;
         match keycode {
             VirtualKeyCode::W => self.up_pressed = pressed,
             VirtualKeyCode::S => self.down_pressed = pressed,
@@ -144,7 +144,7 @@ impl Camera {
         if self.light_count == num_lights {
             return;
         }
-        println!("Light count updated to {}", num_lights);
+        debug!("Light count updated to {}", num_lights);
         self.light_count = num_lights;
         self.dirty = true;
     }
@@ -158,7 +158,7 @@ impl Camera {
         self.znear = 0.1;
         self.zfar = 100.0;
         self.speed = 0.5;
-        self.fps = !self.fps;
+        self.fps = false;
         self.view = Mat4::look_at_lh(self.eye, self.target, self.up);
         self.dirty = true;
     }

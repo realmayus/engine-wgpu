@@ -1,90 +1,109 @@
-use std::num::NonZeroU32;
-use egui::{Context};
-use egui_wgpu::{winit::Painter, WgpuConfiguration, renderer};
-use egui_winit::{State};
-use wgpu::{Color, CommandBuffer, CommandEncoder, Device, Queue, TextureView};
+use egui::epaint::Shadow;
+use egui::{Context, Visuals};
+use egui_wgpu::renderer::ScreenDescriptor;
+use egui_wgpu::Renderer;
+
+use egui_winit::State;
+use wgpu::{CommandEncoder, Device, Queue, TextureFormat, TextureView};
 use winit::event::WindowEvent;
 use winit::window::Window;
 
-pub(crate) struct EguiContext {
-    context: Context,
-    painter: Painter,
+pub struct EguiRenderer {
+    pub context: Context,
     state: State,
+    renderer: Renderer,
 }
 
-impl EguiContext {
-    pub(crate) async fn new(window: &Window) -> EguiContext {
-        let mut painter = Painter::new(WgpuConfiguration::default(), 1, None, true);
-        let context = Context::default();
-        painter.set_window(context.viewport_id(), Some(window)).await.unwrap();
-        let state = State::new(context.viewport_id(), window, Some(window.scale_factor() as f32), None);
-        Self {
-            context,
-            painter,
-            state,
+impl EguiRenderer {
+    pub fn new(
+        device: &Device,
+        output_color_format: TextureFormat,
+        output_depth_format: Option<TextureFormat>,
+        msaa_samples: u32,
+        window: &Window,
+    ) -> EguiRenderer {
+        let egui_context = Context::default();
+        let id = egui_context.viewport_id();
+
+        const BORDER_RADIUS: f32 = 2.0;
+
+        let visuals = Visuals {
+            window_rounding: egui::Rounding::same(BORDER_RADIUS),
+            window_shadow: Shadow::NONE,
+            // menu_rounding: todo!(),
+            ..Default::default()
+        };
+
+        egui_context.set_visuals(visuals);
+
+        let egui_state = egui_winit::State::new(id, &window, None, None);
+
+        // egui_state.set_pixels_per_point(window.scale_factor() as f32);
+        let egui_renderer = egui_wgpu::renderer::Renderer::new(
+            device,
+            output_color_format,
+            output_depth_format,
+            msaa_samples,
+        );
+
+        EguiRenderer {
+            context: egui_context,
+            state: egui_state,
+            renderer: egui_renderer,
         }
     }
-    pub fn context_mut(&mut self) -> &mut Context {
-        &mut self.context
+
+    pub fn handle_input(&mut self, window: &Window, event: &WindowEvent) -> bool {
+        let res = self.state.on_window_event(&self.context, event);
+        res.consumed
     }
 
-    pub fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
-        self.state.on_window_event(&self.context, event).repaint
-    }
+    pub fn draw(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut CommandEncoder,
+        window: &Window,
+        window_surface_view: &TextureView,
+        screen_descriptor: ScreenDescriptor,
+        run_ui: impl FnOnce(&Context),
+    ) {
+        // self.state.set_pixels_per_point(window.scale_factor() as f32);
+        let raw_input = self.state.take_egui_input(&window);
+        let full_output = self.context.run(raw_input, |ui| {
+            run_ui(&self.context);
+        });
 
-    pub fn on_resized(&mut self, width: u32, height: u32) {
-        self.painter.on_window_resized(self.context.viewport_id(), NonZeroU32::new(width).unwrap(), NonZeroU32::new(height).unwrap());
-    }
+        self.state
+            .handle_platform_output(&window, &self.context, full_output.platform_output);
 
-    pub fn render(&mut self, view: &TextureView, encoder: &mut CommandEncoder, window: &Window, ui: impl FnOnce(&Context)) -> Vec<CommandBuffer> {
-        // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        //     label: Some("egui Render Pass"),
-        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //         view,
-        //         resolve_target: None,
-        //         ops: wgpu::Operations {
-        //             load: wgpu::LoadOp::Clear(Color::BLACK),
-        //             store: wgpu::StoreOp::Store,
-        //         },
-        //     })],
-        //     depth_stencil_attachment: None,
-        //     timestamp_writes: None,
-        //     occlusion_query_set: None,
-        // });
-        //
-        // let raw_input = self.state.take_egui_input(window);
-        // let full_output = self.context.run(raw_input, |ctx| ui(ctx));
-        // self.state.handle_platform_output(window, &self.context, full_output.platform_output);
-        // let clipped_primitives = self.context.tessellate(full_output.shapes, window.scale_factor() as f32);
-        //
-        // let screen_descriptor = renderer::ScreenDescriptor {
-        //     size_in_pixels: window.inner_size().into(),
-        //     pixels_per_point: window.scale_factor() as f32,
-        // };
-        //
-        // let render_state = self.painter.render_state().unwrap();
-        // let user_cmd_bufs = {
-        //     let mut renderer = render_state.renderer.write();
-        //     for (id, image_delta) in &full_output.textures_delta.set {
-        //         renderer.update_texture(
-        //             &render_state.device,
-        //             &render_state.queue,
-        //             *id,
-        //             image_delta,
-        //         );
-        //     }
-        //
-        //     renderer.update_buffers(
-        //         &render_state.device,
-        //         &render_state.queue,
-        //         encoder,
-        //         &clipped_primitives,
-        //         &screen_descriptor,
-        //     )
-        // };
-        // let renderer= render_state.renderer.read();
-        // renderer.render(&mut render_pass, &clipped_primitives, &screen_descriptor);
-        // user_cmd_bufs
-        vec![]
+        let tris = self
+            .context
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
+        for (id, image_delta) in &full_output.textures_delta.set {
+            self.renderer
+                .update_texture(&device, &queue, *id, &image_delta);
+        }
+        self.renderer
+            .update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &window_surface_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            label: Some("egui main render pass"),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        self.renderer.render(&mut rpass, &tris, &screen_descriptor);
+        drop(rpass);
+        for x in &full_output.textures_delta.free {
+            self.renderer.free_texture(x)
+        }
     }
 }
