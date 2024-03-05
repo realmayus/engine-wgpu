@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glam = "0.24.1"
+glam = "0.25.0"
 systems = { path = "../systems" }
 lib = { path = "../lib" }
 log = "0.4.19"

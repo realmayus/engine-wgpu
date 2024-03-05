@@ -922,7 +922,7 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "dotenv",
- "glam",
+ "glam 0.24.2",
  "image",
  "itertools 0.11.0",
  "lib",
@@ -1075,6 +1075,7 @@ dependencies = [
  "egui",
  "engine",
  "env_logger",
+ "glam 0.25.0",
  "pollster",
  "rfd 0.14.0",
 ]
@@ -1389,6 +1390,12 @@ name = "glam"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5418c17512bdf42730f9032c74e1ae39afc408745ebb2acf72fbc4691c17945"
+
+[[package]]
+name = "glam"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "151665d9be52f9bb40fc7966565d39666f2d1e69233571b71b87791c7e0528b3"
 dependencies = [
  "serde",
 ]
@@ -1681,7 +1688,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.21.5",
  "bytemuck",
- "glam",
+ "glam 0.25.0",
  "gltf",
  "image",
  "lib",
@@ -1812,7 +1819,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
- "glam",
+ "glam 0.25.0",
  "gltf",
  "image",
  "itertools 0.12.0",
@@ -2605,7 +2612,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
- "glam",
+ "glam 0.25.0",
  "lib",
  "log",
  "systems",

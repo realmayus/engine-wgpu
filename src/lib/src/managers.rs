@@ -60,6 +60,10 @@ impl TextureManager {
         self.textures.values()
     }
 
+    pub fn iter_with_ids(&self) -> impl Iterator<Item = (TexId, &Texture)> {
+        self.textures.iter()
+    }
+
     pub fn default_tex(&self, texture_kind: TextureKind) -> &Texture {
         match texture_kind {
             TextureKind::Albedo => &self.textures[self.default_albedo],
@@ -129,6 +133,10 @@ impl MaterialManager {
         self.materials.values()
     }
 
+    pub fn iter_with_ids(&self) -> impl Iterator<Item = (MatId, &Material)> {
+        self.materials.iter()
+    }
+    
     pub fn update_dirty(&mut self, queue: &Queue) {
         for (_, mat) in self.materials.iter_mut().filter(|(_, m)| m.dirty()) {
             debug!("Updating material {:?}...", mat.name());
