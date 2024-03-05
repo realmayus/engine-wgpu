@@ -139,7 +139,7 @@ impl Camera {
 
     /**
     Call this whenever the number of lights in the scene changes. This value gets passed to the fragment shader.
-    */
+     */
     pub fn update_light_count(&mut self, num_lights: u32) {
         if self.light_count == num_lights {
             return;
@@ -147,6 +147,10 @@ impl Camera {
         debug!("Light count updated to {}", num_lights);
         self.light_count = num_lights;
         self.dirty = true;
+    }
+
+    pub fn light_count(&self) -> u32 {
+        self.light_count
     }
 
     pub fn reset(&mut self) {
@@ -177,7 +181,7 @@ impl Camera {
     }
 
     pub fn update_view(&mut self, queue: &Queue) {
-        if !self.dirty { return }
+        if !self.dirty { return; }
         self.dirty = false;
         let new_proj = self.build_projection();
         let mut uniform = CameraUniform::new();

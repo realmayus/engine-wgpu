@@ -106,8 +106,8 @@ impl RenderState {
         let mut pbr_pipeline = PBRPipelineProvider::new(&device, &surface_config, &camera.buffer);
         pbr_pipeline.create_pipeline(&device);
 
-        let materials = MaterialManager::new(&device, &queue, &pbr_pipeline.mat_bind_group_layout);
         let textures = TextureManager::new(&device, &queue, &pbr_pipeline.tex_bind_group_layout);
+        let materials = MaterialManager::new(&device, &queue, &pbr_pipeline.mat_bind_group_layout, &pbr_pipeline.tex_bind_group_layout, &textures);
         let world = World {
             scenes: vec![],
             active_scene: 0,
@@ -148,20 +148,21 @@ impl RenderState {
         }
         self.world.materials.update_dirty(&self.queue);
         self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
-        self.camera.update_view(&self.queue);
         self.camera.update_light_count(self.world.get_active_scene().light_buffer.len());
+        self.camera.update_view(&self.queue);
     }
     pub fn window(&self) -> &Window {
         &self.window
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
-            self.surface_config.width = new_size.width;
-            self.surface_config.height = new_size.height;
-            self.surface.configure(&self.device, &self.surface_config);
-        }
+        self.size = new_size;
+        self.surface_config.width = new_size.width.max(1);
+        self.surface_config.height = new_size.height.max(1);
+        self.surface.configure(&self.device, &self.surface_config);
+        self.pbr_pipeline.resize(&self.device, &self.surface_config);
+        self.camera.update_aspect(new_size.width as f32, new_size.height as f32);
+        self.window.request_redraw();
     }
 
     fn input(&mut self, event: &winit::event::WindowEvent) -> bool {

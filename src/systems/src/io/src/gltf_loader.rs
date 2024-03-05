@@ -1,29 +1,28 @@
+use std::{fs, io};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
-use std::{fs, io};
-use base64::{engine::general_purpose, Engine as _};
+
+use base64::{Engine as _, engine::general_purpose};
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use gltf::{Error, Node};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
-use gltf::{Error, Node};
 use image::DynamicImage;
 use image::ImageFormat::{Jpeg, Png};
 use log::{debug, info};
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
-use lib::managers::{MaterialManager, MatId, TextureManager};
+use wgpu::{BindGroupLayout, Device, Queue};
 
-use lib::scene::{PointLight};
-use lib::scene::{Mesh, Model, PbrMaterial, Scene};
-use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use lib::texture::{Texture, TextureKind};
+use lib::managers::{MaterialManager, MatId, TextureManager};
 use lib::Material;
+use lib::scene::{Mesh, Model, PbrMaterial, Scene};
+use lib::scene::PointLight;
+use lib::texture::{Texture, TextureKind};
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
-where
-    P: AsRef<Path>,
+    where
+        P: AsRef<Path>,
 {
     use io::Read;
     let file = fs::File::open(path.as_ref()).map_err(Error::Io)?;
@@ -213,9 +212,9 @@ pub fn load_gltf(
                 Texture::from_image(device, queue, &img, gltf_texture.name(), TextureKind::Other)
                     .expect("Couldn't create texture");
 
-        let global_id = texture_manager.add_texture(texture);
-        (gltf_texture.index(), global_id)
-    }).collect::<HashMap<_,_>>();
+            let global_id = texture_manager.add_texture(texture);
+            (gltf_texture.index(), global_id)
+        }).collect::<HashMap<_, _>>();
 
     let local_materials =
         gltf.materials()
@@ -241,10 +240,9 @@ pub fn load_gltf(
                         .metallic_roughness_texture()
                         .map(|t| t.texture().index())
                         .map(|id| {
-                                *local_textures
-                                    .get(&id)
-                                    .expect("Couldn't find metallic roughness texture")
-
+                            *local_textures
+                                .get(&id)
+                                .expect("Couldn't find metallic roughness texture")
                         }),
                     metallic_roughness_factors: Vec2::from((
                         gltf_mat.pbr_metallic_roughness().metallic_factor(),
@@ -252,30 +250,27 @@ pub fn load_gltf(
                     )),
                     normal_texture: gltf_mat.normal_texture().map(|t| t.texture().index()).map(
                         |id| {
-                                *local_textures
-                                    .get(&id)
-                                    .expect("Couldn't find normal texture")
-
+                            *local_textures
+                                .get(&id)
+                                .expect("Couldn't find normal texture")
                         },
                     ),
                     occlusion_texture: gltf_mat
                         .occlusion_texture()
                         .map(|t| t.texture().index())
                         .map(|id| {
-                                *local_textures
-                                    .get(&id)
-                                    .expect("Couldn't find occlusion texture")
-
+                            *local_textures
+                                .get(&id)
+                                .expect("Couldn't find occlusion texture")
                         }),
                     occlusion_factor: 1.0, // TODO: Impl: try to read strength from glTF
                     emissive_texture: gltf_mat
                         .emissive_texture()
                         .map(|t| t.texture().index())
                         .map(|id| {
-                                *local_textures
-                                    .get(&id)
-                                    .expect("Couldn't find emissive texture")
-
+                            *local_textures
+                                .get(&id)
+                                .expect("Couldn't find emissive texture")
                         }),
                     emissive_factors: gltf_mat.emissive_factor().into(),
                     texture_bind_group: None,

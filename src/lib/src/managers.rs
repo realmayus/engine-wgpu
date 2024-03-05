@@ -1,12 +1,13 @@
-use crate::buffer_array::DynamicBufferArray;
-use crate::Material;
-use crate::scene::{PbrMaterial};
-use crate::shader_types::MaterialInfo;
-use crate::texture::{Texture, TextureKind};
 use log::{debug, info, warn};
 use slotmap::basic::SlotMap;
 use slotmap::new_key_type;
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BufferUsages, Device, Queue};
+use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
+
+use crate::buffer_array::DynamicBufferArray;
+use crate::Material;
+use crate::scene::PbrMaterial;
+use crate::shader_types::MaterialInfo;
+use crate::texture::{Texture, TextureKind};
 
 new_key_type! { pub struct TexId; }
 
@@ -56,11 +57,11 @@ impl TextureManager {
         &self.textures[*id]
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Texture> {
+    pub fn iter(&self) -> impl Iterator<Item=&Texture> {
         self.textures.values()
     }
 
-    pub fn iter_with_ids(&self) -> impl Iterator<Item = (TexId, &Texture)> {
+    pub fn iter_with_ids(&self) -> impl Iterator<Item=(TexId, &Texture)> {
         self.textures.iter()
     }
 
@@ -92,15 +93,16 @@ impl TextureManager {
 pub struct MaterialManager {
     materials: SlotMap<MatId, Material>,
     pub default_material: MatId,
-    pub buffer: DynamicBufferArray<MaterialInfo>
+    pub buffer: DynamicBufferArray<MaterialInfo>,
 }
 
 impl MaterialManager {
-    pub fn new(device: &Device, queue: &Queue, bind_group_layout: &BindGroupLayout) -> Self {
+    pub fn new(device: &Device, queue: &Queue, mat_bind_group_layout: &BindGroupLayout, tex_bind_group_layout: &BindGroupLayout, texture_manager: &TextureManager) -> Self {
         let mut materials = SlotMap::with_key();
-        let pbr_mat = PbrMaterial::from_default(None);
-        let mut buffer = DynamicBufferArray::new(device, Some("Material Buffer".to_string()), BufferUsages::STORAGE | BufferUsages::COPY_DST, bind_group_layout);
-        buffer.push(device, queue, &[MaterialInfo::from(&pbr_mat)], bind_group_layout);
+        let mut pbr_mat = PbrMaterial::from_default(None);
+        pbr_mat.create_texture_bind_group(device, tex_bind_group_layout, texture_manager);
+        let mut buffer = DynamicBufferArray::new(device, Some("Material Buffer".to_string()), BufferUsages::STORAGE | BufferUsages::COPY_DST, mat_bind_group_layout);
+        buffer.push(device, queue, &[MaterialInfo::from(&pbr_mat)], mat_bind_group_layout);
         let default_material = materials.insert(Material::Pbr(pbr_mat));
 
         Self {
@@ -129,14 +131,14 @@ impl MaterialManager {
         &self.materials[self.default_material]
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Material> {
+    pub fn iter(&self) -> impl Iterator<Item=&Material> {
         self.materials.values()
     }
 
-    pub fn iter_with_ids(&self) -> impl Iterator<Item = (MatId, &Material)> {
+    pub fn iter_with_ids(&self) -> impl Iterator<Item=(MatId, &Material)> {
         self.materials.iter()
     }
-    
+
     pub fn update_dirty(&mut self, queue: &Queue) {
         for (_, mat) in self.materials.iter_mut().filter(|(_, m)| m.dirty()) {
             debug!("Updating material {:?}...", mat.name());

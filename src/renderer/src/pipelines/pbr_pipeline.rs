@@ -1,21 +1,16 @@
-use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex, Vertex};
-use lib::Material;
-use log::debug;
-use std::cell::Ref;
-use std::iter;
-use std::num::NonZeroU32;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, DepthStencilState, Device, include_wgsl, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline, ShaderModule, SurfaceConfiguration, TextureView};
 use wgpu::SamplerBindingType::Filtering;
-use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferBinding, Color, CommandEncoder, Device, PipelineLayout, RenderPipeline, Sampler, ShaderModule, TextureView, BindGroupLayout, BindGroupDescriptor, BindGroupEntry, BindingResource, TextureFormat, SurfaceConfiguration, DepthStencilState, RenderPassDepthStencilAttachment};
+
 use lib::buffer_array::DynamicBufferArray;
 use lib::managers::MaterialManager;
-
-use lib::scene::{Mesh, VertexInputs, World};
+use lib::Material;
+use lib::scene::{Mesh, VertexInputs};
+use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex, Vertex};
 use lib::texture::Texture;
 
 /**
 Pipeline for physically-based rendering
-*/
+ */
 pub struct PBRPipelineProvider {
     shader: ShaderModule,
     pipeline: Option<RenderPipeline>,
@@ -159,6 +154,10 @@ impl PBRPipelineProvider {
         }
     }
 
+    pub(crate) fn resize(&mut self, device: &Device, config: &SurfaceConfiguration) {
+        self.depth_texture = Texture::create_depth_texture(device, config, "depth_texture");
+    }
+
     // (re-)creates the pipeline
     pub(crate) fn create_pipeline(&mut self, device: &Device) {
         self.pipeline = Some(
@@ -182,7 +181,7 @@ impl PBRPipelineProvider {
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
+                    front_face: wgpu::FrontFace::Cw,
                     cull_mode: Some(wgpu::Face::Back),
                     // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                     polygon_mode: wgpu::PolygonMode::Fill,
@@ -211,7 +210,7 @@ impl PBRPipelineProvider {
     fn render_pass<'a>(
         &self,
         encoder: &mut CommandEncoder,
-        vertex_inputs: impl Iterator<Item = &'a VertexInputs>,
+        vertex_inputs: impl Iterator<Item=&'a VertexInputs>,
         view: &TextureView,
         textures_bind_groups: &[&BindGroup],
         material_info_bind_group: &BindGroup,
@@ -234,7 +233,7 @@ impl PBRPipelineProvider {
                 view: &self.depth_texture.view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+                    store: wgpu::StoreOp::Discard,
                 }),
                 stencil_ops: None,
             }),

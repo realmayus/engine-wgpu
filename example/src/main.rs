@@ -1,15 +1,12 @@
-use std::sync::mpsc;
-use egui::Ui;
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 use rfd::FileDialog;
+
 use engine::lib::scene::World;
-use engine::renderer::camera::{Camera, KeyState};
 use engine::renderer::{commands, Hook};
+use engine::renderer::camera::{Camera, KeyState};
 use engine::renderer::commands::Commands;
 
-struct Game {
-
-}
+struct Game {}
 
 #[derive(PartialEq)]
 enum CameraModes {
@@ -85,16 +82,19 @@ impl Hook for Game {
 
     fn update(&mut self, keys: &KeyState, delta_time: f32) {}
 
-    fn update_ui(&mut self, ctx: &egui::Context, world: &mut World, camera: &mut Camera, sender: mpsc::Sender<commands::Command>) {
+    fn update_ui(&mut self, ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands) {
         egui::Window::new("World").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Load Scene").clicked() {
-                    sender.send(commands::Command::LoadSceneFile("scene.json".into())).unwrap();
+                    let picked_file = FileDialog::new().add_filter("GLTF files", &["glb", "gltf"]).pick_file();
+                    if let Some(file) = picked_file {
+                        commands.send(commands::Command::LoadSceneFile(file)).unwrap();
+                    }
                 }
                 if ui.button("Import File").clicked() {
                     let picked_file = FileDialog::new().add_filter("GLTF files", &["glb", "gltf"]).pick_file();
                     if let Some(file) = picked_file {
-                        sender.send(commands::Command::ImportFile(file)).unwrap();
+                        commands.send(commands::Command::ImportFile(file)).unwrap();
                     }
                 }
             });
@@ -113,6 +113,19 @@ impl Hook for Game {
 
             for scene in world.scenes.as_mut_slice().iter_mut() {
                 egui::CollapsingHeader::new(format!("Scene {}", scene.name.clone().unwrap_or(format!("{}", scene.id).into()))).show(ui, |ui| {
+                    ui.menu_button("Add Model", |ui| {
+                        if ui.button("Cube").on_hover_text("Add a cube").clicked() {
+                            println!("Adding cube");
+                        }
+                        if ui.button("Light").on_hover_text("Add a point light").clicked() {
+                            println!("Adding light");
+                            commands.send(commands::Command::CreateModel(commands::CreateModel::Light {
+                                position: glam::Vec3::ZERO,
+                                color: glam::Vec3::ONE,
+                                intensity: 1.0,
+                            })).unwrap();
+                        }
+                    });
                     for model in scene.models.as_mut_slice().iter_mut() {
                         egui::CollapsingHeader::new(format!("Model {}", model.name.clone().unwrap_or(format!("{}", model.id).into()))).show(ui, |ui| {
                             ui.horizontal(|ui| {
@@ -144,15 +157,12 @@ impl Hook for Game {
                                     ui.label(format!("Material: {:?}", mesh.material));
                                     ui.label(format!("Vertices: {}", mesh.vertices.len()));
                                     ui.label(format!("Indices: {}", mesh.indices.len()));
-
                                 });
                             }
                         });
                     }
                 });
             }
-
-
         });
 
         egui::Window::new("Textures & Materials").show(ctx, |ui| {
