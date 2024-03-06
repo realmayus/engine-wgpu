@@ -1,7 +1,7 @@
-use crate::scene::{Mesh, PbrMaterial};
-use crate::scene::PointLight;
-use glam::Mat4;
 use crate::managers::MaterialManager;
+use crate::scene::PointLight;
+use crate::scene::{Mesh, PbrMaterial};
+use glam::Mat4;
 
 pub trait Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4];
@@ -34,9 +34,9 @@ impl Vertex for PbrVertex {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub proj_view: [[f32; 4]; 4], // s64 o0
-    pub view_position: [f32; 4], // s16 o64
-    pub num_lights: u32,  // s4 o80
-    pub padding: [u32; 3],  // total size: 96
+    pub view_position: [f32; 4],  // s16 o64
+    pub num_lights: u32,          // s4 o80
+    pub padding: [u32; 3],        // total size: 96
 }
 impl CameraUniform {
     pub fn new() -> Self {
@@ -52,11 +52,11 @@ impl CameraUniform {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialInfo {
-    pub albedo: [f32; 4],  // s16 o0
-    pub emission_factors: [f32; 3], // s12 o16
-    pub occlusion_factor: f32,  // s4 o28
-    pub metal_roughness_factors: [f32; 2],  // s8 o32
-    padding3: [f32; 2],  // total size: 48
+    pub albedo: [f32; 4],                  // s16 o0
+    pub emission_factors: [f32; 3],        // s12 o16
+    pub occlusion_factor: f32,             // s4 o28
+    pub metal_roughness_factors: [f32; 2], // s8 o32
+    padding3: [f32; 2],                    // total size: 48
 }
 
 impl From<&PbrMaterial> for MaterialInfo {
@@ -98,11 +98,11 @@ impl Default for MaterialInfo {
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshInfo {
-    pub material: u32,  // s4 o0
+    pub material: u32, // s4 o0
     _align: [u32; 3],
-    pub model_transform: [[f32; 4]; 4],  // s64 o16
-    pub normal_matrix: [[f32; 4]; 4],  // s36 o80
-    // _align2: [u32; 3],  // total size: 128
+    pub model_transform: [[f32; 4]; 4], // s64 o16
+    pub normal_matrix: [[f32; 4]; 4],   // s36 o80
+                                        // _align2: [u32; 3],  // total size: 128
 }
 impl MeshInfo {
     pub fn from_mesh(mesh: &Mesh, material_manager: &MaterialManager) -> Self {
@@ -116,15 +116,14 @@ impl MeshInfo {
     }
 }
 
-
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightInfo {
-    pub transform: [[f32; 4]; 4],  // s64 o0
-    pub color: [f32; 3],  // s12 o64
-    pub intensity: f32,  // s4 o76
-    pub range: f32,  // s4 o80
-    pub padding4: [f32; 3],  // total size: 96
+    pub transform: [[f32; 4]; 4], // s64 o0
+    pub color: [f32; 3],          // s12 o64
+    pub intensity: f32,           // s4 o76
+    pub range: f32,               // s4 o80
+    pub padding4: [f32; 3],       // total size: 96
 }
 
 impl From<&PointLight> for LightInfo {

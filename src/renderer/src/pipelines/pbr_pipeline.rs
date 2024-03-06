@@ -1,12 +1,16 @@
-use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, DepthStencilState, Device, include_wgsl, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline, ShaderModule, SurfaceConfiguration, TextureView};
 use wgpu::SamplerBindingType::Filtering;
+use wgpu::{
+    include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder,
+    DepthStencilState, Device, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline,
+    ShaderModule, SurfaceConfiguration, TextureView,
+};
 
 use lib::buffer_array::DynamicBufferArray;
 use lib::managers::MaterialManager;
-use lib::Material;
 use lib::scene::{Mesh, VertexInputs};
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex, Vertex};
 use lib::texture::Texture;
+use lib::Material;
 
 /**
 Pipeline for physically-based rendering
@@ -25,15 +29,10 @@ pub struct PBRPipelineProvider {
 
 impl PBRPipelineProvider {
     // Creates all necessary bind groups and layouts for the pipeline
-    pub fn new(
-        device: &Device,
-        config: &SurfaceConfiguration,
-        camera_buffer: &Buffer,
-    ) -> Self {
+    pub fn new(device: &Device, config: &SurfaceConfiguration, camera_buffer: &Buffer) -> Self {
         let shader =
             device.create_shader_module(include_wgsl!("../../../../assets/shaders/pbr.wgsl"));
-        let depth_texture =
-            Texture::create_depth_texture(device, config, "depth_texture");
+        let depth_texture = Texture::create_depth_texture(device, config, "depth_texture");
 
         let tex_bind_group_layout = {
             let mut tex_bind_group_layout_entries = Vec::new();
@@ -127,7 +126,6 @@ impl PBRPipelineProvider {
             }],
         });
 
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("PBR Pipeline Layout"),
             bind_group_layouts: &[
@@ -139,7 +137,6 @@ impl PBRPipelineProvider {
             ],
             push_constant_ranges: &[],
         });
-
 
         Self {
             shader,
@@ -210,7 +207,7 @@ impl PBRPipelineProvider {
     fn render_pass<'a>(
         &self,
         encoder: &mut CommandEncoder,
-        vertex_inputs: impl Iterator<Item=&'a VertexInputs>,
+        vertex_inputs: impl Iterator<Item = &'a VertexInputs>,
         view: &TextureView,
         textures_bind_groups: &[&BindGroup],
         material_info_bind_group: &BindGroup,

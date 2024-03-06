@@ -4,6 +4,7 @@ use std::time::Instant;
 use anyhow::Result;
 use egui_wgpu::renderer::ScreenDescriptor;
 use glam::Vec2;
+use hashbrown::HashMap;
 use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -16,16 +17,22 @@ use crate::camera::{Camera, KeyState};
 use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
 
 pub mod camera;
-pub mod pipelines;
-mod gui;
 pub mod commands;
+mod gui;
+pub mod pipelines;
 
 pub trait Hook {
     fn setup<'a>(&self, commands: mpsc::Sender<commands::Command>);
 
     fn update(&mut self, keys: &KeyState, delta_time: f32);
 
-    fn update_ui(&mut self, ctx: &egui::Context, x: &mut World, x0: &mut Camera, sender: mpsc::Sender<commands::Command>);
+    fn update_ui(
+        &mut self,
+        ctx: &egui::Context,
+        x: &mut World,
+        x0: &mut Camera,
+        sender: mpsc::Sender<commands::Command>,
+    );
 }
 
 pub struct RenderState {
@@ -41,7 +48,10 @@ pub struct RenderState {
     hook: Box<dyn Hook>,
     show_gui: bool,
     egui: gui::EguiRenderer,
-    command_channel: (mpsc::Sender<commands::Command>, mpsc::Receiver<commands::Command>),
+    command_channel: (
+        mpsc::Sender<commands::Command>,
+        mpsc::Receiver<commands::Command>,
+    ),
 }
 
 impl RenderState {
@@ -101,28 +111,26 @@ impl RenderState {
         };
         surface.configure(&device, &surface_config);
 
-
         let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
         let mut pbr_pipeline = PBRPipelineProvider::new(&device, &surface_config, &camera.buffer);
         pbr_pipeline.create_pipeline(&device);
 
         let textures = TextureManager::new(&device, &queue, &pbr_pipeline.tex_bind_group_layout);
-        let materials = MaterialManager::new(&device, &queue, &pbr_pipeline.mat_bind_group_layout, &pbr_pipeline.tex_bind_group_layout, &textures);
+        let materials = MaterialManager::new(
+            &device,
+            &queue,
+            &pbr_pipeline.mat_bind_group_layout,
+            &pbr_pipeline.tex_bind_group_layout,
+            &textures,
+        );
         let world = World {
-            scenes: vec![],
+            scenes: HashMap::new(),
             active_scene: 0,
             materials,
             textures,
         };
 
-        let egui = gui::EguiRenderer::new(
-            &device,
-            surface_config.format,
-            None,
-            1,
-            &window,
-        );
-
+        let egui = gui::EguiRenderer::new(&device, surface_config.format, None, 1, &window);
 
         Self {
             window,
@@ -146,10 +154,6 @@ impl RenderState {
         while let Ok(command) = self.command_channel.1.try_recv() {
             command.process(self);
         }
-        self.world.materials.update_dirty(&self.queue);
-        self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
-        self.camera.update_light_count(self.world.get_active_scene().light_buffer.len());
-        self.camera.update_view(&self.queue);
     }
     pub fn window(&self) -> &Window {
         &self.window
@@ -161,7 +165,8 @@ impl RenderState {
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
         self.pbr_pipeline.resize(&self.device, &self.surface_config);
-        self.camera.update_aspect(new_size.width as f32, new_size.height as f32);
+        self.camera
+            .update_aspect(new_size.width as f32, new_size.height as f32);
         self.window.request_redraw();
     }
 
@@ -177,7 +182,7 @@ impl RenderState {
         self.hook.update(keys, delta_time);
         self.camera.recv_input(keys, cursor_delta, delta_time);
         self.camera.update_view(&self.queue);
-        self.world.update_active_scene(&self.queue);  // updates lights and mesh info buffers
+        self.world.update_active_scene(&self.queue); // updates lights and mesh info buffers
         while let Ok(command) = self.command_channel.1.try_recv() {
             command.process(self);
         }
@@ -221,7 +226,12 @@ impl RenderState {
                 &view,
                 screen_descriptor,
                 |ui| {
-                    self.hook.update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone());
+                    self.hook.update_ui(
+                        ui,
+                        &mut self.world,
+                        &mut self.camera,
+                        self.command_channel.0.clone(),
+                    );
                 },
             );
         }
@@ -241,67 +251,73 @@ pub async fn run(hook: impl Hook + 'static) {
     let mut cursor_delta = Vec2::default();
     let mut delta_time = 0.0;
     state.setup();
-    event_loop.run(move |event, _, control_flow| {
-        match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == state.window().id() => {
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
+    event_loop.run(move |event, _, control_flow| match event {
+        Event::WindowEvent {
+            ref event,
+            window_id,
+        } if window_id == state.window().id() => {
+            if !state.input(event) {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::Escape),
                                 ..
                             },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::KeyboardInput {
-                            input: KeyboardInput {
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
                                 state,
                                 virtual_keycode: Some(keycode),
                                 ..
-                            }, ..
-                        } => {
-                            keys.update_keys(*keycode, *state);
-                        }
-                        WindowEvent::ModifiersChanged(state) => keys.set_modifiers(state),
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            state.resize(**new_inner_size);
-                        }
-                        WindowEvent::MouseInput { state, button, .. } => {
-                            keys.update_mouse(state, button);
-                        }
-                        _ => {}
+                            },
+                        ..
+                    } => {
+                        keys.update_keys(*keycode, *state);
                     }
+                    WindowEvent::ModifiersChanged(state) => keys.set_modifiers(state),
+                    WindowEvent::Resized(physical_size) => {
+                        state.resize(*physical_size);
+                    }
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                        state.resize(**new_inner_size);
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        keys.update_mouse(state, button);
+                    }
+                    _ => {}
                 }
             }
-            Event::MainEventsCleared => {
-                state.window().request_redraw();
-                state.update(&keys, delta_time, cursor_delta);
-                cursor_delta = Vec2::default();
-            }
-            Event::RedrawRequested(window_id) if window_id == state.window().id() => {
-                let time = Instant::now();
-                match state.render() {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    Err(e) => eprintln!("{:?}", e),
-                }
-                let elapsed = time.elapsed().as_micros() as f32;
-                delta_time = elapsed / 1_000_000.0;
-            }
-            Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
-                cursor_delta = Vec2::new(delta.0 as f32 / state.surface_config.width as f32, delta.1 as f32 / state.surface_config.height as f32);
-            }
-            _ => {}
         }
+        Event::MainEventsCleared => {
+            state.window().request_redraw();
+            state.update(&keys, delta_time, cursor_delta);
+            cursor_delta = Vec2::default();
+        }
+        Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+            let time = Instant::now();
+            match state.render() {
+                Ok(_) => {}
+                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                Err(e) => eprintln!("{:?}", e),
+            }
+            let elapsed = time.elapsed().as_micros() as f32;
+            delta_time = elapsed / 1_000_000.0;
+        }
+        Event::DeviceEvent {
+            event: DeviceEvent::MouseMotion { delta },
+            ..
+        } => {
+            cursor_delta = Vec2::new(
+                delta.0 as f32 / state.surface_config.width as f32,
+                delta.1 as f32 / state.surface_config.height as f32,
+            );
+        }
+        _ => {}
     });
 }

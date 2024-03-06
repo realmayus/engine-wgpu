@@ -1,7 +1,7 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
-use wgpu::{Buffer, Device, Queue};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{Buffer, Device, Queue};
 use winit::event::{ElementState, ModifiersState, MouseButton, VirtualKeyCode};
 
 use lib::shader_types::CameraUniform;
@@ -13,9 +13,7 @@ const EPS: f32 = 0.01;
 
 #[derive(Debug)]
 enum InputDevice {
-    Mouse {
-        middle_pressed: bool,
-    },
+    Mouse { middle_pressed: bool },
 }
 
 impl InputDevice {
@@ -61,9 +59,21 @@ impl KeyState {
     pub(crate) fn update_mouse(&mut self, state: &ElementState, button: &MouseButton) {
         let pressed = state == &ElementState::Pressed;
         match button {
-            MouseButton::Middle => self.input_device = InputDevice::Mouse { middle_pressed: pressed },
-            MouseButton::Left if self.cmd_pressed || self.shift_pressed => self.input_device = InputDevice::Mouse { middle_pressed: pressed },
-            _ => self.input_device = InputDevice::Mouse { middle_pressed: false },
+            MouseButton::Middle => {
+                self.input_device = InputDevice::Mouse {
+                    middle_pressed: pressed,
+                }
+            }
+            MouseButton::Left if self.cmd_pressed || self.shift_pressed => {
+                self.input_device = InputDevice::Mouse {
+                    middle_pressed: pressed,
+                }
+            }
+            _ => {
+                self.input_device = InputDevice::Mouse {
+                    middle_pressed: false,
+                }
+            }
         }
     }
 
@@ -169,8 +179,7 @@ impl Camera {
 
     pub(crate) fn build_projection(&self) -> Mat4 {
         let view = self.view;
-        let proj =
-            Mat4::perspective_lh(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
+        let proj = Mat4::perspective_lh(self.fovy.to_radians(), self.aspect, self.znear, self.zfar);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
         proj * view * scale
     }
@@ -181,7 +190,9 @@ impl Camera {
     }
 
     pub fn update_view(&mut self, queue: &Queue) {
-        if !self.dirty { return; }
+        if !self.dirty {
+            return;
+        }
         self.dirty = false;
         let new_proj = self.build_projection();
         let mut uniform = CameraUniform::new();

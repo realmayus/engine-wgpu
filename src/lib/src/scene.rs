@@ -1,306 +1,24 @@
 use std::fmt::{Debug, Formatter};
 
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
+use hashbrown::HashMap;
 use itertools::izip;
 use log::debug;
 use rand::Rng;
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer, BufferUsages, Device, Queue};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{BindGroupLayout, Buffer, BufferUsages, Device, Queue};
 
-use crate::{Dirtyable, Material, SizedBuffer};
 use crate::buffer_array::DynamicBufferArray;
-use crate::managers::{MaterialManager, MatId, TexId, TextureManager};
+use crate::managers::{MaterialManager, TextureManager};
+use crate::scene::mesh::Mesh;
+use crate::scene::model::Model;
 use crate::shader_types::{LightInfo, MeshInfo, PbrVertex};
-use crate::texture::{Texture, TextureKind};
+use crate::{Dirtyable, Material, SizedBuffer};
 
-pub struct PbrMaterial {
-    pub dirty: bool,
-    pub shader_id: u32,
-    pub name: Option<Box<str>>,
-    pub albedo_texture: Option<TexId>,
-    pub albedo: Vec4,
-    // this scales the RGBA components of the base_texture if defined; otherwise defines the color
-    pub metallic_roughness_texture: Option<TexId>,
-    pub metallic_roughness_factors: Vec2,
-    // this scales the metallic & roughness components of the metallic_roughness_texture if defined; otherwise defines the reflection characteristics
-    pub normal_texture: Option<TexId>,
-    pub occlusion_texture: Option<TexId>,
-    pub occlusion_factor: f32,
-    pub emissive_texture: Option<TexId>,
-    pub emissive_factors: Vec3,
-    pub texture_bind_group: Option<wgpu::BindGroup>,
-}
-
-impl PbrMaterial {
-    pub fn from_default(base_texture: Option<TexId>) -> Self {
-        Self {
-            dirty: true,
-            shader_id: 0,
-            name: Some(Box::from("Default material")),
-            albedo_texture: base_texture,
-            albedo: Vec4::from((1.0, 0.957, 0.859, 1.0)),
-            metallic_roughness_texture: None,
-            metallic_roughness_factors: Vec2::from((0.5, 0.5)),
-            normal_texture: None,
-            occlusion_texture: None,
-            occlusion_factor: 1.0,
-            emissive_texture: None,
-            emissive_factors: Vec3::from((0.0, 0.0, 0.0)),
-            texture_bind_group: None,
-        }
-    }
-
-    pub fn create_texture_bind_group(
-        &mut self,
-        device: &Device,
-        layout: &BindGroupLayout,
-        tex_mgr: &TextureManager,
-    ) {
-        let mut entries = vec![];
-        for Texture { view, sampler, .. } in [
-            tex_mgr.unwrap_default(&self.albedo_texture, TextureKind::Albedo),
-            tex_mgr.unwrap_default(&self.normal_texture, TextureKind::Normal),
-            tex_mgr.unwrap_default(
-                &self.metallic_roughness_texture,
-                TextureKind::MetalRoughness,
-            ),
-            tex_mgr.unwrap_default(&self.occlusion_texture, TextureKind::Occlusion),
-            tex_mgr.unwrap_default(&self.emissive_texture, TextureKind::Emission),
-        ] {
-            entries.push(BindGroupEntry {
-                binding: entries.len() as u32,
-                resource: BindingResource::TextureView(view),
-            });
-            entries.push(BindGroupEntry {
-                binding: entries.len() as u32,
-                resource: BindingResource::Sampler(sampler),
-            });
-        }
-        self.texture_bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
-            label: Some("PBR Texture Bundle Bind Group"),
-            layout,
-            entries: &entries,
-        }));
-    }
-
-    pub fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty
-    }
-}
-
-impl Debug for PbrMaterial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // -1 means no texture, -2 means there is a texture but its ID is None fsr...
-        write!(
-            f,
-            "{{MATERIAL: Name: {:?}, albedo: {:?}, metallic_roughness_factors: {:?}, occlusion_factor: {}, emissive_factors: {:?}, albedo_texture: {:?}, metallic_roughness_texture: {:?}, normal_texture: {:?}, occlusion_texture: {:?}, emissive_texture: {:?}}}",
-            self.name,
-            self.albedo,
-            self.metallic_roughness_factors,
-            self.occlusion_factor,
-            self.emissive_factors,
-            self.albedo_texture.is_some(),
-            self.metallic_roughness_texture.is_some(),
-            self.normal_texture.is_some(),
-            self.occlusion_texture.is_some(),
-            self.emissive_texture.is_some(),  // Todo debug print actual texture IDs
-        )
-    }
-}
-
-pub struct Mesh {
-    dirty: bool,
-    pub id: u32,
-    // for key purposes in GUIs and stuff
-    pub vertices: Vec<Vec3>,
-    pub indices: Vec<u32>,
-    pub normals: Vec<Vec3>,
-    pub tangents: Vec<Vec4>,
-    pub material: MatId,
-    pub uvs: Vec<Vec2>,
-    pub global_transform: Mat4,
-    // computed as product of the parent models' local transforms
-    pub normal_matrix: Mat4,
-    // computed as inverse transpose of the global transform
-    pub vertex_inputs: Option<VertexInputs>,
-}
-
-impl Mesh {
-    pub fn from(
-        vertices: Vec<Vec3>,
-        indices: Vec<u32>,
-        normals: Vec<Vec3>,
-        tangents: Vec<Vec4>,
-        material: MatId,
-        uvs: Vec<Vec2>,
-        global_transform: Mat4,
-        device: &Device,
-    ) -> Self {
-        let vertex_inputs =
-            VertexInputs::from_mesh(&vertices, &normals, &tangents, &uvs, &indices, device);
-
-        Self {
-            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
-            dirty: true,
-            vertices,
-            indices,
-            normals,
-            tangents,
-            material,
-            uvs,
-            global_transform,
-            normal_matrix: global_transform.inverse().transpose(),
-            vertex_inputs: Some(vertex_inputs),
-        }
-    }
-}
-
-impl Dirtyable for Mesh {
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty
-    }
-}
-
-impl Debug for Mesh {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{MESH: # of vertices: {}, # of normals: {}, # of tangents: {}, # of indices: {}, material: {:?}, global transform: {}}}",
-            self.vertices.len(),
-            self.normals.len(),
-            self.tangents.len(),
-            self.indices.len(),
-            self.material,  // todo proper debugging of material (only printing MatId right now)
-            self.global_transform,
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct PointLight {
-    pub dirty: bool,
-    pub global_transform: Mat4,
-    pub index: usize,
-    pub color: Vec3,
-    pub intensity: f32,
-    pub range: Option<f32>,
-    pub buffer: Buffer,
-    // pub shadow_view: Option<Texture>,
-}
-
-impl PointLight {
-    pub fn new(
-        global_transform: Mat4,
-        index: usize,
-        color: Vec3,
-        intensity: f32,
-        range: Option<f32>,
-        device: &Device,
-    ) -> Self {
-        let buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Point Light Buffer"),
-            contents: bytemuck::cast_slice(&[LightInfo {
-                transform: global_transform.to_cols_array_2d(),
-                color: color.to_array(),
-                intensity,
-                range: range.unwrap_or(10.0),
-                ..Default::default()
-            }]),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        });
-        Self {
-            dirty: true,
-            global_transform,
-            index,
-            color,
-            intensity,
-            range,
-            buffer,
-        }
-    }
-}
-
-impl Dirtyable for PointLight {
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty;
-    }
-}
-
-pub struct Model {
-    pub id: u32,
-    pub meshes: Vec<Mesh>,
-    pub children: Vec<Model>,
-    pub name: Option<Box<str>>,
-    pub local_transform: Mat4,
-    pub light: Option<PointLight>,
-}
-
-impl Model {
-    pub fn from(
-        meshes: Vec<Mesh>,
-        name: Option<Box<str>>,
-        children: Vec<Model>,
-        local_transform: Mat4,
-        light: Option<PointLight>,
-    ) -> Self {
-        Self {
-            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
-            meshes,
-            name,
-            children,
-            local_transform,
-            light,
-        }
-    }
-
-    /**
-    Call this after changing the local_transform of a model, it updates the computed global_transforms of all meshes.
-    Sets dirty to true.
-     */
-    pub fn update_transforms(&mut self, parent: Mat4) {
-        debug!("Updating transforms for model with name: {:?} id: {}", self.name, self.id);
-        for mesh in self.meshes.as_mut_slice() {
-            mesh.global_transform = parent * self.local_transform;
-            mesh.normal_matrix = mesh.global_transform.inverse().transpose();
-            mesh.set_dirty(true);
-        }
-        for child in self.children.as_mut_slice() {
-            child.update_transforms(self.local_transform);
-        }
-        if let Some(ref mut light) = self.light {
-            light.global_transform = parent * self.local_transform;
-            light.set_dirty(true);
-        }
-    }
-}
-
-impl Debug for Model {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{MODEL: Name: {:?}, # of meshes: {}, local transform: {}, children: [{}]}}",
-            self.name,
-            self.meshes.len(),
-            self.local_transform,
-            self.children
-                .iter()
-                .map(|c| format!("\n - {:?}", c))
-                .collect::<String>(),
-        )
-    }
-}
+mod light;
+mod material;
+mod mesh;
+mod model;
 
 pub struct Scene {
     pub id: u32,
@@ -311,8 +29,14 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn from(device: &Device, queue: &Queue, models: Vec<Model>, material_manager: &MaterialManager, name: Option<Box<str>>, mesh_bind_group_layout: &BindGroupLayout,
-                light_bind_group_layout: &BindGroupLayout,
+    pub fn from(
+        device: &Device,
+        queue: &Queue,
+        models: Vec<Model>,
+        material_manager: &MaterialManager,
+        name: Option<Box<str>>,
+        mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
     ) -> Self {
         let mut mesh_buffer = DynamicBufferArray::new(
             device,
@@ -336,7 +60,12 @@ impl Scene {
                 );
             }
             if let Some(light) = &model.light {
-                light_buffer.push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
+                light_buffer.push(
+                    device,
+                    queue,
+                    &[LightInfo::from(light)],
+                    light_bind_group_layout,
+                );
             }
         }
 
@@ -352,10 +81,21 @@ impl Scene {
     /*
     Join another scene into this one, updating the mesh and light buffers accordingly. Note: you probably need to also update the light count in the camera.
      */
-    pub fn join(&mut self, other: Scene, device: &Device, queue: &Queue, material_manager: &MaterialManager, mesh_bind_group_layout: &BindGroupLayout, light_bind_group_layout: &BindGroupLayout) {
+    pub fn join(
+        &mut self,
+        other: Scene,
+        device: &Device,
+        queue: &Queue,
+        material_manager: &MaterialManager,
+        mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
+    ) {
         for model in other.models.iter() {
             for mesh in model.meshes.iter() {
-                debug!("Inserting mesh {} with material {:?}", mesh.id, mesh.material);
+                debug!(
+                    "Inserting mesh {} with material {:?}",
+                    mesh.id, mesh.material
+                );
                 self.mesh_buffer.push(
                     device,
                     queue,
@@ -364,7 +104,12 @@ impl Scene {
                 );
             }
             if let Some(light) = &model.light {
-                self.light_buffer.push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
+                self.light_buffer.push(
+                    device,
+                    queue,
+                    &[LightInfo::from(light)],
+                    light_bind_group_layout,
+                );
             }
         }
         self.models.extend(other.models);
@@ -375,7 +120,16 @@ impl Scene {
     /*
     Add a model to the scene, and update the mesh and light buffers accordingly. Note: you probably need to also update the light count in the camera.
      */
-    pub fn add_model(&mut self, model: Model, device: &Device, queue: &Queue, material_manager: &MaterialManager, mesh_bind_group_layout: &BindGroupLayout, light_bind_group_layout: &BindGroupLayout) {
+    pub fn add_model(
+        &mut self,
+        model: Model,
+        parent_id: Option<u32>,
+        device: &Device,
+        queue: &Queue,
+        material_manager: &MaterialManager,
+        mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
+    ) {
         for mesh in model.meshes.iter() {
             self.mesh_buffer.push(
                 device,
@@ -385,27 +139,89 @@ impl Scene {
             );
         }
         if let Some(light) = &model.light {
-            self.light_buffer.push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
+            self.light_buffer.push(
+                device,
+                queue,
+                &[LightInfo::from(light)],
+                light_bind_group_layout,
+            );
         }
-        self.models.push(model);
+        if let Some(parent_id) = parent_id {
+            self.models
+                .iter_mut()
+                .find(|m| m.id == parent_id)
+                .unwrap()
+                .children
+                .push(model);
+        } else {
+            self.models.push(model);
+        }
         self.update_meshes(queue, material_manager);
         self.update_lights(queue);
     }
+    fn remove_model_deep(models: &mut Vec<Model>, model_id: u32) -> Option<Model> {
+        let mut found_model = None;
+        for (i, model) in models.iter_mut().enumerate() {
+            if model.id == model_id {
+                found_model = Some(i);
+                break;
+            }
+        }
+        if found_model.is_none() {
+            for model in models.iter_mut() {
+                if let Some(found_model) = Self::remove_model_deep(&mut model.children, model_id) {
+                    return Some(found_model);
+                }
+            }
+        }
+        Some(models.remove(found_model?))
+    }
+    pub fn remove_model(
+        &mut self,
+        model_id: u32,
+        queue: &Queue,
+        material_manager: &MaterialManager,
+    ) -> Option<Model> {
+        let model = Self::remove_model_deep(&mut self.models, model_id);
+        self.update_meshes(queue, material_manager);
+        self.update_lights(queue);
+        model
+    }
 
-    pub fn iter_meshes(&self) -> impl Iterator<Item=&Mesh> {
+    pub fn iter_meshes(&self) -> impl Iterator<Item = &Mesh> {
         self.models.iter().flat_map(|model| model.meshes.iter())
     }
 
+    pub fn iter_models_deep(&self) -> impl Iterator<Item = &Model> {
+        self.models.iter().chain(
+            self.models
+                .iter()
+                .flat_map(|model| model.children.iter_deep()),
+        )
+    }
+
     pub fn update_meshes(&mut self, queue: &Queue, material_manager: &MaterialManager) {
-        for (i, mesh) in self.models.iter().flat_map(|model| model.meshes.iter()).enumerate().filter(|(_, mesh)| mesh.dirty()) {
-            self.mesh_buffer.update(queue, i as u32, MeshInfo::from_mesh(mesh, material_manager));
+        for (i, mesh) in self
+            .models
+            .iter()
+            .flat_map(|model| model.meshes.iter())
+            .enumerate()
+            .filter(|(_, mesh)| mesh.dirty())
+        {
+            self.mesh_buffer
+                .update(queue, i as u32, MeshInfo::from_mesh(mesh, material_manager));
         }
     }
 
     pub fn update_lights(&mut self, queue: &Queue) {
-        for model in self.models.iter().filter(|model| model.light.is_some() && model.light.as_ref().unwrap().dirty) {
+        for model in self
+            .models
+            .iter()
+            .filter(|model| model.light.is_some() && model.light.as_ref().unwrap().dirty)
+        {
             let light = model.light.as_ref().unwrap();
-            self.light_buffer.update(queue, light.index as u32, LightInfo::from(light));  // TODO is light.index what we want here?
+            self.light_buffer
+                .update(queue, light.index as u32, LightInfo::from(light)); // TODO is light.index what we want here?
         }
     }
 }
@@ -425,9 +241,8 @@ impl Debug for Scene {
     }
 }
 
-
 pub struct World {
-    pub scenes: Vec<Scene>,
+    pub scenes: HashMap<usize, Scene>,
     pub active_scene: usize,
     pub materials: MaterialManager,
     pub textures: TextureManager,
@@ -435,20 +250,23 @@ pub struct World {
 
 impl World {
     pub fn get_active_scene(&self) -> &Scene {
-        self.scenes.get(self.active_scene).unwrap()
+        self.scenes.get(&self.active_scene).unwrap()
     }
 
     // TODO Optimization: the performance of this must be terrible!
-    pub fn pbr_meshes(&self) -> impl Iterator<Item=&Mesh> {
-        self.get_active_scene()
-            .iter_meshes()
-            .filter(|mesh| match *self.materials.get_material(mesh.material) {
+    pub fn pbr_meshes(&self) -> impl Iterator<Item = &Mesh> {
+        self.get_active_scene().iter_meshes().filter(|mesh| {
+            match *self.materials.get_material(mesh.material) {
                 Material::Pbr(_) => true,
-            })
+            }
+        })
     }
 
     pub fn update_active_scene(&mut self, queue: &Queue) {
-        let scene = &mut self.scenes[self.active_scene];
+        let scene = &mut self
+            .scenes
+            .get_mut(&self.active_scene)
+            .expect("Invalid active scene");
         scene.update_meshes(queue, &self.materials);
         scene.update_lights(queue);
     }

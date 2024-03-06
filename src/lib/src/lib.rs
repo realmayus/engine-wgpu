@@ -1,13 +1,13 @@
-use wgpu::{Buffer};
+use wgpu::Buffer;
 
+pub mod buffer_array;
+mod geometry;
+pub mod managers;
 pub mod scene;
 pub mod scene_serde;
 pub mod shader_types;
 pub mod texture;
 pub mod util;
-pub mod buffer_array;
-pub mod managers;
-mod geometry;
 
 pub trait Dirtyable {
     /**

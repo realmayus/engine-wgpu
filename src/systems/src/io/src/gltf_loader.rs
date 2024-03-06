@@ -1,28 +1,28 @@
-use std::{fs, io};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
+use std::{fs, io};
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use gltf::{Error, Node};
 use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
+use gltf::{Error, Node};
 use image::DynamicImage;
 use image::ImageFormat::{Jpeg, Png};
 use log::{debug, info};
 use wgpu::{BindGroupLayout, Device, Queue};
 
-use lib::managers::{MaterialManager, MatId, TextureManager};
-use lib::Material;
-use lib::scene::{Mesh, Model, PbrMaterial, Scene};
+use lib::managers::{MatId, MaterialManager, TextureManager};
 use lib::scene::PointLight;
+use lib::scene::{Mesh, Model, PbrMaterial, Scene};
 use lib::texture::{Texture, TextureKind};
+use lib::Material;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
-    where
-        P: AsRef<Path>,
+where
+    P: AsRef<Path>,
 {
     use io::Read;
     let file = fs::File::open(path.as_ref()).map_err(Error::Io)?;
@@ -214,14 +214,18 @@ pub fn load_gltf(
 
             let global_id = texture_manager.add_texture(texture);
             (gltf_texture.index(), global_id)
-        }).collect::<HashMap<_, _>>();
+        })
+        .collect::<HashMap<_, _>>();
 
     let local_materials =
         gltf.materials()
             .filter(|m| m.index().is_some())
             .map(|gltf_mat| {
                 let index = gltf_mat.index().unwrap();
-                debug!("GLTF Material: {:?}", gltf_mat.pbr_metallic_roughness().base_color_factor());
+                debug!(
+                    "GLTF Material: {:?}",
+                    gltf_mat.pbr_metallic_roughness().base_color_factor()
+                );
                 let mut mat = PbrMaterial {
                     // TODO only make initialization possible through material manager!
                     dirty: true, // must get updated upon start in order to prime the uniform
@@ -231,9 +235,7 @@ pub fn load_gltf(
                         .pbr_metallic_roughness()
                         .base_color_texture()
                         .map(|t| t.texture().index())
-                        .map(|id| {
-                            *local_textures.get(&id).expect("Couldn't find base texture")
-                        }),
+                        .map(|id| *local_textures.get(&id).expect("Couldn't find base texture")),
                     albedo: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
                     metallic_roughness_texture: gltf_mat
                         .pbr_metallic_roughness()
@@ -276,7 +278,12 @@ pub fn load_gltf(
                     texture_bind_group: None,
                 }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
                 mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
-                let global_id = material_manager.add_material(Material::Pbr(mat), device, queue, material_bind_group_layout);
+                let global_id = material_manager.add_material(
+                    Material::Pbr(mat),
+                    device,
+                    queue,
+                    material_bind_group_layout,
+                );
                 (index, global_id)
             })
             .collect::<HashMap<_, _>>();
@@ -298,7 +305,15 @@ pub fn load_gltf(
                 )
             })
             .collect();
-        scenes.push(Scene::from(device, queue, models, material_manager, scene.name().map(Box::from), mesh_bind_group_layout, light_bind_group_layout));
+        scenes.push(Scene::from(
+            device,
+            queue,
+            models,
+            material_manager,
+            scene.name().map(Box::from),
+            mesh_bind_group_layout,
+            light_bind_group_layout,
+        ));
     }
     scenes
 }
@@ -358,18 +373,29 @@ fn load_node(
                 .material()
                 .index()
                 .map(|i| *materials.get(&i).expect("Couldn't find material"));
-            meshes.push(Mesh::from(positions, indices, normals, tangents, mat.unwrap_or(material_manager.default_material), uvs, global_transform, device));
+            meshes.push(Mesh::from(
+                positions,
+                indices,
+                normals,
+                tangents,
+                mat.unwrap_or(material_manager.default_material),
+                uvs,
+                global_transform,
+                device,
+            ));
         }
     }
 
-    let light = node.light().map(|light| PointLight::new(
-        parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
-        light.index(),
-        Vec3::from(light.color()),
-        light.intensity(),
-        light.range(),
-        device,
-    ));
+    let light = node.light().map(|light| {
+        PointLight::new(
+            parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
+            light.index(),
+            Vec3::from(light.color()),
+            light.intensity(),
+            light.range(),
+            device,
+        )
+    });
 
     if let Some(ref _light) = light {
         *num_lights += 1;
