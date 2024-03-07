@@ -8,23 +8,23 @@ use rand::Rng;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, Buffer, BufferUsages, Device, Queue};
 
-use crate::buffer_array::DynamicBufferArray;
+use crate::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use crate::managers::{MaterialManager, TextureManager};
 use crate::scene::mesh::Mesh;
-use crate::scene::model::Model;
+use crate::scene::model::{DeepIter, Model};
 use crate::shader_types::{LightInfo, MeshInfo, PbrVertex};
 use crate::{Dirtyable, Material, SizedBuffer};
 
-mod light;
-mod material;
-mod mesh;
-mod model;
+pub mod light;
+pub mod material;
+pub mod mesh;
+pub mod model;
 
 pub struct Scene {
     pub id: u32,
     pub models: Vec<Model>,
     pub name: Option<Box<str>>,
-    pub mesh_buffer: DynamicBufferArray<MeshInfo>,
+    pub mesh_buffer: DynamicBufferMap<MeshInfo, u32>,
     pub light_buffer: DynamicBufferArray<LightInfo>,
 }
 
@@ -38,7 +38,7 @@ impl Scene {
         mesh_bind_group_layout: &BindGroupLayout,
         light_bind_group_layout: &BindGroupLayout,
     ) -> Self {
-        let mut mesh_buffer = DynamicBufferArray::new(
+        let mut mesh_buffer = DynamicBufferMap::new(
             device,
             Some("Mesh Buffer".to_string()),
             BufferUsages::STORAGE | BufferUsages::COPY_DST,
@@ -52,9 +52,11 @@ impl Scene {
         );
         for model in models.iter() {
             for mesh in model.meshes.iter() {
+                debug!("Adding mesh {} to meshbuffer", mesh.id);
                 mesh_buffer.push(
                     device,
                     queue,
+                    mesh.id,
                     &[MeshInfo::from_mesh(mesh, material_manager)],
                     mesh_bind_group_layout,
                 );
@@ -93,12 +95,13 @@ impl Scene {
         for model in other.models.iter() {
             for mesh in model.meshes.iter() {
                 debug!(
-                    "Inserting mesh {} with material {:?}",
+                    "Inserting mesh {} with material {:?} into meshbuffer",
                     mesh.id, mesh.material
                 );
                 self.mesh_buffer.push(
                     device,
                     queue,
+                    mesh.id,
                     &[MeshInfo::from_mesh(mesh, material_manager)],
                     mesh_bind_group_layout,
                 );
@@ -131,9 +134,11 @@ impl Scene {
         light_bind_group_layout: &BindGroupLayout,
     ) {
         for mesh in model.meshes.iter() {
+            debug!("Adding mesh {} to meshbuffer", mesh.id);
             self.mesh_buffer.push(
                 device,
                 queue,
+                mesh.id,
                 &[MeshInfo::from_mesh(mesh, material_manager)],
                 mesh_bind_group_layout,
             );
@@ -203,25 +208,27 @@ impl Scene {
     pub fn update_meshes(&mut self, queue: &Queue, material_manager: &MaterialManager) {
         for (i, mesh) in self
             .models
-            .iter()
-            .flat_map(|model| model.meshes.iter())
+            .iter_mut()
+            .flat_map(|model| model.meshes.iter_mut())
             .enumerate()
             .filter(|(_, mesh)| mesh.dirty())
         {
+            debug!("Updating mesh {} with mesh info {:?}", mesh.id, MeshInfo::from_mesh(mesh, material_manager));
             self.mesh_buffer
-                .update(queue, i as u32, MeshInfo::from_mesh(mesh, material_manager));
+                .update(queue, &mesh.id, MeshInfo::from_mesh(mesh, material_manager));
+            mesh.set_dirty(false);
         }
     }
 
     pub fn update_lights(&mut self, queue: &Queue) {
         for model in self
             .models
-            .iter()
+            .iter_mut()
             .filter(|model| model.light.is_some() && model.light.as_ref().unwrap().dirty)
         {
-            let light = model.light.as_ref().unwrap();
-            self.light_buffer
-                .update(queue, light.index as u32, LightInfo::from(light)); // TODO is light.index what we want here?
+            let light = model.light.as_mut().unwrap();
+            light.set_dirty(false);
+            self.light_buffer.update(queue, light.index as u64, LightInfo::from(light)); // TODO is light.index what we want here?
         }
     }
 }
@@ -274,17 +281,19 @@ impl World {
 
 // Data passed to the vertex shader as vertex inputs, contains the vertex positions, normals, tangents, UVs and indices for a mesh
 pub struct VertexInputs {
+    pub mesh_id: u32,
     pub vertex_buffer: SizedBuffer,
     pub index_buffer: SizedBuffer,
 }
 
 impl VertexInputs {
     pub fn from_mesh(
+        mesh_id: u32,
         vertices: &Vec<Vec3>,
         normals: &Vec<Vec3>,
         tangents: &Vec<Vec4>,
         uvs: &Vec<Vec2>,
-        indices: &Vec<u32>,
+        indices: &[u32],
         device: &Device,
     ) -> Self {
         let mut buffers = vec![];
@@ -299,7 +308,7 @@ impl VertexInputs {
         let vertex_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&buffers),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -307,10 +316,11 @@ impl VertexInputs {
             contents: bytemuck::cast_slice(
                 &indices.iter().map(|i| *i as u16).collect::<Vec<u16>>(),
             ),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: BufferUsages::INDEX,
         });
 
         Self {
+            mesh_id,
             vertex_buffer: SizedBuffer {
                 buffer: vertex_buffer,
                 count: vertices.len() as u32,

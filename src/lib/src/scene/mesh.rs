@@ -34,11 +34,12 @@ impl Mesh {
         global_transform: Mat4,
         device: &Device,
     ) -> Self {
+        let id = rand::thread_rng().gen_range(0u32..1u32 << 31);
         let vertex_inputs =
-            VertexInputs::from_mesh(&vertices, &normals, &tangents, &uvs, &indices, device);
+            VertexInputs::from_mesh(id, &vertices, &normals, &tangents, &uvs, &indices, device);
 
         Self {
-            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
+            id,
             dirty: true,
             vertices,
             indices,
@@ -58,11 +59,12 @@ impl Mesh {
         let normals = self.normals.clone();
         let tangents = self.tangents.clone();
         let uvs = self.uvs.clone();
+        let id = rand::thread_rng().gen_range(0u32..1u32 << 31);
         let vertex_inputs =
-            VertexInputs::from_mesh(&vertices, &normals, &tangents, &uvs, &indices, device);
+            VertexInputs::from_mesh(id, &vertices, &normals, &tangents, &uvs, &indices, device);
 
         Self {
-            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
+            id,
             dirty: true,
             vertices,
             indices,

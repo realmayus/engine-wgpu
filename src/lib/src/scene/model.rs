@@ -2,6 +2,9 @@ use glam::Mat4;
 use log::debug;
 use rand::Rng;
 use std::fmt::{Debug, Formatter};
+use crate::Dirtyable;
+use crate::scene::light::PointLight;
+use crate::scene::mesh::Mesh;
 
 pub struct Model {
     pub id: u32,
@@ -35,10 +38,6 @@ impl Model {
     Sets dirty to true.
      */
     pub fn update_transforms(&mut self, parent: Mat4) {
-        debug!(
-            "Updating transforms for model with name: {:?} id: {}",
-            self.name, self.id
-        );
         for mesh in self.meshes.as_mut_slice() {
             mesh.global_transform = parent * self.local_transform;
             mesh.normal_matrix = mesh.global_transform.inverse().transpose();
@@ -53,7 +52,7 @@ impl Model {
         }
     }
 }
-trait DeepIter<T> {
+pub trait DeepIter<T> {
     fn iter_deep(&self) -> Box<dyn Iterator<Item = &T> + '_>;
 }
 impl DeepIter<Model> for Vec<Model> {

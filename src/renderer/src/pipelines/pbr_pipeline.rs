@@ -5,12 +5,13 @@ use wgpu::{
     ShaderModule, SurfaceConfiguration, TextureView,
 };
 
-use lib::buffer_array::DynamicBufferArray;
+use lib::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use lib::managers::MaterialManager;
-use lib::scene::{Mesh, VertexInputs};
+use lib::scene::{VertexInputs};
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex, Vertex};
 use lib::texture::Texture;
 use lib::Material;
+use lib::scene::mesh::Mesh;
 
 /**
 Pipeline for physically-based rendering
@@ -211,7 +212,7 @@ impl PBRPipelineProvider {
         view: &TextureView,
         textures_bind_groups: &[&BindGroup],
         material_info_bind_group: &BindGroup,
-        mesh_info_bind_group: &BindGroup,
+        mesh_info_map: &DynamicBufferMap<MeshInfo, u32>,
         camera_bind_group: &BindGroup,
         light_bind_group: &BindGroup,
     ) {
@@ -241,24 +242,26 @@ impl PBRPipelineProvider {
         render_pass.set_pipeline(self.pipeline.as_ref().unwrap());
 
         render_pass.set_bind_group(1, material_info_bind_group, &[]);
-        render_pass.set_bind_group(2, mesh_info_bind_group, &[]);
+        render_pass.set_bind_group(2, mesh_info_map.bind_group(), &[]);
         render_pass.set_bind_group(3, camera_bind_group, &[]);
         render_pass.set_bind_group(4, light_bind_group, &[]);
 
         for (
             i,
             VertexInputs {
+                mesh_id,
                 vertex_buffer,
                 index_buffer,
             },
         ) in vertex_inputs.iter().enumerate()
         {
+            let mesh_index = mesh_info_map.get(mesh_id).expect("Mesh not found in mesh_info_map");
             render_pass.set_bind_group(0, textures_bind_groups[i], &[]);
 
             render_pass.set_vertex_buffer(0, vertex_buffer.buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..index_buffer.count, i as i32, 0..1);
+            render_pass.draw_indexed(0..index_buffer.count, *mesh_index as i32, 0..1);
         }
     }
 
@@ -269,7 +272,7 @@ impl PBRPipelineProvider {
         meshes: &[&Mesh],
         material_manager: &MaterialManager,
         mat_buffer: &DynamicBufferArray<MaterialInfo>,
-        mesh_buffer: &DynamicBufferArray<MeshInfo>,
+        mesh_buffer: &DynamicBufferMap<MeshInfo, u32>,
         light_buffer: &DynamicBufferArray<LightInfo>,
     ) {
         let vertex_inputs = meshes.iter().map(|m| m.vertex_inputs.as_ref().unwrap());
@@ -290,7 +293,7 @@ impl PBRPipelineProvider {
             view,
             &textures_bind_groups,
             &mat_buffer.bind_group,
-            &mesh_buffer.bind_group,
+            mesh_buffer,
             &self.cam_bind_group,
             &light_buffer.bind_group,
         )

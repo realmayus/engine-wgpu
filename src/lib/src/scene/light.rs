@@ -1,7 +1,7 @@
 use crate::shader_types::LightInfo;
 use crate::Dirtyable;
 use glam::{Mat4, Vec3};
-use wgpu::util::BufferInitDescriptor;
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages, Device};
 
 #[derive(Debug)]

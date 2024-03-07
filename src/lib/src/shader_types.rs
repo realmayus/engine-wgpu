@@ -1,7 +1,8 @@
 use crate::managers::MaterialManager;
-use crate::scene::PointLight;
-use crate::scene::{Mesh, PbrMaterial};
+use crate::scene::light::PointLight;
 use glam::Mat4;
+use crate::scene::material::PbrMaterial;
+use crate::scene::mesh::Mesh;
 
 pub trait Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4];
@@ -128,6 +129,18 @@ pub struct LightInfo {
 
 impl From<&PointLight> for LightInfo {
     fn from(light: &PointLight) -> Self {
+        Self {
+            transform: light.global_transform.to_cols_array_2d(),
+            color: light.color.to_array(),
+            intensity: light.intensity,
+            range: light.range.unwrap_or(1.0),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&mut PointLight> for LightInfo {
+    fn from(light: &mut PointLight) -> Self {
         Self {
             transform: light.global_transform.to_cols_array_2d(),
             color: light.color.to_array(),

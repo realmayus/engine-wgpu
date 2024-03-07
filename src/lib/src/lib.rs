@@ -1,4 +1,5 @@
 use wgpu::Buffer;
+use crate::scene::material::PbrMaterial;
 
 pub mod buffer_array;
 mod geometry;
@@ -28,7 +29,7 @@ pub struct SizedBuffer {
 }
 
 pub enum Material {
-    Pbr(scene::PbrMaterial),
+    Pbr(PbrMaterial),
 }
 impl Material {
     pub fn shader_id(&self) -> u32 {

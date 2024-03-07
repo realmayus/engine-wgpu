@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-use gltf;
 use image::{DynamicImage, ImageFormat};
 use log::debug;
 use rand::distributions::{Alphanumeric, DistString};

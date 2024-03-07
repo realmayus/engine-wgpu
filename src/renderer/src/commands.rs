@@ -6,7 +6,9 @@ use hashbrown::HashMap;
 use log::{debug, error, info};
 
 use lib::managers::{MaterialManager, TextureManager};
-use lib::scene::{Mesh, Model, PointLight, World};
+use lib::scene::light::PointLight;
+use lib::scene::model::Model;
+use lib::scene::World;
 use systems::io::gltf_loader::load_gltf;
 
 use crate::{commands, RenderState};
@@ -64,7 +66,7 @@ impl Command {
 
                 state
                     .camera
-                    .update_light_count(state.world.get_active_scene().light_buffer.len());
+                    .update_light_count(state.world.get_active_scene().light_buffer.len() as u32);
                 state.camera.update_view(&state.queue);
                 state.world.materials.update_dirty(&state.queue);
                 state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
@@ -108,7 +110,7 @@ impl Command {
 
                 state
                     .camera
-                    .update_light_count(state.world.get_active_scene().light_buffer.len());
+                    .update_light_count(state.world.get_active_scene().light_buffer.len() as u32);
                 state.camera.update_view(&state.queue);
                 state.world.materials.update_dirty(&state.queue);
                 state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
@@ -145,7 +147,7 @@ impl Command {
                     state.world.materials.update_dirty(&state.queue);
                     state
                         .camera
-                        .update_light_count(state.world.get_active_scene().light_buffer.len());
+                        .update_light_count(state.world.get_active_scene().light_buffer.len() as u32);
                     state.camera.update_view(&state.queue);
                     state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
                 } else {
@@ -169,7 +171,7 @@ impl Command {
                             state.camera.light_count() as usize,
                             *color,
                             *intensity,
-                            None,
+                            Some(200.0),
                             &state.device,
                         )),
                     );
@@ -190,7 +192,7 @@ impl Command {
                         );
                     state
                         .camera
-                        .update_light_count(state.world.get_active_scene().light_buffer.len());
+                        .update_light_count(state.world.get_active_scene().light_buffer.len() as u32);
                     state.camera.update_view(&state.queue);
                     state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
                 }
@@ -236,7 +238,7 @@ impl Command {
                     {
                         state
                             .camera
-                            .update_light_count(state.world.get_active_scene().light_buffer.len());
+                            .update_light_count(state.world.get_active_scene().light_buffer.len() as u32);
                         state.camera.update_view(&state.queue);
                         break;
                     }
@@ -281,7 +283,7 @@ impl Command {
                 }
                 state
                     .camera
-                    .update_light_count(state.world.get_active_scene().light_buffer.len());
+                    .update_light_count(state.world.get_active_scene().light_buffer.len() as u32);
                 state.camera.update_view(&state.queue);
             }
         }

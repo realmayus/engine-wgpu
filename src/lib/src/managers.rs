@@ -4,10 +4,10 @@ use slotmap::new_key_type;
 use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
 
 use crate::buffer_array::DynamicBufferArray;
-use crate::scene::PbrMaterial;
 use crate::shader_types::MaterialInfo;
 use crate::texture::{Texture, TextureKind};
 use crate::Material;
+use crate::scene::material::PbrMaterial;
 
 new_key_type! { pub struct TexId; }
 
@@ -170,7 +170,7 @@ impl MaterialManager {
             mat.dirty = false;
             let mat_id = mat.shader_id;
             let uniform = MaterialInfo::from(mat);
-            self.buffer.update(queue, mat_id, uniform);
+            self.buffer.update(queue, mat_id as u64, uniform);
             info!("Updated material #{}", mat_id);
         }
     }

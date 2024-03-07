@@ -1,6 +1,3 @@
-use crate::scene::Mesh;
-use glam::Vec3;
-
 pub enum Geometry {
     Cube { width: f32, height: f32, depth: f32 },
     Plane { width: f32, depth: f32 },

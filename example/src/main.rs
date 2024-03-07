@@ -1,12 +1,7 @@
 mod gui;
 mod util;
 
-use egui::Ui;
-use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
-use rfd::FileDialog;
-use std::borrow::Cow;
-
-use engine::lib::scene::{Model, World};
+use engine::lib::scene::{World};
 use engine::renderer::camera::{Camera, KeyState};
 use engine::renderer::commands::Commands;
 use engine::renderer::{commands, Hook};
