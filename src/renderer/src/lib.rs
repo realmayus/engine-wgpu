@@ -5,7 +5,7 @@ use anyhow::Result;
 use egui_wgpu::renderer::ScreenDescriptor;
 use glam::Vec2;
 use hashbrown::HashMap;
-use wgpu::{Device, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
+use wgpu::{Device, Features, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
@@ -78,6 +78,7 @@ impl RenderState {
 
         let limits = Limits {
             max_bind_groups: 5,
+            max_push_constant_size: 32,
             ..Default::default()
         };
 
@@ -86,7 +87,7 @@ impl RenderState {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     limits,
-                    ..Default::default()
+                    features: Features::INDIRECT_FIRST_INSTANCE | Features::PUSH_CONSTANTS,
                 },
                 None,
             )

@@ -1,9 +1,7 @@
+use bytemuck::{Pod, Zeroable};
 use wgpu::SamplerBindingType::Filtering;
-use wgpu::{
-    include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder,
-    DepthStencilState, Device, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline,
-    ShaderModule, SurfaceConfiguration, TextureView,
-};
+use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, DepthStencilState, Device, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline, ShaderModule, SurfaceConfiguration, TextureView, Queue};
+use wgpu::util::{DeviceExt, DrawIndexedIndirect};
 
 use lib::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use lib::managers::MaterialManager;
@@ -12,6 +10,12 @@ use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex, Vertex};
 use lib::texture::Texture;
 use lib::Material;
 use lib::scene::mesh::Mesh;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct PushConstants {
+    mesh_index: u32,
+}
 
 /**
 Pipeline for physically-based rendering
@@ -136,9 +140,13 @@ impl PBRPipelineProvider {
                 &cam_bind_group_layout,
                 &light_bind_group_layout,
             ],
-            push_constant_ranges: &[],
+            push_constant_ranges: &[wgpu::PushConstantRange {
+                stages: wgpu::ShaderStages::VERTEX,
+                range: 0..std::mem::size_of::<PushConstants>() as u32,
+            }],
         });
-
+        
+        
         Self {
             shader,
             pipeline: None,
@@ -204,7 +212,7 @@ impl PBRPipelineProvider {
             }),
         );
     }
-
+    
     fn render_pass<'a>(
         &self,
         encoder: &mut CommandEncoder,
@@ -238,7 +246,6 @@ impl PBRPipelineProvider {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-
         render_pass.set_pipeline(self.pipeline.as_ref().unwrap());
 
         render_pass.set_bind_group(1, material_info_bind_group, &[]);
@@ -256,12 +263,20 @@ impl PBRPipelineProvider {
         ) in vertex_inputs.iter().enumerate()
         {
             let mesh_index = mesh_info_map.get(mesh_id).expect("Mesh not found in mesh_info_map");
+            let push_constants = PushConstants {
+                mesh_index: *mesh_index as u32,
+            };
+            render_pass.set_push_constants(
+                wgpu::ShaderStages::VERTEX,
+                0,
+                bytemuck::bytes_of(&push_constants),
+            );
             render_pass.set_bind_group(0, textures_bind_groups[i], &[]);
 
             render_pass.set_vertex_buffer(0, vertex_buffer.buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..index_buffer.count, *mesh_index as i32, 0..1);
+            render_pass.draw_indexed(0..index_buffer.count, 0, 0..1);
         }
     }
 

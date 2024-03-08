@@ -1,5 +1,10 @@
+struct PushConstants {
+    mesh_index: u32,
+}
+var<push_constant> push: PushConstants;
+
+
 struct VertexInput {
-    @builtin(instance_index) index: u32,
     @location(0) position: vec3<f32>, // 3*4 = 12
     @location(1) normal: vec3<f32>, // 12 + 3*4 = 24
     @location(2) tangent: vec4<f32>,    // 24 + 4*4 = 40
@@ -39,10 +44,10 @@ fn vs_main(
     in: VertexInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    let model_transform = mesh_infos[in.index].model_transform;
+    let model_transform = mesh_infos[push.mesh_index].model_transform;
 
     out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position, 1.0);
-    out.index = in.index;
+    out.index = push.mesh_index;
     out.tex_coords = in.uv;
     out.frag_pos = (model_transform * vec4<f32>(in.position, 1.0)).xyz;
 

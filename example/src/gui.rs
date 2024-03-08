@@ -168,7 +168,9 @@ fn draw_model_ui(
                 );
             },
             |model| {
-                model.update_transforms(Mat4::IDENTITY);
+                let mut mat = Mat4::IDENTITY;
+                mat.y_axis *= -1.0;
+                model.update_transforms(mat);
             }
         );
 
@@ -212,12 +214,13 @@ fn model_actions(
         add_model_menu(ui, commands, Some(model.id));
         add_mesh_menu(ui, commands, model.id);
         ui.menu_button("Rename", |ui| {
-            let mut text = &*model.name.clone().unwrap_or("".into());
+            let text = &*model.name.clone().unwrap_or("".into());
+            let mut text = text.to_string();
             ui.add(egui::TextEdit::singleline(&mut text));
             model.name = if text.is_empty() {
                 None
             } else {
-                Some(text.into())
+                Some(text.into_boxed_str())
             };
         });
         ui.menu_button("Change parent", |ui| {
