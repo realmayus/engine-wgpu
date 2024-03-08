@@ -201,17 +201,18 @@ impl RenderState {
             });
 
         {
-            self.pbr_pipeline.render_meshes(
-                &mut encoder,
-                &view,
-                &self.world.pbr_meshes().collect::<Vec<_>>(),
-                &self.world.materials,
-                &self.world.materials.buffer,
-                &self.world.get_active_scene().mesh_buffer,
-                &self.world.get_active_scene().light_buffer,
-            );
-            // let mut bufs = self.egui_ctx.render(&view, &mut encoder, &self.window, Self::gui);
-            // buffers.append(&mut bufs);
+            if let Some(scene) = self.world.get_active_scene() {
+            if let Some(meshes) = self.world.pbr_meshes() {
+                self.pbr_pipeline.render_meshes(
+                    &mut encoder,
+                    &view,
+                    &meshes.collect::<Vec<_>>(),
+                    &self.world.materials,
+                    &self.world.materials.buffer,
+                    &scene.mesh_buffer,
+                    &scene.light_buffer,
+                );
+            }}
         }
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [self.surface_config.width, self.surface_config.height],

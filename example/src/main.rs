@@ -10,7 +10,7 @@ struct Game {}
 
 impl Hook for Game {
     fn setup(&self, commands: Commands) {
-        commands.send(commands::Command::LoadDefaultScene).unwrap();
+        //commands.send(commands::Command::LoadDefaultScene).unwrap();
     }
 
     fn update(&mut self, keys: &KeyState, delta_time: f32) {}

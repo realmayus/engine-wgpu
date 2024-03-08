@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::iter;
 
 use glam::{Vec2, Vec3, Vec4};
 use hashbrown::HashMap;
@@ -256,24 +257,23 @@ pub struct World {
 }
 
 impl World {
-    pub fn get_active_scene(&self) -> &Scene {
-        self.scenes.get(&self.active_scene).unwrap()
+    pub fn get_active_scene(&self) -> Option<&Scene> {
+        self.scenes.get(&self.active_scene)
     }
 
     // TODO Optimization: the performance of this must be terrible!
-    pub fn pbr_meshes(&self) -> impl Iterator<Item = &Mesh> {
-        self.get_active_scene().iter_meshes().filter(|mesh| {
+    pub fn pbr_meshes(&self) -> Option<impl Iterator<Item = &Mesh>> {
+        self.get_active_scene().map(|scene| scene.iter_meshes().filter(|mesh| {
             match *self.materials.get_material(mesh.material) {
                 Material::Pbr(_) => true,
             }
-        })
+        }))
     }
 
     pub fn update_active_scene(&mut self, queue: &Queue) {
-        let scene = &mut self
+        let Some(scene) = &mut self
             .scenes
-            .get_mut(&self.active_scene)
-            .expect("Invalid active scene");
+            .get_mut(&self.active_scene) else { return };
         scene.update_meshes(queue, &self.materials);
         scene.update_lights(queue);
     }
