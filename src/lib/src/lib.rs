@@ -1,5 +1,5 @@
-use wgpu::Buffer;
 use crate::scene::material::PbrMaterial;
+use wgpu::Buffer;
 
 pub mod buffer_array;
 mod geometry;

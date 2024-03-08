@@ -1,7 +1,7 @@
 mod gui;
 mod util;
 
-use engine::lib::scene::{World};
+use engine::lib::scene::World;
 use engine::renderer::camera::{Camera, KeyState};
 use engine::renderer::commands::Commands;
 use engine::renderer::{commands, Hook};

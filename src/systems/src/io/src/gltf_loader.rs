@@ -15,13 +15,13 @@ use log::{debug, info};
 use wgpu::{BindGroupLayout, Device, Queue};
 
 use lib::managers::{MatId, MaterialManager, TextureManager};
-use lib::texture::{Texture, TextureKind};
-use lib::Material;
 use lib::scene::light::PointLight;
 use lib::scene::material::PbrMaterial;
 use lib::scene::mesh::Mesh;
 use lib::scene::model::Model;
 use lib::scene::Scene;
+use lib::texture::{Texture, TextureKind};
+use lib::Material;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where

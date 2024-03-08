@@ -1,13 +1,13 @@
 use crate::observe;
 use crate::util::{CameraModes, Editable, SparseModel, SparseScene};
 use egui::Ui;
-use engine::lib::scene::{World};
+use engine::lib::scene::model::Model;
+use engine::lib::scene::World;
 use engine::renderer::camera::Camera;
 use engine::renderer::commands;
 use engine::renderer::commands::Commands;
 use glam::{Mat4, Vec3, Vec4};
 use rfd::FileDialog;
-use engine::lib::scene::model::Model;
 
 pub(crate) fn update_ui(
     ctx: &egui::Context,

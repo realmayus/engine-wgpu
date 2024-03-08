@@ -1,6 +1,6 @@
+use log::debug;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
-use log::debug;
 use wgpu::{BindGroupLayout, Buffer, BufferAddress, Device, Queue};
 
 const PREALLOC_COUNT: usize = 16; // how many elements we want to have space for initially
@@ -78,7 +78,12 @@ impl<T: bytemuck::Pod> DynamicBufferArray<T> {
 
     pub fn update(&mut self, queue: &Queue, index: u64, data: T) {
         assert!(index < self.count);
-        println!("Updating buffer {:?} at index {} (offset {})", self.label, index, index * std::mem::size_of::<T>() as u64);
+        println!(
+            "Updating buffer {:?} at index {} (offset {})",
+            self.label,
+            index,
+            index * std::mem::size_of::<T>() as u64
+        );
         queue.write_buffer(
             &self.buffer,
             index * std::mem::size_of::<T>() as u64,
@@ -133,7 +138,11 @@ pub struct DynamicBufferMap<T, K> {
     map: std::collections::HashMap<K, u64>,
 }
 
-impl<T, K> DynamicBufferMap<T, K> where T: bytemuck::Pod, K: Eq + Hash + Debug {
+impl<T, K> DynamicBufferMap<T, K>
+where
+    T: bytemuck::Pod,
+    K: Eq + Hash + Debug,
+{
     pub fn new(
         device: &Device,
         label: Option<String>,
@@ -159,12 +168,19 @@ impl<T, K> DynamicBufferMap<T, K> where T: bytemuck::Pod, K: Eq + Hash + Debug {
     ) {
         self.map.insert(key, self.array.len());
         self.array.push(device, queue, data, bind_group_layout);
-        println!("Pushed to buffer, now length is {}; map: {:?}", self.array.len(), self.map);
+        println!(
+            "Pushed to buffer, now length is {}; map: {:?}",
+            self.array.len(),
+            self.map
+        );
     }
 
     pub fn update(&mut self, queue: &Queue, key: &K, data: T) {
         let index = *self.map.get(key).unwrap();
-        println!("Mesh {key:?} located at {index}, array len {}", self.array.len());
+        println!(
+            "Mesh {key:?} located at {index}, array len {}",
+            self.array.len()
+        );
         self.array.update(queue, index, data);
     }
 
@@ -181,7 +197,10 @@ impl<T, K> DynamicBufferMap<T, K> where T: bytemuck::Pod, K: Eq + Hash + Debug {
     }
 }
 
-impl<T, K> Debug for DynamicBufferMap<T, K> where K: Debug {
+impl<T, K> Debug for DynamicBufferMap<T, K>
+where
+    K: Debug,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "DynamicBufferMap: ")?;
         writeln!(f, "Map: {:?}", self.map)?;

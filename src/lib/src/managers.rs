@@ -4,10 +4,10 @@ use slotmap::new_key_type;
 use wgpu::{BindGroupLayout, BufferUsages, Device, Queue};
 
 use crate::buffer_array::DynamicBufferArray;
+use crate::scene::material::PbrMaterial;
 use crate::shader_types::MaterialInfo;
 use crate::texture::{Texture, TextureKind};
 use crate::Material;
-use crate::scene::material::PbrMaterial;
 
 new_key_type! { pub struct TexId; }
 

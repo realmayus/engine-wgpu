@@ -64,9 +64,14 @@ impl Command {
                 state.world.active_scene = id;
                 state.world.scenes.insert(first.id as usize, first);
 
-                state
-                    .camera
-                    .update_light_count(state.world.get_active_scene().expect("No active scene").light_buffer.len() as u32);
+                state.camera.update_light_count(
+                    state
+                        .world
+                        .get_active_scene()
+                        .expect("No active scene")
+                        .light_buffer
+                        .len() as u32,
+                );
                 state.camera.update_view(&state.queue);
                 state.world.materials.update_dirty(&state.queue);
                 state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
@@ -108,9 +113,14 @@ impl Command {
                 first.id = id as u32;
                 state.world.scenes.insert(first.id as usize, first);
 
-                state
-                    .camera
-                    .update_light_count(state.world.get_active_scene().expect("No active scene").light_buffer.len() as u32);
+                state.camera.update_light_count(
+                    state
+                        .world
+                        .get_active_scene()
+                        .expect("No active scene")
+                        .light_buffer
+                        .len() as u32,
+                );
                 state.camera.update_view(&state.queue);
                 state.world.materials.update_dirty(&state.queue);
                 state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
@@ -145,9 +155,14 @@ impl Command {
                             &state.pbr_pipeline.light_bind_group_layout,
                         );
                     state.world.materials.update_dirty(&state.queue);
-                    state
-                        .camera
-                        .update_light_count(state.world.get_active_scene().expect("No active scene").light_buffer.len() as u32);
+                    state.camera.update_light_count(
+                        state
+                            .world
+                            .get_active_scene()
+                            .expect("No active scene")
+                            .light_buffer
+                            .len() as u32,
+                    );
                     state.camera.update_view(&state.queue);
                     state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
                 } else {
@@ -190,9 +205,14 @@ impl Command {
                             &state.pbr_pipeline.mesh_bind_group_layout,
                             &state.pbr_pipeline.light_bind_group_layout,
                         );
-                    state
-                        .camera
-                        .update_light_count(state.world.get_active_scene().expect("No active scene").light_buffer.len() as u32);
+                    state.camera.update_light_count(
+                        state
+                            .world
+                            .get_active_scene()
+                            .expect("No active scene")
+                            .light_buffer
+                            .len() as u32,
+                    );
                     state.camera.update_view(&state.queue);
                     state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
                 }
@@ -236,9 +256,14 @@ impl Command {
                         .remove_model(*model_id, &state.queue, &state.world.materials)
                         .is_some()
                     {
-                        state
-                            .camera
-                            .update_light_count(state.world.get_active_scene().expect("No active scene").light_buffer.len() as u32);
+                        state.camera.update_light_count(
+                            state
+                                .world
+                                .get_active_scene()
+                                .expect("No active scene")
+                                .light_buffer
+                                .len() as u32,
+                        );
                         state.camera.update_view(&state.queue);
                         break;
                     }
@@ -281,9 +306,14 @@ impl Command {
                         );
                     }
                 }
-                state
-                    .camera
-                    .update_light_count(state.world.get_active_scene().expect("No active scene").light_buffer.len() as u32);
+                state.camera.update_light_count(
+                    state
+                        .world
+                        .get_active_scene()
+                        .expect("No active scene")
+                        .light_buffer
+                        .len() as u32,
+                );
                 state.camera.update_view(&state.queue);
             }
         }

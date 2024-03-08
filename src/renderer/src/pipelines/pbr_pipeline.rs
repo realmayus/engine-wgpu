@@ -1,15 +1,19 @@
 use bytemuck::{Pod, Zeroable};
-use wgpu::SamplerBindingType::Filtering;
-use wgpu::{include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder, DepthStencilState, Device, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline, ShaderModule, SurfaceConfiguration, TextureView, Queue};
 use wgpu::util::{DeviceExt, DrawIndexedIndirect};
+use wgpu::SamplerBindingType::Filtering;
+use wgpu::{
+    include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder,
+    DepthStencilState, Device, PipelineLayout, Queue, RenderPassDepthStencilAttachment,
+    RenderPipeline, ShaderModule, SurfaceConfiguration, TextureView,
+};
 
 use lib::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use lib::managers::MaterialManager;
-use lib::scene::{VertexInputs};
+use lib::scene::mesh::Mesh;
+use lib::scene::VertexInputs;
 use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo, PbrVertex, Vertex};
 use lib::texture::Texture;
 use lib::Material;
-use lib::scene::mesh::Mesh;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -145,8 +149,7 @@ impl PBRPipelineProvider {
                 range: 0..std::mem::size_of::<PushConstants>() as u32,
             }],
         });
-        
-        
+
         Self {
             shader,
             pipeline: None,
@@ -212,7 +215,7 @@ impl PBRPipelineProvider {
             }),
         );
     }
-    
+
     fn render_pass<'a>(
         &self,
         encoder: &mut CommandEncoder,
@@ -262,7 +265,9 @@ impl PBRPipelineProvider {
             },
         ) in vertex_inputs.iter().enumerate()
         {
-            let mesh_index = mesh_info_map.get(mesh_id).expect("Mesh not found in mesh_info_map");
+            let mesh_index = mesh_info_map
+                .get(mesh_id)
+                .expect("Mesh not found in mesh_info_map");
             let push_constants = PushConstants {
                 mesh_index: *mesh_index as u32,
             };

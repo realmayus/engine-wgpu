@@ -1,8 +1,8 @@
 use crate::managers::MaterialManager;
 use crate::scene::light::PointLight;
-use glam::Mat4;
 use crate::scene::material::PbrMaterial;
 use crate::scene::mesh::Mesh;
+use glam::Mat4;
 
 pub trait Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4];

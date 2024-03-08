@@ -214,7 +214,11 @@ impl Scene {
             .enumerate()
             .filter(|(_, mesh)| mesh.dirty())
         {
-            debug!("Updating mesh {} with mesh info {:?}", mesh.id, MeshInfo::from_mesh(mesh, material_manager));
+            debug!(
+                "Updating mesh {} with mesh info {:?}",
+                mesh.id,
+                MeshInfo::from_mesh(mesh, material_manager)
+            );
             self.mesh_buffer
                 .update(queue, &mesh.id, MeshInfo::from_mesh(mesh, material_manager));
             mesh.set_dirty(false);
@@ -229,7 +233,8 @@ impl Scene {
         {
             let light = model.light.as_mut().unwrap();
             light.set_dirty(false);
-            self.light_buffer.update(queue, light.index as u64, LightInfo::from(light)); // TODO is light.index what we want here?
+            self.light_buffer
+                .update(queue, light.index as u64, LightInfo::from(light)); // TODO is light.index what we want here?
         }
     }
 }
@@ -263,17 +268,19 @@ impl World {
 
     // TODO Optimization: the performance of this must be terrible!
     pub fn pbr_meshes(&self) -> Option<impl Iterator<Item = &Mesh>> {
-        self.get_active_scene().map(|scene| scene.iter_meshes().filter(|mesh| {
-            match *self.materials.get_material(mesh.material) {
-                Material::Pbr(_) => true,
-            }
-        }))
+        self.get_active_scene().map(|scene| {
+            scene
+                .iter_meshes()
+                .filter(|mesh| match *self.materials.get_material(mesh.material) {
+                    Material::Pbr(_) => true,
+                })
+        })
     }
 
     pub fn update_active_scene(&mut self, queue: &Queue) {
-        let Some(scene) = &mut self
-            .scenes
-            .get_mut(&self.active_scene) else { return };
+        let Some(scene) = &mut self.scenes.get_mut(&self.active_scene) else {
+            return;
+        };
         scene.update_meshes(queue, &self.materials);
         scene.update_lights(queue);
     }
