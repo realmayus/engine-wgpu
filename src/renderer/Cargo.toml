@@ -19,3 +19,4 @@ anyhow = "1.0.77"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 hashbrown = "0.14.3"
 rand = "0.8.5"
+flume = "0.11.0"

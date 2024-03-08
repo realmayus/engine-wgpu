@@ -14,7 +14,8 @@ use lib::managers::{MaterialManager, TextureManager};
 use lib::scene::World;
 
 use crate::camera::{Camera, KeyState};
-use crate::pipelines::pbr_pipeline::PBRPipelineProvider;
+use crate::pipelines::object_picking::ObjectPickingPipeline;
+use crate::pipelines::pbr::PBRPipeline;
 
 pub mod camera;
 pub mod commands;
@@ -42,7 +43,8 @@ pub struct RenderState {
     size: winit::dpi::PhysicalSize<u32>,
     pub window: Window,
     queue: Queue,
-    pbr_pipeline: PBRPipelineProvider,
+    pbr_pipeline: PBRPipeline,
+    object_picking_pipeline: ObjectPickingPipeline,
     camera: Camera,
     world: World,
     hook: Box<dyn Hook>,
@@ -113,7 +115,7 @@ impl RenderState {
         surface.configure(&device, &surface_config);
 
         let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
-        let mut pbr_pipeline = PBRPipelineProvider::new(&device, &surface_config, &camera.buffer);
+        let mut pbr_pipeline = PBRPipeline::new(&device, &surface_config, &camera.buffer);
         pbr_pipeline.create_pipeline(&device);
 
         let textures = TextureManager::new(&device, &queue, &pbr_pipeline.tex_bind_group_layout);
@@ -124,12 +126,16 @@ impl RenderState {
             &pbr_pipeline.tex_bind_group_layout,
             &textures,
         );
+
         let world = World {
             scenes: HashMap::new(),
             active_scene: 0,
             materials,
             textures,
         };
+
+        let mut object_picking_pipeline = ObjectPickingPipeline::new(&device, &surface_config, &camera.buffer);
+        object_picking_pipeline.create_pipeline(&device);
 
         let egui = gui::EguiRenderer::new(&device, surface_config.format, None, 1, &window);
 
@@ -141,6 +147,7 @@ impl RenderState {
             surface_config,
             size,
             pbr_pipeline,
+            object_picking_pipeline,
             camera,
             world,
             show_gui: true,
@@ -166,12 +173,13 @@ impl RenderState {
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
         self.pbr_pipeline.resize(&self.device, &self.surface_config);
+        self.object_picking_pipeline.resize(&self.device, &self.surface_config);
         self.camera
             .update_aspect(new_size.width as f32, new_size.height as f32);
         self.window.request_redraw();
     }
 
-    fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
+    fn input(&mut self, event: &WindowEvent) -> bool {
         if !self.show_gui {
             false
         } else {
@@ -252,7 +260,9 @@ pub async fn run(hook: impl Hook + 'static) {
     let mut state = RenderState::new(window, hook).await;
     let mut keys = KeyState::default();
     let mut cursor_delta = Vec2::default();
+    let mut cursor_position = (0, 0);
     let mut delta_time = 0.0;
+    let sender = state.command_channel.0.clone();
     state.setup();
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -290,8 +300,15 @@ pub async fn run(hook: impl Hook + 'static) {
                         state.resize(**new_inner_size);
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
-                        keys.update_mouse(state, button);
+                        if !keys.update_mouse(state, button) && button == &winit::event::MouseButton::Left && state == &ElementState::Pressed {
+                            let (x,y): (u32, u32) = cursor_position;
+                            sender.send(commands::Command::QueryClick((x, y))).unwrap();
+                        }
                     }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        cursor_position = (*position).into();
+                    }
+
                     _ => {}
                 }
             }

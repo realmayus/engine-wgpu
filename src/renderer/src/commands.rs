@@ -22,7 +22,7 @@ pub enum CreateModel {
     },
 }
 
-pub type Commands = mpsc::Sender<commands::Command>;
+pub type Commands = mpsc::Sender<Command>;
 
 #[derive(Debug)]
 pub enum Command {
@@ -37,6 +37,7 @@ pub enum Command {
     },
     DeleteModel(u32),
     DuplicateModel(u32),
+    QueryClick((u32, u32)),
 }
 
 impl Command {
@@ -315,6 +316,21 @@ impl Command {
                         .len() as u32,
                 );
                 state.camera.update_view(&state.queue);
+            }
+            Command::QueryClick((x, y)) => {
+                let Some(scene) = state.world.get_active_scene() else { return };
+                // let (width, height) = (state.surface_config.width, state.surface_config.height);
+
+                let query_result = state.object_picking_pipeline.query_click(
+                    &state.device,
+                    &state.queue,
+                    &state.surface_config,
+                    *x,
+                    *y,
+                    &scene.iter_meshes().collect::<Vec<_>>(),
+                    &scene.mesh_buffer,
+                );
+                debug!("Click query result: {:?}", query_result);
             }
         }
         debug!("Finished processing command.");

@@ -4,20 +4,38 @@ use crate::scene::material::PbrMaterial;
 use crate::scene::mesh::Mesh;
 use glam::Mat4;
 
-pub trait Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 4];
+pub trait Vertex<const ATTRIB_COUNT: usize> {
+    const ATTRIBS: [wgpu::VertexAttribute; ATTRIB_COUNT];
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct PbrVertex {
-    pub(crate) position: [f32; 3],
-    pub(crate) normal: [f32; 3],
-    pub(crate) tangent: [f32; 4],
-    pub(crate) uv: [f32; 2],
+pub struct BasicVertex {
+    pub position: [f32; 3],
 }
-impl Vertex for PbrVertex {
+impl Vertex<1> for BasicVertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 1] =
+        wgpu::vertex_attr_array![0 => Float32x3];
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<BasicVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PbrVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tangent: [f32; 4],
+    pub uv: [f32; 2],
+}
+impl Vertex<4> for PbrVertex {
     const ATTRIBS: [wgpu::VertexAttribute; 4] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4, 3 => Float32x2];
     fn desc() -> wgpu::VertexBufferLayout<'static> {

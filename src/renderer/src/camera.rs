@@ -56,8 +56,9 @@ impl KeyState {
         }
     }
 
-    pub(crate) fn update_mouse(&mut self, state: &ElementState, button: &MouseButton) {
+    pub(crate) fn update_mouse(&mut self, state: &ElementState, button: &MouseButton) -> bool {
         let pressed = state == &ElementState::Pressed;
+        let mut consume = false;
         match button {
             MouseButton::Middle => {
                 self.input_device = InputDevice::Mouse {
@@ -67,7 +68,8 @@ impl KeyState {
             MouseButton::Left if self.cmd_pressed || self.shift_pressed => {
                 self.input_device = InputDevice::Mouse {
                     middle_pressed: pressed,
-                }
+                };
+                consume = true;  // consume the event if mouse click used for camera movement
             }
             _ => {
                 self.input_device = InputDevice::Mouse {
@@ -75,6 +77,7 @@ impl KeyState {
                 }
             }
         }
+        consume
     }
 
     pub(crate) fn set_modifiers(&mut self, state: &ModifiersState) {

@@ -1,13 +1,11 @@
 use std::fmt::{Debug, Formatter};
-use std::iter;
-
-use glam::{Vec2, Vec3, Vec4};
 use hashbrown::HashMap;
-use itertools::izip;
 use log::debug;
 use rand::Rng;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, Buffer, BufferUsages, Device, Queue};
+use glam::{Vec2, Vec3, Vec4};
+use itertools::izip;
 
 use crate::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use crate::managers::{MaterialManager, TextureManager};
