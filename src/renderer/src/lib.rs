@@ -118,7 +118,7 @@ impl RenderState {
         let mut pbr_pipeline = PBRPipeline::new(&device, &surface_config, &camera.buffer);
         pbr_pipeline.create_pipeline(&device);
 
-        let textures = TextureManager::new(&device, &queue, &pbr_pipeline.tex_bind_group_layout);
+        let textures = TextureManager::new(&device, &queue);
         let materials = MaterialManager::new(
             &device,
             &queue,
@@ -134,7 +134,8 @@ impl RenderState {
             textures,
         };
 
-        let mut object_picking_pipeline = ObjectPickingPipeline::new(&device, &surface_config, &camera.buffer);
+        let mut object_picking_pipeline =
+            ObjectPickingPipeline::new(&device, &surface_config, &camera.buffer);
         object_picking_pipeline.create_pipeline(&device);
 
         let egui = gui::EguiRenderer::new(&device, surface_config.format, None, 1, &window);
@@ -173,7 +174,8 @@ impl RenderState {
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
         self.pbr_pipeline.resize(&self.device, &self.surface_config);
-        self.object_picking_pipeline.resize(&self.device, &self.surface_config);
+        self.object_picking_pipeline
+            .resize(&self.device, &self.surface_config);
         self.camera
             .update_aspect(new_size.width as f32, new_size.height as f32);
         self.window.request_redraw();
@@ -300,8 +302,11 @@ pub async fn run(hook: impl Hook + 'static) {
                         state.resize(**new_inner_size);
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
-                        if !keys.update_mouse(state, button) && button == &winit::event::MouseButton::Left && state == &ElementState::Pressed {
-                            let (x,y): (u32, u32) = cursor_position;
+                        if !keys.update_mouse(state, button)
+                            && button == &winit::event::MouseButton::Left
+                            && state == &ElementState::Pressed
+                        {
+                            let (x, y): (u32, u32) = cursor_position;
                             sender.send(commands::Command::QueryClick((x, y))).unwrap();
                         }
                     }

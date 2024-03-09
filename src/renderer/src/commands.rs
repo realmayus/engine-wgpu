@@ -11,7 +11,7 @@ use lib::scene::model::Model;
 use lib::scene::World;
 use systems::io::gltf_loader::load_gltf;
 
-use crate::{commands, RenderState};
+use crate::RenderState;
 
 #[derive(Debug)]
 pub enum CreateModel {
@@ -78,11 +78,7 @@ impl Command {
                 state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
             }
             Command::LoadSceneFile(path) => {
-                let textures = TextureManager::new(
-                    &state.device,
-                    &state.queue,
-                    &state.pbr_pipeline.tex_bind_group_layout,
-                );
+                let textures = TextureManager::new(&state.device, &state.queue);
                 let materials = MaterialManager::new(
                     &state.device,
                     &state.queue,
@@ -318,13 +314,14 @@ impl Command {
                 state.camera.update_view(&state.queue);
             }
             Command::QueryClick((x, y)) => {
-                let Some(scene) = state.world.get_active_scene() else { return };
+                let Some(scene) = state.world.get_active_scene() else {
+                    return;
+                };
                 // let (width, height) = (state.surface_config.width, state.surface_config.height);
 
                 let query_result = state.object_picking_pipeline.query_click(
                     &state.device,
                     &state.queue,
-                    &state.surface_config,
                     *x,
                     *y,
                     &scene.iter_meshes().collect::<Vec<_>>(),

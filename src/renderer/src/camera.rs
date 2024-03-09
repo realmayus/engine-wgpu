@@ -6,10 +6,7 @@ use winit::event::{ElementState, ModifiersState, MouseButton, VirtualKeyCode};
 
 use lib::shader_types::CameraUniform;
 
-const GLOBAL_X: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 const GLOBAL_Y: [f32; 4] = [0.0, -1.0, 0.0, 1.0];
-const GLOBAL_Z: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
-const EPS: f32 = 0.01;
 
 #[derive(Debug)]
 enum InputDevice {
@@ -39,7 +36,7 @@ pub struct KeyState {
     pub left_pressed: bool,
     pub right_pressed: bool,
     pub shift_pressed: bool,
-    pub input_device: InputDevice,
+    input_device: InputDevice,
     pub cmd_pressed: bool,
 }
 
@@ -69,7 +66,7 @@ impl KeyState {
                 self.input_device = InputDevice::Mouse {
                     middle_pressed: pressed,
                 };
-                consume = true;  // consume the event if mouse click used for camera movement
+                consume = true; // consume the event if mouse click used for camera movement
             }
             _ => {
                 self.input_device = InputDevice::Mouse {

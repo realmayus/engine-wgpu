@@ -15,8 +15,7 @@ pub struct BasicVertex {
     pub position: [f32; 3],
 }
 impl Vertex<1> for BasicVertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 1] =
-        wgpu::vertex_attr_array![0 => Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<BasicVertex>() as wgpu::BufferAddress,
@@ -25,7 +24,6 @@ impl Vertex<1> for BasicVertex {
         }
     }
 }
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

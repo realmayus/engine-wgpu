@@ -184,33 +184,6 @@ pub fn load_gltf(
             let img = images
                 .remove(&(gltf_texture.source().index() as u32))
                 .unwrap();
-
-            let img_name = if let Some(name) = gltf_texture.name() {
-                format!(
-                    "{}_{}",
-                    Path::new(path)
-                        .file_name()
-                        .map(|s| s.to_str())
-                        .unwrap_or(Some(""))
-                        .unwrap_or("")
-                        .split('.')
-                        .next()
-                        .unwrap(),
-                    name
-                ) //TODO fix this abomination
-            } else {
-                Path::new(path)
-                    .file_name()
-                    .map(|s| s.to_str())
-                    .unwrap_or(Some(""))
-                    .unwrap_or("")
-                    .split('.')
-                    .next()
-                    .unwrap()
-                    .to_string()
-            };
-
-            // let path = extract_image_to_file(img_name.as_str(), &img, file_format);  // TODO store path in texture? for serde
             let texture =
                 Texture::from_image(device, queue, &img, gltf_texture.name(), TextureKind::Other)
                     .expect("Couldn't create texture");

@@ -1,10 +1,10 @@
 use crate::managers::MatId;
+use crate::scene::VertexInputs;
 use crate::Dirtyable;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use rand::Rng;
 use std::fmt::{Debug, Formatter};
 use wgpu::Device;
-use crate::scene::VertexInputs;
 
 pub struct Mesh {
     dirty: bool,

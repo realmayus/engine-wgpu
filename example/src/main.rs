@@ -4,7 +4,7 @@ mod util;
 use engine::lib::scene::World;
 use engine::renderer::camera::{Camera, KeyState};
 use engine::renderer::commands::Commands;
-use engine::renderer::{commands, Hook};
+use engine::renderer::Hook;
 
 struct Game {}
 

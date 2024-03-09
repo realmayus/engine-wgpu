@@ -2,7 +2,6 @@ use crate::scene::light::PointLight;
 use crate::scene::mesh::Mesh;
 use crate::Dirtyable;
 use glam::Mat4;
-use log::debug;
 use rand::Rng;
 use std::fmt::{Debug, Formatter};
 

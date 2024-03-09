@@ -77,10 +77,6 @@ impl PbrMaterial {
     pub fn dirty(&self) -> bool {
         self.dirty
     }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty
-    }
 }
 
 impl Debug for PbrMaterial {

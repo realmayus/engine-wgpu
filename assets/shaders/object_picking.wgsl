@@ -7,6 +7,9 @@ var<push_constant> push: PushConstants;
 
 struct VertexInput {
     @location(0) position: vec3<f32>, // 3*4 = 12
+    @location(1) normal: vec3<f32>, // 12 + 3*4 = 24
+    @location(2) tangent: vec4<f32>,    // 24 + 4*4 = 40
+    @location(3) uv: vec2<f32> // 40 + 2*4 = 48
 }
 
 struct VertexOutput {

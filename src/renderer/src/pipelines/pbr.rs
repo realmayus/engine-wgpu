@@ -1,10 +1,9 @@
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::{DeviceExt, DrawIndexedIndirect};
 use wgpu::SamplerBindingType::Filtering;
 use wgpu::{
     include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, Color, CommandEncoder,
-    DepthStencilState, Device, PipelineLayout, Queue, RenderPassDepthStencilAttachment,
-    RenderPipeline, ShaderModule, SurfaceConfiguration, TextureView,
+    DepthStencilState, Device, PipelineLayout, RenderPassDepthStencilAttachment, RenderPipeline,
+    ShaderModule, SurfaceConfiguration, TextureView,
 };
 
 use lib::buffer_array::{DynamicBufferArray, DynamicBufferMap};
@@ -41,7 +40,8 @@ impl PBRPipeline {
     pub fn new(device: &Device, config: &SurfaceConfiguration, camera_buffer: &Buffer) -> Self {
         let shader =
             device.create_shader_module(include_wgsl!("../../../../assets/shaders/pbr.wgsl"));
-        let depth_texture = Texture::create_depth_texture(device, config, "depth_texture");
+        let depth_texture =
+            Texture::create_depth_texture(device, config.width, config.height, "depth_texture");
 
         let tex_bind_group_layout = {
             let mut tex_bind_group_layout_entries = Vec::new();
@@ -164,7 +164,8 @@ impl PBRPipeline {
     }
 
     pub(crate) fn resize(&mut self, device: &Device, config: &SurfaceConfiguration) {
-        self.depth_texture = Texture::create_depth_texture(device, config, "depth_texture");
+        self.depth_texture =
+            Texture::create_depth_texture(device, config.width, config.height, "depth_texture");
     }
 
     // (re-)creates the pipeline

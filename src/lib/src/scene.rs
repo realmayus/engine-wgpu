@@ -1,11 +1,11 @@
-use std::fmt::{Debug, Formatter};
+use glam::{Vec2, Vec3, Vec4};
 use hashbrown::HashMap;
+use itertools::izip;
 use log::debug;
 use rand::Rng;
+use std::fmt::{Debug, Formatter};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, Buffer, BufferUsages, Device, Queue};
-use glam::{Vec2, Vec3, Vec4};
-use itertools::izip;
 
 use crate::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use crate::managers::{MaterialManager, TextureManager};
@@ -205,12 +205,11 @@ impl Scene {
     }
 
     pub fn update_meshes(&mut self, queue: &Queue, material_manager: &MaterialManager) {
-        for (i, mesh) in self
+        for mesh in self
             .models
             .iter_mut()
             .flat_map(|model| model.meshes.iter_mut())
-            .enumerate()
-            .filter(|(_, mesh)| mesh.dirty())
+            .filter(|mesh| mesh.dirty())
         {
             debug!(
                 "Updating mesh {} with mesh info {:?}",

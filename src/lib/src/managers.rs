@@ -21,7 +21,7 @@ pub struct TextureManager {
 }
 
 impl TextureManager {
-    pub fn new(device: &Device, queue: &Queue, x: &BindGroupLayout) -> Self {
+    pub fn new(device: &Device, queue: &Queue) -> Self {
         let mut textures = SlotMap::with_key();
         let default_albedo = Texture::from_image(
             device,
