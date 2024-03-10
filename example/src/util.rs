@@ -93,7 +93,6 @@ macro_rules! mutate_indirect {
 pub(crate) struct RainbowAnimation {
     current_color: [u8; 3],
     time_elapsed: i32,
-    noise: u8,
     transition_duration: u32,
 }
 
@@ -102,33 +101,34 @@ impl RainbowAnimation {
         RainbowAnimation {
             current_color: [0, 0, 0], // Start with red
             time_elapsed: 0,
-            noise: 0,
-            transition_duration: 100, // Transition duration in milliseconds
+            transition_duration: 150, // Transition duration in milliseconds
         }
     }
 
     pub fn update(&mut self, delta_time: u32) {
         self.time_elapsed += 1;
-        if self.time_elapsed % 3 == 0 {
-            self.noise = (self.noise + 1) % 255;
-        }
 
         // Calculate the interpolation factor
-        let t = self.time_elapsed.abs_diff(0) as f32 / 100.0;
-        let t = t * 2. * PI / 10.;
+        let t = self.time_elapsed.abs_diff(0) as f32 / 1000.0;
+        let t = t * 2. * PI;
         if self.time_elapsed.abs_diff(0) >= self.transition_duration {
             self.time_elapsed = -self.time_elapsed;
         }
 
         // Interpolate between colors of the rainbow
-        let red = ((t).sin() * 176.0) as u8;
-        let green = ((t).sin() * 84.0) as u8;
-        let blue = ((t).sin() * 39.0) as u8;
+        let red = (t.sin() * 176.0) as u8;
+        let green = (t.sin() * 84.0) as u8;
+        let blue = (t.sin() * 39.0) as u8;
 
         self.current_color = [red, green, blue];
     }
 
     pub fn get_current_color(&self) -> [u8; 3] {
         self.current_color
+    }
+
+    pub fn reset(&mut self) {
+        self.time_elapsed = 0;
+        self.current_color = [0, 0, 0];
     }
 }

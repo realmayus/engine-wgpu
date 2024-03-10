@@ -56,6 +56,7 @@ impl Hook for Game {
                             if res == 0 {
                                 return;
                             }
+                            self.animation.reset();
                             scene.get_mesh_mut(res).unwrap().set_outline(true);
                             debug!("Clicked on mesh: {}", res);
                         }

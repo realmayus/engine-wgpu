@@ -49,11 +49,14 @@ fn vs_main(
     var out: VertexOutput;
     var model_transform = mesh_infos[push.mesh_index].model_transform;
 
-    if push.outline > 0u {
-        model_transform = scaling * model_transform;
-    }
+
     out.color = vec3(f32((push.outline >> 24u) & 0xFFu), f32((push.outline >> 16u) & 0xFFu), f32((push.outline >> 8u) & 0xFFu)) / 255.0;
-    out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position, 1.0);
+    if push.outline > 0u {
+        out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position + in.position * width, 1.0);
+    } else {
+        out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position, 1.0);
+    }
+
     out.frag_pos = (model_transform * vec4<f32>(in.position, 1.0)).xyz;
 
     out.view_pos = camera.view_position.xyz;
