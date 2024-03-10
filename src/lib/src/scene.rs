@@ -1,18 +1,19 @@
+use std::fmt::{Debug, Formatter};
+
 use glam::{Vec2, Vec3, Vec4};
 use hashbrown::HashMap;
 use itertools::izip;
 use log::debug;
 use rand::Rng;
-use std::fmt::{Debug, Formatter};
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, Buffer, BufferUsages, Device, Queue};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
+use crate::{Dirtyable, Material, SizedBuffer};
 use crate::buffer_array::{DynamicBufferArray, DynamicBufferMap};
 use crate::managers::{MaterialManager, TextureManager};
 use crate::scene::mesh::Mesh;
 use crate::scene::model::{DeepIter, Model};
 use crate::shader_types::{LightInfo, MeshInfo, PbrVertex};
-use crate::{Dirtyable, Material, SizedBuffer};
 
 pub mod light;
 pub mod material;
@@ -25,6 +26,8 @@ pub struct Scene {
     pub name: Option<Box<str>>,
     pub mesh_buffer: DynamicBufferMap<MeshInfo, u32>,
     pub light_buffer: DynamicBufferArray<LightInfo>,
+    pub outline_width: u8,
+    pub outline_color: [u8; 3],
 }
 
 impl Scene {
@@ -61,12 +64,7 @@ impl Scene {
                 );
             }
             if let Some(light) = &model.light {
-                light_buffer.push(
-                    device,
-                    queue,
-                    &[LightInfo::from(light)],
-                    light_bind_group_layout,
-                );
+                light_buffer.push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
             }
         }
 
@@ -76,6 +74,8 @@ impl Scene {
             name,
             mesh_buffer,
             light_buffer,
+            outline_width: 6,
+            outline_color: [255, 255, 255],
         }
     }
 
@@ -106,12 +106,8 @@ impl Scene {
                 );
             }
             if let Some(light) = &model.light {
-                self.light_buffer.push(
-                    device,
-                    queue,
-                    &[LightInfo::from(light)],
-                    light_bind_group_layout,
-                );
+                self.light_buffer
+                    .push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
             }
         }
         self.models.extend(other.models);
@@ -143,12 +139,8 @@ impl Scene {
             );
         }
         if let Some(light) = &model.light {
-            self.light_buffer.push(
-                device,
-                queue,
-                &[LightInfo::from(light)],
-                light_bind_group_layout,
-            );
+            self.light_buffer
+                .push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
         }
         if let Some(parent_id) = parent_id {
             self.models
@@ -180,12 +172,7 @@ impl Scene {
         }
         Some(models.remove(found_model?))
     }
-    pub fn remove_model(
-        &mut self,
-        model_id: u32,
-        queue: &Queue,
-        material_manager: &MaterialManager,
-    ) -> Option<Model> {
+    pub fn remove_model(&mut self, model_id: u32, queue: &Queue, material_manager: &MaterialManager) -> Option<Model> {
         let model = Self::remove_model_deep(&mut self.models, model_id);
         self.update_meshes(queue, material_manager);
         self.update_lights(queue);
@@ -197,11 +184,9 @@ impl Scene {
     }
 
     pub fn iter_models_deep(&self) -> impl Iterator<Item = &Model> {
-        self.models.iter().chain(
-            self.models
-                .iter()
-                .flat_map(|model| model.children.iter_deep()),
-        )
+        self.models
+            .iter()
+            .chain(self.models.iter().flat_map(|model| model.children.iter_deep()))
     }
 
     pub fn update_meshes(&mut self, queue: &Queue, material_manager: &MaterialManager) {
@@ -234,6 +219,47 @@ impl Scene {
                 .update(queue, light.index as u64, LightInfo::from(light)); // TODO is light.index what we want here?
         }
     }
+
+    fn get_model_rec_mut(parent: &mut Model, id: u32) -> Option<&mut Model> {
+        if parent.id == id {
+            return Some(parent);
+        }
+        for child in parent.children.iter_mut() {
+            let found = Self::get_model_rec_mut(child, id);
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    }
+    pub fn get_model_mut(&mut self, id: u32) -> Option<&mut Model> {
+        self.models
+            .iter_mut()
+            .map(|m| Self::get_model_rec_mut(m, id))
+            .find(|m| m.is_some())
+            .flatten()
+    }
+
+    fn get_mesh_rec_mut(model: &mut Model, id: u32) -> Option<&mut Mesh> {
+        if let Some(mesh) = model.meshes.iter_mut().find(|m| m.id == id) {
+            return Some(mesh);
+        }
+        for child in model.children.iter_mut() {
+            let found = Self::get_mesh_rec_mut(child, id);
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    }
+
+    pub fn get_mesh_mut(&mut self, id: u32) -> Option<&mut Mesh> {
+        self.models
+            .iter_mut()
+            .map(|m| Self::get_mesh_rec_mut(m, id))
+            .find(|m| m.is_some())
+            .flatten()
+    }
 }
 
 impl Debug for Scene {
@@ -243,10 +269,7 @@ impl Debug for Scene {
             "{{SCENE: Name: {:?}, # of models: {}, models: [{}]}}",
             self.name,
             self.models.len(),
-            self.models
-                .iter()
-                .map(|c| format!("\n - {:?}", c))
-                .collect::<String>(),
+            self.models.iter().map(|c| format!("\n - {:?}", c)).collect::<String>(),
         )
     }
 }
@@ -317,9 +340,7 @@ impl VertexInputs {
 
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(
-                &indices.iter().map(|i| *i as u16).collect::<Vec<u16>>(),
-            ),
+            contents: bytemuck::cast_slice(&indices.iter().map(|i| *i as u16).collect::<Vec<u16>>()),
             usage: BufferUsages::INDEX,
         });
 

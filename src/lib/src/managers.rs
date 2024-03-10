@@ -26,8 +26,7 @@ impl TextureManager {
         let default_albedo = Texture::from_image(
             device,
             queue,
-            &image::load_from_memory(include_bytes!("../../../assets/textures/default.png"))
-                .unwrap(),
+            &image::load_from_memory(include_bytes!("../../../assets/textures/default.png")).unwrap(),
             Some("Default Albedo Texture"),
             TextureKind::Albedo,
         )
@@ -36,10 +35,7 @@ impl TextureManager {
         let default_normal = Texture::from_image(
             device,
             queue,
-            &image::load_from_memory(include_bytes!(
-                "../../../assets/textures/default_normal.png"
-            ))
-            .unwrap(),
+            &image::load_from_memory(include_bytes!("../../../assets/textures/default_normal.png")).unwrap(),
             Some("Default Normal Texture"),
             TextureKind::Normal,
         )
@@ -114,12 +110,7 @@ impl MaterialManager {
             BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mat_bind_group_layout,
         );
-        buffer.push(
-            device,
-            queue,
-            &[MaterialInfo::from(&pbr_mat)],
-            mat_bind_group_layout,
-        );
+        buffer.push(device, queue, &[MaterialInfo::from(&pbr_mat)], mat_bind_group_layout);
         let default_material = materials.insert(Material::Pbr(pbr_mat));
 
         Self {

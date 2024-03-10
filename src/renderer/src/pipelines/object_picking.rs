@@ -1,15 +1,17 @@
 use bytemuck::{Pod, Zeroable};
+use wgpu::{
+    BindGroup, BindGroupLayoutDescriptor, Buffer, BufferAddress, Color, CommandEncoder, DepthStencilState,
+    Device, include_wgsl, PipelineLayout, Queue, RenderPassDepthStencilAttachment, RenderPipeline, ShaderModule,
+    SurfaceConfiguration, TextureView,
+};
+
 use lib::buffer_array::DynamicBufferMap;
 use lib::scene::mesh::Mesh;
 use lib::scene::VertexInputs;
 use lib::shader_types::{MeshInfo, PbrVertex, Vertex};
 use lib::texture::Texture;
-use wgpu::{
-    include_wgsl, BindGroup, BindGroupLayoutDescriptor, Buffer, BufferAddress, Color,
-    CommandEncoder, DepthStencilState, Device, PipelineLayout, Queue,
-    RenderPassDepthStencilAttachment, RenderPipeline, ShaderModule, SurfaceConfiguration,
-    TextureView,
-};
+
+use crate::camera::Camera;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -23,7 +25,6 @@ pub struct ObjectPickingPipeline {
     shader: ShaderModule,
     pipeline: Option<RenderPipeline>,
     pub pipeline_layout: PipelineLayout,
-    pub cam_bind_group: BindGroup,
     pub depth_texture: Texture,
     pub render_target: wgpu::Texture,
     render_target_view: TextureView,
@@ -34,16 +35,10 @@ pub struct ObjectPickingPipeline {
 
 impl ObjectPickingPipeline {
     // Creates all necessary bind groups and layouts for the pipeline
-    pub fn new(device: &Device, config: &SurfaceConfiguration, camera_buffer: &Buffer) -> Self {
-        let shader = device.create_shader_module(include_wgsl!(
-            "../../../../assets/shaders/object_picking.wgsl"
-        ));
-        let target_size = (
-            Self::round_to_next_multiple_of_256(config.width),
-            config.height,
-        );
-        let depth_texture =
-            Texture::create_depth_texture(device, target_size.0, target_size.1, "depth_texture");
+    pub fn new(device: &Device, config: &SurfaceConfiguration, camera: &Camera) -> Self {
+        let shader = device.create_shader_module(include_wgsl!("../shaders/object_picking.wgsl"));
+        let target_size = (Self::round_to_next_multiple_of_256(config.width), config.height);
+        let depth_texture = Texture::create_depth_texture(device, target_size.0, target_size.1, "depth_texture");
 
         let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("Object Picking Mesh Bindgroup Layout"),
@@ -59,32 +54,9 @@ impl ObjectPickingPipeline {
             }],
         });
 
-        let cam_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("Object Picking Camera Bindgroup Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let cam_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Object Picking Camera Bindgroup"),
-            layout: &cam_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Object Picking Pipeline Layout"),
-            bind_group_layouts: &[&mesh_bind_group_layout, &cam_bind_group_layout],
+            bind_group_layouts: &[&mesh_bind_group_layout, &camera.bind_group_layout],
             push_constant_ranges: &[wgpu::PushConstantRange {
                 stages: wgpu::ShaderStages::VERTEX,
                 range: 0..std::mem::size_of::<PushConstants>() as u32,
@@ -119,7 +91,6 @@ impl ObjectPickingPipeline {
             shader,
             pipeline: None,
             pipeline_layout,
-            cam_bind_group,
             depth_texture,
             render_target,
             render_target_view,
@@ -132,12 +103,8 @@ impl ObjectPickingPipeline {
         (n + 255) & !255
     }
     pub(crate) fn resize(&mut self, device: &Device, config: &SurfaceConfiguration) {
-        let target_size = (
-            Self::round_to_next_multiple_of_256(config.width),
-            config.height,
-        );
-        self.depth_texture =
-            Texture::create_depth_texture(device, target_size.0, target_size.1, "depth_texture");
+        let target_size = (Self::round_to_next_multiple_of_256(config.width), config.height);
+        self.depth_texture = Texture::create_depth_texture(device, target_size.0, target_size.1, "depth_texture");
         self.staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Object Picking Staging Buffer"),
             size: (target_size.0 * target_size.1 * 4) as BufferAddress,
@@ -146,55 +113,68 @@ impl ObjectPickingPipeline {
         });
         self.target_size = target_size;
         self.viewport_size = (config.width, config.height);
+        self.render_target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Object Picking Render Target"),
+            size: wgpu::Extent3d {
+                width: target_size.0,
+                height: target_size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+        });
+        self.render_target_view = self.render_target.create_view(&wgpu::TextureViewDescriptor::default());
     }
 
     // (re-)creates the pipeline
     pub(crate) fn create_pipeline(&mut self, device: &Device) {
-        self.pipeline = Some(
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Object Picking Pipeline"),
-                layout: Some(&self.pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &self.shader,
-                    entry_point: "vs_main",
-                    buffers: &[PbrVertex::desc()],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &self.shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Cw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    // Requires Features::DEPTH_CLIP_CONTROL
-                    unclipped_depth: false,
-                    // Requires Features::CONSERVATIVE_RASTERIZATION
-                    conservative: false,
-                },
-                depth_stencil: Some(DepthStencilState {
-                    format: Texture::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
+        self.pipeline = Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Object Picking Pipeline"),
+            layout: Some(&self.pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &self.shader,
+                entry_point: "vs_main",
+                buffers: &[PbrVertex::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &self.shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
-        );
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Cw,
+                cull_mode: Some(wgpu::Face::Back),
+                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        }));
     }
 
     fn render_pass<'a>(
@@ -237,9 +217,7 @@ impl ObjectPickingPipeline {
             index_buffer,
         } in vertex_inputs.iter()
         {
-            let mesh_index = mesh_info_map
-                .get(mesh_id)
-                .expect("Mesh not found in mesh_info_map");
+            let mesh_index = mesh_info_map.get(mesh_id).expect("Mesh not found in mesh_info_map");
             let push_constants = PushConstants {
                 mesh_index: *mesh_index as u32,
                 padding: [0; 3],
@@ -250,11 +228,7 @@ impl ObjectPickingPipeline {
                     ((mesh_id >> 24) & 0xff) as f32 / 255.0,
                 ],
             };
-            render_pass.set_push_constants(
-                wgpu::ShaderStages::VERTEX,
-                0,
-                bytemuck::bytes_of(&push_constants),
-            );
+            render_pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytemuck::bytes_of(&push_constants));
             render_pass.set_vertex_buffer(0, vertex_buffer.buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.buffer.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -270,18 +244,14 @@ impl ObjectPickingPipeline {
         y: u32,
         meshes: &[&Mesh],
         mesh_buffer: &DynamicBufferMap<MeshInfo, u32>,
+        camera: &Camera,
     ) -> u32 {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Object Picking Query Encoder"),
         });
         let vertex_inputs = meshes.iter().map(|m| m.vertex_inputs.as_ref().unwrap());
 
-        self.render_pass(
-            &mut encoder,
-            vertex_inputs,
-            mesh_buffer,
-            &self.cam_bind_group,
-        );
+        self.render_pass(&mut encoder, vertex_inputs, mesh_buffer, &camera.bind_group);
 
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {

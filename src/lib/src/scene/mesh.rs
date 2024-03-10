@@ -1,10 +1,12 @@
-use crate::managers::MatId;
-use crate::scene::VertexInputs;
-use crate::Dirtyable;
+use std::fmt::{Debug, Formatter};
+
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use rand::Rng;
-use std::fmt::{Debug, Formatter};
 use wgpu::Device;
+
+use crate::Dirtyable;
+use crate::managers::MatId;
+use crate::scene::VertexInputs;
 
 pub struct Mesh {
     dirty: bool,
@@ -21,6 +23,7 @@ pub struct Mesh {
     pub normal_matrix: Mat4,
     // computed as inverse transpose of the global transform
     pub vertex_inputs: Option<VertexInputs>,
+    outline: bool,
 }
 
 impl Mesh {
@@ -35,8 +38,7 @@ impl Mesh {
         device: &Device,
     ) -> Self {
         let id = rand::thread_rng().gen_range(0u32..1u32 << 31);
-        let vertex_inputs =
-            VertexInputs::from_mesh(id, &vertices, &normals, &tangents, &uvs, &indices, device);
+        let vertex_inputs = VertexInputs::from_mesh(id, &vertices, &normals, &tangents, &uvs, &indices, device);
 
         Self {
             id,
@@ -50,6 +52,7 @@ impl Mesh {
             global_transform,
             normal_matrix: global_transform.inverse().transpose(),
             vertex_inputs: Some(vertex_inputs),
+            outline: false,
         }
     }
 
@@ -60,8 +63,7 @@ impl Mesh {
         let tangents = self.tangents.clone();
         let uvs = self.uvs.clone();
         let id = rand::thread_rng().gen_range(0u32..1u32 << 31);
-        let vertex_inputs =
-            VertexInputs::from_mesh(id, &vertices, &normals, &tangents, &uvs, &indices, device);
+        let vertex_inputs = VertexInputs::from_mesh(id, &vertices, &normals, &tangents, &uvs, &indices, device);
 
         Self {
             id,
@@ -75,7 +77,17 @@ impl Mesh {
             global_transform: self.global_transform,
             normal_matrix: self.normal_matrix,
             vertex_inputs: Some(vertex_inputs),
+            outline: false,
         }
+    }
+
+    pub fn set_outline(&mut self, outline: bool) {
+        self.outline = outline;
+        self.set_dirty(true);
+    }
+
+    pub fn is_outline(&self) -> bool {
+        self.outline
     }
 }
 

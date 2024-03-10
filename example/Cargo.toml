@@ -12,6 +12,8 @@ egui = "0.24.1"
 env_logger = "0.11.2"
 rfd = "0.14.0"
 glam = "0.25.0"
+flume = "0.11.0"
+log = "0.4.20"
 
 [profile.dev.package.engine]
 opt-level = 0

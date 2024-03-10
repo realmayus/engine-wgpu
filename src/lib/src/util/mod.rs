@@ -26,9 +26,7 @@ pub fn extract_image_to_file(name: &str, img: &DynamicImage, file_format: ImageF
             path.set_file_name(format!(
                 "{}_{}",
                 file_stem.to_str().unwrap(),
-                Alphanumeric
-                    .sample_string(&mut rand::thread_rng(), 4)
-                    .as_str()
+                Alphanumeric.sample_string(&mut rand::thread_rng(), 4).as_str()
             ));
             path.set_extension(file_format.extensions_str()[0]);
         }

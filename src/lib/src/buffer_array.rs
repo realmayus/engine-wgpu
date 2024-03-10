@@ -53,18 +53,8 @@ impl<T: bytemuck::Pod> DynamicBufferArray<T> {
         }
     }
 
-    pub fn push(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        data: &[T],
-        bind_group_layout: &BindGroupLayout,
-    ) {
-        debug!(
-            "Pushing {} elements to buffer (Count: {})",
-            data.len(),
-            self.count
-        );
+    pub fn push(&mut self, device: &Device, queue: &Queue, data: &[T], bind_group_layout: &BindGroupLayout) {
+        debug!("Pushing {} elements to buffer (Count: {})", data.len(), self.count);
         if self.count + data.len() as u64 > self.capacity {
             self.resize(device, queue, bind_group_layout);
         }
@@ -158,14 +148,7 @@ where
         }
     }
 
-    pub fn push(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        key: K,
-        data: &[T],
-        bind_group_layout: &BindGroupLayout,
-    ) {
+    pub fn push(&mut self, device: &Device, queue: &Queue, key: K, data: &[T], bind_group_layout: &BindGroupLayout) {
         self.map.insert(key, self.array.len());
         self.array.push(device, queue, data, bind_group_layout);
         println!(
@@ -177,10 +160,7 @@ where
 
     pub fn update(&mut self, queue: &Queue, key: &K, data: T) {
         let index = *self.map.get(key).unwrap();
-        println!(
-            "Mesh {key:?} located at {index}, array len {}",
-            self.array.len()
-        );
+        println!("Mesh {key:?} located at {index}, array len {}", self.array.len());
         self.array.update(queue, index, data);
     }
 

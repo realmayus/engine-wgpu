@@ -41,20 +41,12 @@ impl PbrMaterial {
         }
     }
 
-    pub fn create_texture_bind_group(
-        &mut self,
-        device: &Device,
-        layout: &BindGroupLayout,
-        tex_mgr: &TextureManager,
-    ) {
+    pub fn create_texture_bind_group(&mut self, device: &Device, layout: &BindGroupLayout, tex_mgr: &TextureManager) {
         let mut entries = vec![];
         for Texture { view, sampler, .. } in [
             tex_mgr.unwrap_default(&self.albedo_texture, TextureKind::Albedo),
             tex_mgr.unwrap_default(&self.normal_texture, TextureKind::Normal),
-            tex_mgr.unwrap_default(
-                &self.metallic_roughness_texture,
-                TextureKind::MetalRoughness,
-            ),
+            tex_mgr.unwrap_default(&self.metallic_roughness_texture, TextureKind::MetalRoughness),
             tex_mgr.unwrap_default(&self.occlusion_texture, TextureKind::Occlusion),
             tex_mgr.unwrap_default(&self.emissive_texture, TextureKind::Emission),
         ] {

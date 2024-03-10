@@ -6,7 +6,7 @@ use egui_wgpu::renderer::ScreenDescriptor;
 use glam::Vec2;
 use hashbrown::HashMap;
 use wgpu::{Device, Features, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
-use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
@@ -14,18 +14,21 @@ use lib::managers::{MaterialManager, TextureManager};
 use lib::scene::World;
 
 use crate::camera::{Camera, KeyState};
+use crate::events::{Event, MouseButton};
 use crate::pipelines::object_picking::ObjectPickingPipeline;
+use crate::pipelines::outlining::OutliningPipeline;
 use crate::pipelines::pbr::PBRPipeline;
 
 pub mod camera;
 pub mod commands;
+pub mod events;
 mod gui;
 pub mod pipelines;
 
 pub trait Hook {
-    fn setup<'a>(&self, commands: mpsc::Sender<commands::Command>);
+    fn setup<'a>(&mut self, commands: mpsc::Sender<commands::Command>, event_receiver: mpsc::Receiver<Event>);
 
-    fn update(&mut self, keys: &KeyState, delta_time: f32);
+    fn update(&mut self, keys: &KeyState, delta_time: f32, world: &mut World);
 
     fn update_ui(
         &mut self,
@@ -45,15 +48,14 @@ pub struct RenderState {
     queue: Queue,
     pbr_pipeline: PBRPipeline,
     object_picking_pipeline: ObjectPickingPipeline,
+    outlining_pipeline: OutliningPipeline,
     camera: Camera,
     world: World,
     hook: Box<dyn Hook>,
     show_gui: bool,
     egui: gui::EguiRenderer,
-    command_channel: (
-        mpsc::Sender<commands::Command>,
-        mpsc::Receiver<commands::Command>,
-    ),
+    command_channel: (mpsc::Sender<commands::Command>, mpsc::Receiver<commands::Command>), // Commands: impl -> renderer
+    event_channel: (mpsc::Sender<Event>, Option<mpsc::Receiver<Event>>),                   // Events: renderer -> impl
 }
 
 impl RenderState {
@@ -115,7 +117,7 @@ impl RenderState {
         surface.configure(&device, &surface_config);
 
         let camera = Camera::new_default(size.width as f32, size.height as f32, &device);
-        let mut pbr_pipeline = PBRPipeline::new(&device, &surface_config, &camera.buffer);
+        let mut pbr_pipeline = PBRPipeline::new(&device, &surface_config, &camera);
         pbr_pipeline.create_pipeline(&device);
 
         let textures = TextureManager::new(&device, &queue);
@@ -134,11 +136,15 @@ impl RenderState {
             textures,
         };
 
-        let mut object_picking_pipeline =
-            ObjectPickingPipeline::new(&device, &surface_config, &camera.buffer);
+        let mut object_picking_pipeline = ObjectPickingPipeline::new(&device, &surface_config, &camera);
         object_picking_pipeline.create_pipeline(&device);
 
+        let mut outlining_pipeline = OutliningPipeline::new(&device, &surface_config, &camera);
+        outlining_pipeline.create_pipelines(&device);
+
         let egui = gui::EguiRenderer::new(&device, surface_config.format, None, 1, &window);
+        let event_channel = mpsc::channel();
+        let event_channel = (event_channel.0, Some(event_channel.1));
 
         Self {
             window,
@@ -149,19 +155,22 @@ impl RenderState {
             size,
             pbr_pipeline,
             object_picking_pipeline,
+            outlining_pipeline,
             camera,
             world,
             show_gui: true,
             hook: Box::from(hook),
             command_channel: mpsc::channel(),
+            event_channel,
             egui,
         }
     }
 
     fn setup(&mut self) {
-        self.hook.setup(self.command_channel.0.clone());
+        self.hook
+            .setup(self.command_channel.0.clone(), self.event_channel.1.take().unwrap());
         while let Ok(command) = self.command_channel.1.try_recv() {
-            command.process(self);
+            command.process(self, self.event_channel.0.clone());
         }
     }
     pub fn window(&self) -> &Window {
@@ -174,10 +183,9 @@ impl RenderState {
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
         self.pbr_pipeline.resize(&self.device, &self.surface_config);
-        self.object_picking_pipeline
-            .resize(&self.device, &self.surface_config);
-        self.camera
-            .update_aspect(new_size.width as f32, new_size.height as f32);
+        self.object_picking_pipeline.resize(&self.device, &self.surface_config);
+        self.outlining_pipeline.resize(&self.device, &self.surface_config);
+        self.camera.update_aspect(new_size.width as f32, new_size.height as f32);
         self.window.request_redraw();
     }
 
@@ -190,38 +198,49 @@ impl RenderState {
     }
 
     fn update(&mut self, keys: &KeyState, delta_time: f32, cursor_delta: Vec2) {
-        self.hook.update(keys, delta_time);
+        self.hook.update(keys, delta_time, &mut self.world);
         self.camera.recv_input(keys, cursor_delta, delta_time);
         self.camera.update_view(&self.queue);
         self.world.update_active_scene(&self.queue); // updates lights and mesh info buffers
         while let Ok(command) = self.command_channel.1.try_recv() {
-            command.process(self);
+            command.process(self, self.event_channel.0.clone());
         }
     }
 
     fn render(&mut self) -> Result<(), SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
 
         {
             if let Some(scene) = self.world.get_active_scene() {
                 if let Some(meshes) = self.world.pbr_meshes() {
+                    let meshes = meshes.collect::<Vec<_>>();
                     self.pbr_pipeline.render_meshes(
                         &mut encoder,
                         &view,
-                        &meshes.collect::<Vec<_>>(),
+                        &meshes,
                         &self.world.materials,
                         &self.world.materials.buffer,
                         &scene.mesh_buffer,
                         &scene.light_buffer,
+                        &self.camera,
                     );
+
+                    let outlined_meshes = meshes.iter().filter(|m| m.is_outline()).copied().collect::<Vec<_>>();
+                    if !outlined_meshes.is_empty() {
+                        self.outlining_pipeline.render_outline(
+                            &mut encoder,
+                            &view,
+                            &outlined_meshes[..],
+                            &scene.mesh_buffer,
+                            &self.camera,
+                            scene.outline_width,
+                            scene.outline_color,
+                        );
+                    }
                 }
             }
         }
@@ -239,12 +258,8 @@ impl RenderState {
                 &view,
                 screen_descriptor,
                 |ui| {
-                    self.hook.update_ui(
-                        ui,
-                        &mut self.world,
-                        &mut self.camera,
-                        self.command_channel.0.clone(),
-                    );
+                    self.hook
+                        .update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone());
                 },
             );
         }
@@ -267,10 +282,7 @@ pub async fn run(hook: impl Hook + 'static) {
     let sender = state.command_channel.0.clone();
     state.setup();
     event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == state.window().id() => {
+        winit::event::Event::WindowEvent { ref event, window_id } if window_id == state.window().id() => {
             if !state.input(event) {
                 match event {
                     WindowEvent::CloseRequested
@@ -301,13 +313,29 @@ pub async fn run(hook: impl Hook + 'static) {
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         state.resize(**new_inner_size);
                     }
-                    WindowEvent::MouseInput { state, button, .. } => {
-                        if !keys.update_mouse(state, button)
-                            && button == &winit::event::MouseButton::Left
-                            && state == &ElementState::Pressed
-                        {
+                    WindowEvent::MouseInput {
+                        state: element_state,
+                        button,
+                        ..
+                    } => {
+                        if !keys.update_mouse(element_state, button) && element_state == &ElementState::Pressed {
+                            let button = match button {
+                                winit::event::MouseButton::Left => MouseButton::Left,
+                                winit::event::MouseButton::Right => MouseButton::Right,
+                                winit::event::MouseButton::Middle => MouseButton::Middle,
+                                _ => return,
+                            };
                             let (x, y): (u32, u32) = cursor_position;
-                            sender.send(commands::Command::QueryClick((x, y))).unwrap();
+                            state
+                                .event_channel
+                                .0
+                                .clone()
+                                .send(Event::Click {
+                                    x,
+                                    y,
+                                    mouse_button: button,
+                                })
+                                .unwrap();
                         }
                     }
                     WindowEvent::CursorMoved { position, .. } => {
@@ -318,12 +346,12 @@ pub async fn run(hook: impl Hook + 'static) {
                 }
             }
         }
-        Event::MainEventsCleared => {
+        winit::event::Event::MainEventsCleared => {
             state.window().request_redraw();
             state.update(&keys, delta_time, cursor_delta);
             cursor_delta = Vec2::default();
         }
-        Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+        winit::event::Event::RedrawRequested(window_id) if window_id == state.window().id() => {
             let time = Instant::now();
             match state.render() {
                 Ok(_) => {}
@@ -334,7 +362,7 @@ pub async fn run(hook: impl Hook + 'static) {
             let elapsed = time.elapsed().as_micros() as f32;
             delta_time = elapsed / 1_000_000.0;
         }
-        Event::DeviceEvent {
+        winit::event::Event::DeviceEvent {
             event: DeviceEvent::MouseMotion { delta },
             ..
         } => {

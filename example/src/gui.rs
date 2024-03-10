@@ -1,36 +1,27 @@
-use crate::observe;
-use crate::util::{CameraModes, Editable, SparseModel, SparseScene};
 use egui::Ui;
+use glam::{Mat4, Vec3, Vec4};
+use rfd::FileDialog;
+
 use engine::lib::scene::model::Model;
 use engine::lib::scene::World;
 use engine::renderer::camera::Camera;
 use engine::renderer::commands;
 use engine::renderer::commands::Commands;
-use glam::{Mat4, Vec3, Vec4};
-use rfd::FileDialog;
 
-pub(crate) fn update_ui(
-    ctx: &egui::Context,
-    world: &mut World,
-    camera: &mut Camera,
-    commands: Commands,
-) {
+use crate::util::{CameraModes, Editable, SparseModel, SparseScene};
+use crate::{mutate_indirect, observe};
+
+pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands) {
     egui::Window::new("World").show(ctx, |ui| {
         ui.horizontal(|ui| {
             if ui.button("Load Scene").clicked() {
-                let picked_file = FileDialog::new()
-                    .add_filter("GLTF files", &["glb", "gltf"])
-                    .pick_file();
+                let picked_file = FileDialog::new().add_filter("GLTF files", &["glb", "gltf"]).pick_file();
                 if let Some(file) = picked_file {
-                    commands
-                        .send(commands::Command::LoadSceneFile(file))
-                        .unwrap();
+                    commands.send(commands::Command::LoadSceneFile(file)).unwrap();
                 }
             }
             if ui.button("Import File").clicked() {
-                let picked_file = FileDialog::new()
-                    .add_filter("GLTF files", &["glb", "gltf"])
-                    .pick_file();
+                let picked_file = FileDialog::new().add_filter("GLTF files", &["glb", "gltf"]).pick_file();
                 if let Some(file) = picked_file {
                     commands.send(commands::Command::ImportFile(file)).unwrap();
                 }
@@ -52,6 +43,21 @@ pub(crate) fn update_ui(
                 camera.fps = mode == CameraModes::FPS;
             });
         });
+
+        if let Some(scene) = world.scenes.get_mut(&world.active_scene) {
+            egui::CollapsingHeader::new("Outline").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Width");
+                    ui.add(egui::DragValue::new(&mut scene.outline_width));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Color");
+                    ui.add(egui::DragValue::new(&mut scene.outline_color[0]));
+                    ui.add(egui::DragValue::new(&mut scene.outline_color[1]));
+                    ui.add(egui::DragValue::new(&mut scene.outline_color[2]));
+                });
+            });
+        }
 
         let sparse_scenes: Vec<SparseScene> = world
             .scenes
@@ -81,14 +87,7 @@ pub(crate) fn update_ui(
             .show(ui, |ui| {
                 add_model_menu(ui, &commands, None);
                 for model in scene.models.as_mut_slice().iter_mut() {
-                    draw_model_ui(
-                        model,
-                        scene.id,
-                        &sparse_scenes,
-                        &sparse_models,
-                        ui,
-                        &commands,
-                    );
+                    draw_model_ui(model, scene.id, &sparse_scenes, &sparse_models, ui, &commands);
                 }
             });
         }
@@ -108,8 +107,8 @@ pub(crate) fn update_ui(
         }
         ui.separator();
         for (matid, material) in world.materials.iter_with_ids() {
-            egui::CollapsingHeader::new(format!("Material {:?} {:?}", matid, material.name()))
-                .show(ui, |ui| match material {
+            egui::CollapsingHeader::new(format!("Material {:?} {:?}", matid, material.name())).show(ui, |ui| {
+                match material {
                     engine::lib::Material::Pbr(pbr) => {
                         ui.label(format!("Name: {:?}", pbr.name));
                         ui.label(format!("Albedo: {:?}", pbr.albedo));
@@ -117,10 +116,7 @@ pub(crate) fn update_ui(
                             "Metallic Roughness Factors: {:?}",
                             pbr.metallic_roughness_factors
                         ));
-                        ui.label(format!(
-                            "Ambient Occlusion Factor: {:?}",
-                            pbr.occlusion_factor
-                        ));
+                        ui.label(format!("Ambient Occlusion Factor: {:?}", pbr.occlusion_factor));
                         ui.label(format!("Emissive Factors: {:?}", pbr.emissive_factors));
                         ui.label(format!("Albedo Texture: {:?}", pbr.albedo_texture));
                         ui.label(format!("Normal Texture: {:?}", pbr.normal_texture));
@@ -128,13 +124,11 @@ pub(crate) fn update_ui(
                             "Metallic Roughness Texture: {:?}",
                             pbr.metallic_roughness_texture
                         ));
-                        ui.label(format!(
-                            "Ambient Occlusion Texture: {:?}",
-                            pbr.occlusion_texture
-                        ));
+                        ui.label(format!("Ambient Occlusion Texture: {:?}", pbr.occlusion_texture));
                         ui.label(format!("Emissive Texture: {:?}", pbr.emissive_texture));
                     }
-                });
+                }
+            });
         }
     });
 }
@@ -182,14 +176,21 @@ fn draw_model_ui(
                     Vec3::from([0.0, 0.0, 0.0]),
                     Vec3::from([1.0, 1.0, 1.0]),
                 );
-                light
-                    .intensity
-                    .editable(Some("Intensity:".into()), ui, 0.0, 1000.0);
+                light.intensity.editable(Some("Intensity:".into()), ui, 0.0, 1000.0);
                 ui.label(format!("Range: {:?}", light.range));
             });
         }
-        for mesh in model.meshes.as_slice().iter() {
+        for mesh in model.meshes.as_mut_slice().iter_mut() {
             egui::CollapsingHeader::new(format!("Mesh {}", mesh.id)).show(ui, |ui| {
+                mutate_indirect!(
+                    mesh.is_outline(),
+                    |outline| {
+                        ui.checkbox(&mut outline, "Outline");
+                    },
+                    |mesh, outline| {
+                        mesh.set_outline(outline);
+                    }
+                );
                 ui.label(format!("Material: {:?}", mesh.material));
                 ui.label(format!("Vertices: {}", mesh.vertices.len()));
                 ui.label(format!("Indices: {}", mesh.indices.len()));
@@ -229,11 +230,7 @@ fn model_actions(
                     .button(
                         format!(
                             "Root (Scene {}, {})",
-                            other_scene
-                                .name
-                                .clone()
-                                .map(|s| s.to_string())
-                                .unwrap_or("".into()),
+                            other_scene.name.clone().map(|s| s.to_string()).unwrap_or("".into()),
                             other_scene.id
                         )
                         .as_str(),
@@ -258,11 +255,7 @@ fn model_actions(
                     .button(
                         format!(
                             "Model {}, {}",
-                            other_model
-                                .name
-                                .clone()
-                                .map(|s| s.to_string())
-                                .unwrap_or("".into()),
+                            other_model.name.clone().map(|s| s.to_string()).unwrap_or("".into()),
                             other_model.id
                         )
                         .as_str(),
@@ -279,23 +272,11 @@ fn model_actions(
                 }
             }
         });
-        if ui
-            .button("Delete")
-            .on_hover_text("Delete this model")
-            .clicked()
-        {
-            commands
-                .send(commands::Command::DeleteModel(model.id))
-                .unwrap();
+        if ui.button("Delete").on_hover_text("Delete this model").clicked() {
+            commands.send(commands::Command::DeleteModel(model.id)).unwrap();
         }
-        if ui
-            .button("Duplicate")
-            .on_hover_text("Duplicate this model")
-            .clicked()
-        {
-            commands
-                .send(commands::Command::DuplicateModel(model.id))
-                .unwrap();
+        if ui.button("Duplicate").on_hover_text("Duplicate this model").clicked() {
+            commands.send(commands::Command::DuplicateModel(model.id)).unwrap();
         }
         if ui.button("Print debug info").clicked() {
             println!("Model name={:?}, id={}", model.name.clone(), model.id);
@@ -315,11 +296,7 @@ fn add_model_menu(ui: &mut Ui, commands: &Commands, parent_id: Option<u32>) {
             "Add model"
         },
         |ui| {
-            if ui
-                .button("Cube model")
-                .on_hover_text("Add a cube model")
-                .clicked()
-            {
+            if ui.button("Cube model").on_hover_text("Add a cube model").clicked() {
                 println!("Adding cube TODO");
                 ui.close_menu();
             }
@@ -347,11 +324,7 @@ fn add_model_menu(ui: &mut Ui, commands: &Commands, parent_id: Option<u32>) {
 
 fn add_mesh_menu(ui: &mut Ui, commands: &Commands, model_id: u32) {
     ui.menu_button("Add mesh", |ui| {
-        if ui
-            .button("Cube mesh")
-            .on_hover_text("Add a cube mesh")
-            .clicked()
-        {
+        if ui.button("Cube mesh").on_hover_text("Add a cube mesh").clicked() {
             println!("Adding cube mesh TODO");
             ui.close_menu();
         }

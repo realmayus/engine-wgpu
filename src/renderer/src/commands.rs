@@ -11,7 +11,13 @@ use lib::scene::model::Model;
 use lib::scene::World;
 use systems::io::gltf_loader::load_gltf;
 
+use crate::events::Event;
 use crate::RenderState;
+
+#[derive(Debug)]
+pub enum CommandResult {
+    ClickQuery(u32),
+}
 
 #[derive(Debug)]
 pub enum CreateModel {
@@ -26,7 +32,6 @@ pub type Commands = mpsc::Sender<Command>;
 
 #[derive(Debug)]
 pub enum Command {
-    LoadDefaultScene,
     LoadSceneFile(PathBuf),
     ImportFile(PathBuf),
     CreateModel(CreateModel, Option<u32>),
@@ -41,42 +46,9 @@ pub enum Command {
 }
 
 impl Command {
-    pub(crate) fn process(&self, state: &mut RenderState) {
+    pub(crate) fn process(self, state: &mut RenderState, event_sender: mpsc::Sender<Event>) {
         debug!("Processing command: {:?}", self);
         match self {
-            Command::LoadDefaultScene => {
-                let mut scenes = load_gltf(
-                    // Path::new("assets/models/cube_light_tan.glb"),
-                    Path::new("assets/models/cube_brick.glb"),
-                    // Path::new("assets/models/DamagedHelmetTangents.glb"),
-                    // Path::new("assets/models/monkeyabuse.glb"),
-                    &state.device,
-                    &state.queue,
-                    &state.pbr_pipeline.tex_bind_group_layout,
-                    &state.pbr_pipeline.mat_bind_group_layout,
-                    &state.pbr_pipeline.mesh_bind_group_layout,
-                    &state.pbr_pipeline.light_bind_group_layout,
-                    &mut state.world.textures,
-                    &mut state.world.materials,
-                );
-                let mut first = scenes.remove(0);
-                let id = state.world.scenes.keys().max().unwrap_or(&0) + 1;
-                first.id = id as u32;
-                state.world.active_scene = id;
-                state.world.scenes.insert(first.id as usize, first);
-
-                state.camera.update_light_count(
-                    state
-                        .world
-                        .get_active_scene()
-                        .expect("No active scene")
-                        .light_buffer
-                        .len() as u32,
-                );
-                state.camera.update_view(&state.queue);
-                state.world.materials.update_dirty(&state.queue);
-                state.world.update_active_scene(&state.queue); // updates lights and mesh info buffers
-            }
             Command::LoadSceneFile(path) => {
                 let textures = TextureManager::new(&state.device, &state.queue);
                 let materials = MaterialManager::new(
@@ -94,7 +66,7 @@ impl Command {
                 };
 
                 let mut scenes = load_gltf(
-                    path,
+                    &path,
                     &state.device,
                     &state.queue,
                     &state.pbr_pipeline.tex_bind_group_layout,
@@ -126,7 +98,7 @@ impl Command {
                 info!("Importing file: {:?}", path);
                 if path.extension().unwrap() == "glb" || path.extension().unwrap() == "gltf" {
                     let mut scenes = load_gltf(
-                        path,
+                        &path,
                         &state.device,
                         &state.queue,
                         &state.pbr_pipeline.tex_bind_group_layout,
@@ -172,7 +144,7 @@ impl Command {
                     color,
                     intensity,
                 } => {
-                    let transform = Mat4::from_translation(*position);
+                    let transform = Mat4::from_translation(position);
                     let mut model = Model::from(
                         vec![],
                         None,
@@ -181,8 +153,8 @@ impl Command {
                         Some(PointLight::new(
                             transform,
                             state.camera.light_count() as usize,
-                            *color,
-                            *intensity,
+                            color,
+                            intensity,
                             Some(200.0),
                             &state.device,
                         )),
@@ -195,7 +167,7 @@ impl Command {
                         .expect("Scene does not exist")
                         .add_model(
                             model,
-                            *parent_id,
+                            parent_id,
                             &state.device,
                             &state.queue,
                             &state.world.materials,
@@ -221,9 +193,7 @@ impl Command {
             } => {
                 let mut model = None;
                 for (_, scene) in state.world.scenes.iter_mut() {
-                    if let Some(found_model) =
-                        scene.remove_model(*model_id, &state.queue, &state.world.materials)
-                    {
+                    if let Some(found_model) = scene.remove_model(model_id, &state.queue, &state.world.materials) {
                         model = Some(found_model);
                         break;
                     }
@@ -232,11 +202,11 @@ impl Command {
                     state
                         .world
                         .scenes
-                        .get_mut(&(*new_scene_id as usize))
+                        .get_mut(&(new_scene_id as usize))
                         .expect("Scene does not exist")
                         .add_model(
                             model,
-                            *new_parent_id,
+                            new_parent_id,
                             &state.device,
                             &state.queue,
                             &state.world.materials,
@@ -250,7 +220,7 @@ impl Command {
             Command::DeleteModel(model_id) => {
                 for (_, scene) in state.world.scenes.iter_mut() {
                     if scene
-                        .remove_model(*model_id, &state.queue, &state.world.materials)
+                        .remove_model(model_id, &state.queue, &state.world.materials)
                         .is_some()
                     {
                         state.camera.update_light_count(
@@ -270,20 +240,10 @@ impl Command {
                 for (_, scene) in state.world.scenes.iter_mut() {
                     let mut new_model = None;
                     for model in scene.iter_models_deep() {
-                        if model.id == *model_id {
+                        if model.id == model_id {
                             new_model = Some(Model::from(
-                                model
-                                    .meshes
-                                    .iter()
-                                    .map(|mesh| mesh.clone(&state.device))
-                                    .collect(),
-                                Some(
-                                    format!(
-                                        "{} duplicate",
-                                        model.name.clone().unwrap_or("".into())
-                                    )
-                                    .into_boxed_str(),
-                                ),
+                                model.meshes.iter().map(|mesh| mesh.clone(&state.device)).collect(),
+                                Some(format!("{} duplicate", model.name.clone().unwrap_or("".into())).into_boxed_str()),
                                 vec![],
                                 model.local_transform,
                                 None,
@@ -315,19 +275,25 @@ impl Command {
             }
             Command::QueryClick((x, y)) => {
                 let Some(scene) = state.world.get_active_scene() else {
+                    event_sender
+                        .send(Event::CommandResult(CommandResult::ClickQuery(0)))
+                        .unwrap();
                     return;
                 };
-                // let (width, height) = (state.surface_config.width, state.surface_config.height);
 
                 let query_result = state.object_picking_pipeline.query_click(
                     &state.device,
                     &state.queue,
-                    *x,
-                    *y,
+                    x,
+                    y,
                     &scene.iter_meshes().collect::<Vec<_>>(),
                     &scene.mesh_buffer,
+                    &state.camera,
                 );
-                debug!("Click query result: {:?}", query_result);
+                debug!("Query result: {}", query_result);
+                event_sender
+                    .send(Event::CommandResult(CommandResult::ClickQuery(query_result)))
+                    .unwrap();
             }
         }
         debug!("Finished processing command.");

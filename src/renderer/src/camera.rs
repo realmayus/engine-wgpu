@@ -1,7 +1,7 @@
 use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::debug;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, Device, Queue};
+use wgpu::{BindGroup, BindGroupLayoutDescriptor, Buffer, Device, Queue};
 use winit::event::{ElementState, ModifiersState, MouseButton, VirtualKeyCode};
 
 use lib::shader_types::CameraUniform;
@@ -23,9 +23,7 @@ impl InputDevice {
 
 impl Default for InputDevice {
     fn default() -> Self {
-        InputDevice::Mouse {
-            middle_pressed: false,
-        }
+        InputDevice::Mouse { middle_pressed: false }
     }
 }
 
@@ -68,11 +66,7 @@ impl KeyState {
                 };
                 consume = true; // consume the event if mouse click used for camera movement
             }
-            _ => {
-                self.input_device = InputDevice::Mouse {
-                    middle_pressed: false,
-                }
-            }
+            _ => self.input_device = InputDevice::Mouse { middle_pressed: false },
         }
         consume
     }
@@ -95,13 +89,15 @@ pub struct Camera {
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
-    pub buffer: Buffer,
     pub speed: f32,
     pub fps: bool,
     /// the camera's transform matrix / world to view matrix
     pub view: Mat4,
     dirty: bool,
     light_count: u32,
+    pub buffer: Buffer,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+    pub bind_group: wgpu::BindGroup,
 }
 
 impl Camera {
@@ -128,6 +124,28 @@ impl Camera {
             contents: bytemuck::cast_slice(&[data]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Camera Bindgroup Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Camera Bindgroup"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
 
         Camera {
             eye,
@@ -138,12 +156,14 @@ impl Camera {
             fovy,
             znear,
             zfar,
-            buffer: camera_buffer,
             speed: 0.5,
             fps: false,
             view,
             dirty: false,
             light_count: 0,
+            buffer: camera_buffer,
+            bind_group_layout,
+            bind_group,
         }
     }
 
@@ -243,20 +263,14 @@ impl Camera {
             self.dirty = true;
         }
         if cursor_delta.length() != 0.0 {
-            let rotation_up =
-                Mat4::from_axis_angle(global_up.xyz(), cursor_delta.x.to_degrees() * delta_time);
-            let rotation_right =
-                Mat4::from_axis_angle(right, -cursor_delta.y.to_degrees() * delta_time);
+            let rotation_up = Mat4::from_axis_angle(global_up.xyz(), cursor_delta.x.to_degrees() * delta_time);
+            let rotation_right = Mat4::from_axis_angle(right, -cursor_delta.y.to_degrees() * delta_time);
 
             self.direction = (rotation_right * rotation_up * as_4(self.direction)).xyz();
             self.dirty = true;
         }
         if self.dirty {
-            self.view = Mat4::look_at_lh(
-                self.eye,
-                self.eye + self.direction.normalize(),
-                global_up.xyz(),
-            );
+            self.view = Mat4::look_at_lh(self.eye, self.eye + self.direction.normalize(), global_up.xyz());
         }
     }
 
@@ -280,9 +294,7 @@ impl Camera {
             self.dirty = true;
         }
 
-        let translation = Mat4::from_translation(
-            (self.view * Vec4::from((change * delta_time * 20., 0.0, 0.0))).xyz(),
-        );
+        let translation = Mat4::from_translation((self.view * Vec4::from((change * delta_time * 20., 0.0, 0.0))).xyz());
 
         if keys.input_device.pan() && change.length() != 0.0 {
             if keys.shift_pressed {
@@ -293,12 +305,8 @@ impl Camera {
                 let target_to_cam = self.eye - self.target;
                 let right = target_to_cam.cross(global_up.xyz()).normalize();
 
-                let rotation_up = Mat4::from_axis_angle(
-                    global_up.xyz(),
-                    change.x.to_degrees() * delta_time * 20.,
-                );
-                let rotation_right =
-                    Mat4::from_axis_angle(right, change.y.to_degrees() * delta_time * 20.);
+                let rotation_up = Mat4::from_axis_angle(global_up.xyz(), change.x.to_degrees() * delta_time * 20.);
+                let rotation_right = Mat4::from_axis_angle(right, change.y.to_degrees() * delta_time * 20.);
                 let new_focus_to_cam = rotation_up * rotation_right * as_4(target_to_cam);
 
                 self.eye = new_focus_to_cam.xyz() + self.target;
