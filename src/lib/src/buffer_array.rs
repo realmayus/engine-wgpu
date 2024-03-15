@@ -29,7 +29,7 @@ impl<T: bytemuck::Pod> DynamicBufferArray<T> {
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: label.as_deref(),
             size: (PREALLOC_COUNT * std::mem::size_of::<T>()) as u64,
-            usage: usages,
+            usage: usages | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
@@ -90,7 +90,7 @@ impl<T: bytemuck::Pod> DynamicBufferArray<T> {
         let new_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: self.label.as_deref(),
             size: (self.capacity * std::mem::size_of::<T>() as u64) as BufferAddress,
-            usage: self.usages,
+            usage: self.usages | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         // copy the contents of self.buffer to new_buffer
