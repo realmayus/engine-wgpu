@@ -20,16 +20,16 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 ### Renderer
 - [x] egui [17.08.23]
 - [x] dynamic asset loading [17.09.23]
-- [ ] point lights
+- [x] point lights
 - [ ] gamma correction
 - [ ] Instancing
-- [ ] Physically based Rendering
-- [ ] Normal/Bump maps
+- [x] Physically based Rendering
+- [x] Normal/Bump maps
 - [ ] Shadows
 - [ ] Anti-Aliasing
 - [ ] face culling
 - [ ] frustum culling
-- [ ] object outlines
+- [x] object outlines
 - [ ] SSAO
 - [ ] spotlights, directional lights 
 - [ ] Skybox
@@ -49,8 +49,9 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 - [ ] mip maps
 
 ### I/O
-- [x] world (de-)serialization [25.08.23]
-- [ ] investigate https://github.com/google/flatbuffers
+- [ ] world (de-)serialization ~~[25.08.23]~~
+- [ ] investigate https://github.com/google/flatbuffers -> maybe https://lib.rs/crates/prost?
+- [x] GLTF import
 - [ ] OBJ import / export, perhaps store vertex/normal/uv data in OBJs to reduce clutter in world.json
 - [ ] multi-threaded asset loading
 
@@ -64,4 +65,5 @@ The working directory can be set using the `WORKING_DIR` environment variable.
 - [ ] Implement basic particle system
 ### UI
 - [ ] Asset drag & drop
+- [x] Object picking
 
