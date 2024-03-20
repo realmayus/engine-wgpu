@@ -48,22 +48,13 @@ impl Vertex<4> for PbrVertex {
 // Uniforms
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct CameraUniform {
     pub proj_view: [[f32; 4]; 4], // s64 o0
+    pub unproj_view: [[f32; 4]; 4], // s64 o0
     pub view_position: [f32; 4],  // s16 o64
     pub num_lights: u32,          // s4 o80
     pub padding: [u32; 3],        // total size: 96
-}
-impl CameraUniform {
-    pub fn new() -> Self {
-        Self {
-            proj_view: Mat4::default().to_cols_array_2d(),
-            view_position: [0.0; 4],
-            num_lights: 0,
-            padding: [0; 3],
-        }
-    }
 }
 
 #[repr(C)]

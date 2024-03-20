@@ -15,6 +15,7 @@ use lib::scene::World;
 
 use crate::camera::{Camera, KeyState};
 use crate::events::{Event, MouseButton};
+use crate::pipelines::grid::GridPipeline;
 use crate::pipelines::object_picking::ObjectPickingPipeline;
 use crate::pipelines::outlining::OutliningPipeline;
 use crate::pipelines::pbr::PBRPipeline;
@@ -49,6 +50,7 @@ pub struct RenderState {
     pbr_pipeline: PBRPipeline,
     object_picking_pipeline: ObjectPickingPipeline,
     outlining_pipeline: OutliningPipeline,
+    grid_pipeline: GridPipeline,
     camera: Camera,
     world: World,
     hook: Box<dyn Hook>,
@@ -91,7 +93,7 @@ impl RenderState {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     limits,
-                    features: Features::INDIRECT_FIRST_INSTANCE | Features::PUSH_CONSTANTS,
+                    features: Features::PUSH_CONSTANTS,
                 },
                 None,
             )
@@ -142,6 +144,9 @@ impl RenderState {
         let mut outlining_pipeline = OutliningPipeline::new(&device, &surface_config, &camera);
         outlining_pipeline.create_pipelines(&device);
 
+        let mut grid_pipeline = GridPipeline::new(&device, &surface_config, &camera);
+        grid_pipeline.create_pipeline(&device);
+
         let egui = gui::EguiRenderer::new(&device, surface_config.format, None, 1, &window);
         let event_channel = mpsc::channel();
         let event_channel = (event_channel.0, Some(event_channel.1));
@@ -156,6 +161,7 @@ impl RenderState {
             pbr_pipeline,
             object_picking_pipeline,
             outlining_pipeline,
+            grid_pipeline,
             camera,
             world,
             show_gui: true,
@@ -182,9 +188,12 @@ impl RenderState {
         self.surface_config.width = new_size.width.max(1);
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
+
         self.pbr_pipeline.resize(&self.device, &self.surface_config);
         self.object_picking_pipeline.resize(&self.device, &self.surface_config);
         self.outlining_pipeline.resize(&self.device, &self.surface_config);
+        self.grid_pipeline.resize(&self.device, &self.surface_config);
+
         self.camera.update_aspect(new_size.width as f32, new_size.height as f32);
         self.window.request_redraw();
     }
@@ -243,6 +252,7 @@ impl RenderState {
                     }
                 }
             }
+            self.grid_pipeline.render(&mut encoder, &view, &self.camera);
         }
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [self.surface_config.width, self.surface_config.height],

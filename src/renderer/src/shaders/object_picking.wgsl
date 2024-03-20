@@ -29,6 +29,7 @@ var<storage, read> mesh_infos: array<MeshInfo>;
 
 struct Camera {
     proj_view: mat4x4<f32>,
+    unproj_view: mat4x4<f32>,
     view_position: vec4<f32>,
     num_lights: u32,
 };

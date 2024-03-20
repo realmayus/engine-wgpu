@@ -110,7 +110,7 @@ impl Camera {
         let znear = 0.1;
         let zfar = 100.0;
 
-        let mut data = CameraUniform::new();
+        let mut data = CameraUniform::default();
         let proj = Mat4::perspective_lh(fovy, aspect, znear, zfar);
         let view = Mat4::look_at_lh(eye, target, up);
         let scale = Mat4::from_scale((0.01, 0.01, 0.01).into());
@@ -159,7 +159,7 @@ impl Camera {
             speed: 0.5,
             fps: false,
             view,
-            dirty: false,
+            dirty: true,
             light_count: 0,
             buffer: camera_buffer,
             bind_group_layout,
@@ -215,10 +215,15 @@ impl Camera {
         }
         self.dirty = false;
         let new_proj = self.build_projection();
-        let mut uniform = CameraUniform::new();
-        uniform.proj_view = new_proj.to_cols_array_2d();
-        uniform.view_position = Vec4::from((self.eye, 1.0)).into();
-        uniform.num_lights = self.light_count;
+        let view_inv = self.view.inverse();
+        let proj_inv = Mat4::perspective_lh(self.fovy.to_radians(), self.aspect, self.znear, self.zfar).inverse();
+        let uniform = CameraUniform {
+            proj_view: new_proj.to_cols_array_2d(),
+            unproj_view: (view_inv * proj_inv).to_cols_array_2d(),
+            view_position: Vec4::from((self.eye, 1.0)).into(),
+            num_lights: self.light_count,
+            ..Default::default()
+        };
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]))
     }
 
