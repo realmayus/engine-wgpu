@@ -5,7 +5,7 @@ use anyhow::Result;
 use egui_wgpu::renderer::ScreenDescriptor;
 use glam::Vec2;
 use hashbrown::HashMap;
-use wgpu::{Device, Features, Limits, Queue, Surface, SurfaceConfiguration, SurfaceError};
+use wgpu::{Device, Features, Limits, PresentMode, Queue, Surface, SurfaceConfiguration, SurfaceError};
 use winit::event::{DeviceEvent, ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
@@ -37,6 +37,7 @@ pub trait Hook {
         x: &mut World,
         x0: &mut Camera,
         sender: mpsc::Sender<commands::Command>,
+        meta: &Meta,
     );
 }
 
@@ -58,6 +59,13 @@ pub struct RenderState {
     egui: gui::EguiRenderer,
     command_channel: (mpsc::Sender<commands::Command>, mpsc::Receiver<commands::Command>), // Commands: impl -> renderer
     event_channel: (mpsc::Sender<Event>, Option<mpsc::Receiver<Event>>),                   // Events: renderer -> impl
+    meta: Meta,
+}
+const FRAME_TIME_WINDOW: usize = 1000;
+pub struct Meta {
+    pub frame_time: f32,
+    frame_times : [f32; FRAME_TIME_WINDOW],
+    index: usize,
 }
 
 impl RenderState {
@@ -112,7 +120,8 @@ impl RenderState {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            // present_mode: PresentMode::AutoVsync,
+            present_mode: PresentMode::AutoNoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -169,6 +178,11 @@ impl RenderState {
             command_channel: mpsc::channel(),
             event_channel,
             egui,
+            meta: Meta {
+                frame_time: 0.0,
+                frame_times: [0.0; FRAME_TIME_WINDOW],
+                index: 0,
+            },
         }
     }
 
@@ -269,7 +283,7 @@ impl RenderState {
                 screen_descriptor,
                 |ui| {
                     self.hook
-                        .update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone());
+                        .update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone(), &self.meta);
                 },
             );
         }
@@ -277,6 +291,12 @@ impl RenderState {
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         Ok(())
+    }
+
+    fn update_frame_time(&mut self, frame_time: f32) {
+        self.meta.frame_times[self.meta.index] = frame_time;
+        self.meta.index = (self.meta.index + 1) % FRAME_TIME_WINDOW;
+        self.meta.frame_time = self.meta.frame_times.iter().sum::<f32>() / FRAME_TIME_WINDOW as f32;
     }
 }
 
@@ -290,97 +310,100 @@ pub async fn run(hook: impl Hook + 'static) {
     let mut cursor_position = (0, 0);
     let mut delta_time = 0.0;
     let sender = state.command_channel.0.clone();
+    let mut time = Instant::now();
     state.setup();
-    event_loop.run(move |event, _, control_flow| match event {
-        winit::event::Event::WindowEvent { ref event, window_id } if window_id == state.window().id() => {
-            if !state.input(event) {
-                match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input:
+    event_loop.run(move |event, _, control_flow| {
+        match event {
+            winit::event::Event::WindowEvent { ref event, window_id } if window_id == state.window().id() => {
+                if !state.input(event) {
+                    match event {
+                        WindowEvent::CloseRequested
+                        | WindowEvent::KeyboardInput {
+                            input:
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::Escape),
                                 ..
                             },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    WindowEvent::KeyboardInput {
-                        input:
+                            ..
+                        } => *control_flow = ControlFlow::Exit,
+                        WindowEvent::KeyboardInput {
+                            input:
                             KeyboardInput {
                                 state,
                                 virtual_keycode: Some(keycode),
                                 ..
                             },
-                        ..
-                    } => {
-                        keys.update_keys(*keycode, *state);
-                    }
-                    WindowEvent::ModifiersChanged(state) => keys.set_modifiers(state),
-                    WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size);
-                    }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        state.resize(**new_inner_size);
-                    }
-                    WindowEvent::MouseInput {
-                        state: element_state,
-                        button,
-                        ..
-                    } => {
-                        if !keys.update_mouse(element_state, button) && element_state == &ElementState::Pressed {
-                            let button = match button {
-                                winit::event::MouseButton::Left => MouseButton::Left,
-                                winit::event::MouseButton::Right => MouseButton::Right,
-                                winit::event::MouseButton::Middle => MouseButton::Middle,
-                                _ => return,
-                            };
-                            let (x, y): (u32, u32) = cursor_position;
-                            state
-                                .event_channel
-                                .0
-                                .clone()
-                                .send(Event::Click {
-                                    x,
-                                    y,
-                                    mouse_button: button,
-                                })
-                                .unwrap();
+                            ..
+                        } => {
+                            keys.update_keys(*keycode, *state);
                         }
-                    }
-                    WindowEvent::CursorMoved { position, .. } => {
-                        cursor_position = (*position).into();
-                    }
+                        WindowEvent::ModifiersChanged(state) => keys.set_modifiers(state),
+                        WindowEvent::Resized(physical_size) => {
+                            state.resize(*physical_size);
+                        }
+                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                            state.resize(**new_inner_size);
+                        }
+                        WindowEvent::MouseInput {
+                            state: element_state,
+                            button,
+                            ..
+                        } => {
+                            if !keys.update_mouse(element_state, button) && element_state == &ElementState::Pressed {
+                                let button = match button {
+                                    winit::event::MouseButton::Left => MouseButton::Left,
+                                    winit::event::MouseButton::Right => MouseButton::Right,
+                                    winit::event::MouseButton::Middle => MouseButton::Middle,
+                                    _ => return,
+                                };
+                                let (x, y): (u32, u32) = cursor_position;
+                                state
+                                    .event_channel
+                                    .0
+                                    .clone()
+                                    .send(Event::Click {
+                                        x,
+                                        y,
+                                        mouse_button: button,
+                                    })
+                                    .unwrap();
+                            }
+                        }
+                        WindowEvent::CursorMoved { position, .. } => {
+                            cursor_position = (*position).into();
+                        }
 
-                    _ => {}
+                        _ => {}
+                    }
                 }
             }
-        }
-        winit::event::Event::MainEventsCleared => {
-            state.window().request_redraw();
-            state.update(&keys, delta_time, cursor_delta);
-            cursor_delta = Vec2::default();
-        }
-        winit::event::Event::RedrawRequested(window_id) if window_id == state.window().id() => {
-            let time = Instant::now();
-            match state.render() {
-                Ok(_) => {}
-                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                Err(e) => eprintln!("{:?}", e),
+            winit::event::Event::MainEventsCleared => {
+                state.window().request_redraw();
+                state.update(&keys, delta_time, cursor_delta);
+                cursor_delta = Vec2::default();
             }
-            let elapsed = time.elapsed().as_micros() as f32;
-            delta_time = elapsed / 1_000_000.0;
+            winit::event::Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+                match state.render() {
+                    Ok(_) => {}
+                    Err(SurfaceError::Lost) => state.resize(state.size),
+                    Err(SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    Err(e) => eprintln!("{:?}", e),
+                }
+                state.update_frame_time(time.elapsed().as_secs_f32());
+                delta_time = time.elapsed().as_secs_f32();
+            }
+            winit::event::Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                ..
+            } => {
+                cursor_delta = Vec2::new(
+                    delta.0 as f32 / state.surface_config.width as f32,
+                    delta.1 as f32 / state.surface_config.height as f32,
+                );
+            }
+            _ => {}
         }
-        winit::event::Event::DeviceEvent {
-            event: DeviceEvent::MouseMotion { delta },
-            ..
-        } => {
-            cursor_delta = Vec2::new(
-                delta.0 as f32 / state.surface_config.width as f32,
-                delta.1 as f32 / state.surface_config.height as f32,
-            );
-        }
-        _ => {}
+        time = Instant::now();
     });
 }

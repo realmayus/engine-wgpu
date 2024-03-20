@@ -5,13 +5,13 @@ use rfd::FileDialog;
 use engine::lib::scene::model::Model;
 use engine::lib::scene::World;
 use engine::renderer::camera::Camera;
-use engine::renderer::commands;
+use engine::renderer::{commands, Meta};
 use engine::renderer::commands::Commands;
 
 use crate::util::{CameraModes, Editable, SparseModel, SparseScene};
 use crate::{mutate_indirect, observe};
 
-pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands) {
+pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands, meta: &Meta) {
     egui::Window::new("World").show(ctx, |ui| {
         ui.horizontal(|ui| {
             if ui.button("Load Scene").clicked() {
@@ -27,6 +27,8 @@ pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Cam
                 }
             }
         });
+        ui.label(format!("Frame time: {:.2} ms", meta.frame_time * 1000.0));
+        ui.label(format!("FPS: {:.0}", 1.0 / meta.frame_time));
 
         egui::CollapsingHeader::new("Camera").show(ui, |ui| {
             if ui.button("Reset").clicked() {

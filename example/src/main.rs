@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use log::debug;
 
 use engine::lib::scene::World;
-use engine::renderer::{commands, Hook};
+use engine::renderer::{commands, Hook, Meta};
 use engine::renderer::camera::{Camera, KeyState};
 use engine::renderer::commands::{Command, CommandResult, Commands};
 use engine::renderer::events::{Event, MouseButton};
@@ -66,8 +66,8 @@ impl Hook for Game {
         }
     }
 
-    fn update_ui(&mut self, ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands) {
-        gui::update_ui(ctx, world, camera, commands);
+    fn update_ui(&mut self, ctx: &egui::Context, x: &mut World, x0: &mut Camera, sender: mpsc::Sender<commands::Command>, meta: &Meta) {
+        gui::update_ui(ctx, x, x0, sender, meta);
     }
 }
 
