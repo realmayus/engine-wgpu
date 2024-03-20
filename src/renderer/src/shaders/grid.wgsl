@@ -70,6 +70,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
 
-    return color;
+    return color * flag;
 //    return vec4<f32>(in.clip_position.zzz, 1.0);
 }
