@@ -43,6 +43,7 @@ pub enum Command {
     DeleteModel(u32),
     DuplicateModel(u32),
     QueryClick((u32, u32)),
+    SetVsync,
 }
 
 impl Command {
@@ -294,6 +295,14 @@ impl Command {
                 event_sender
                     .send(Event::CommandResult(CommandResult::ClickQuery(query_result)))
                     .unwrap();
+            }
+            Command::SetVsync => {
+                state.surface_config.present_mode = if state.meta.vsync {
+                    wgpu::PresentMode::AutoVsync
+                } else {
+                    wgpu::PresentMode::AutoNoVsync
+                };
+                state.surface.configure(&state.device, &state.surface_config);
             }
         }
         debug!("Finished processing command.");

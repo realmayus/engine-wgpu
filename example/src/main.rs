@@ -66,7 +66,7 @@ impl Hook for Game {
         }
     }
 
-    fn update_ui(&mut self, ctx: &egui::Context, x: &mut World, x0: &mut Camera, sender: mpsc::Sender<commands::Command>, meta: &Meta) {
+    fn update_ui(&mut self, ctx: &egui::Context, x: &mut World, x0: &mut Camera, sender: mpsc::Sender<commands::Command>, meta: &mut Meta) {
         gui::update_ui(ctx, x, x0, sender, meta);
     }
 }

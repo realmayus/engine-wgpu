@@ -11,7 +11,7 @@ use engine::renderer::commands::Commands;
 use crate::util::{CameraModes, Editable, SparseModel, SparseScene};
 use crate::{mutate_indirect, observe};
 
-pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands, meta: &Meta) {
+pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Camera, commands: Commands, meta: &mut Meta) {
     egui::Window::new("World").show(ctx, |ui| {
         ui.horizontal(|ui| {
             if ui.button("Load Scene").clicked() {
@@ -29,7 +29,16 @@ pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Cam
         });
         ui.label(format!("Frame time: {:.2} ms", meta.frame_time * 1000.0));
         ui.label(format!("FPS: {:.0}", 1.0 / meta.frame_time));
-
+        observe!(
+            meta.vsync,
+            {
+                ui.checkbox(&mut meta.vsync, "VSync");
+            },
+            |meta| {
+                commands.send(commands::Command::SetVsync).unwrap();
+            }
+        );
+        ui.checkbox(&mut meta.show_grid, "Show Grid");
         egui::CollapsingHeader::new("Camera").show(ui, |ui| {
             if ui.button("Reset").clicked() {
                 camera.reset();

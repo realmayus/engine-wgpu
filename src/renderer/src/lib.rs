@@ -6,6 +6,7 @@ use egui_wgpu::renderer::ScreenDescriptor;
 use glam::Vec2;
 use hashbrown::HashMap;
 use wgpu::{Device, Features, Limits, PresentMode, Queue, Surface, SurfaceConfiguration, SurfaceError};
+use wgpu::PresentMode::AutoVsync;
 use winit::event::{DeviceEvent, ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
@@ -37,7 +38,7 @@ pub trait Hook {
         x: &mut World,
         x0: &mut Camera,
         sender: mpsc::Sender<commands::Command>,
-        meta: &Meta,
+        meta: &mut Meta,
     );
 }
 
@@ -66,7 +67,10 @@ pub struct Meta {
     pub frame_time: f32,
     frame_times : [f32; FRAME_TIME_WINDOW],
     index: usize,
+    pub show_grid: bool,
+    pub vsync: bool,
 }
+
 
 impl RenderState {
     async fn new(window: Window, hook: impl Hook + 'static) -> Self {
@@ -182,6 +186,8 @@ impl RenderState {
                 frame_time: 0.0,
                 frame_times: [0.0; FRAME_TIME_WINDOW],
                 index: 0,
+                show_grid: false,
+                vsync: false,
             },
         }
     }
@@ -266,7 +272,9 @@ impl RenderState {
                     }
                 }
             }
-            self.grid_pipeline.render(&mut encoder, &view, &self.camera);
+            if self.meta.show_grid {
+                self.grid_pipeline.render(&mut encoder, &view, &self.camera);
+            }
         }
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [self.surface_config.width, self.surface_config.height],
@@ -283,7 +291,7 @@ impl RenderState {
                 screen_descriptor,
                 |ui| {
                     self.hook
-                        .update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone(), &self.meta);
+                        .update_ui(ui, &mut self.world, &mut self.camera, self.command_channel.0.clone(), &mut self.meta);
                 },
             );
         }
