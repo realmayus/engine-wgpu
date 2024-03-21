@@ -240,7 +240,8 @@ pub fn load_gltf(
             (index, global_id)
         })
         .collect::<HashMap<_, _>>();
-
+    let mut neutral = Mat4::IDENTITY;
+    neutral.y_axis *= -1.0;
     for scene in gltf.scenes() {
         info!("Scene has {:?} nodes", scene.nodes().len());
         let mut num_lights = 0;
@@ -252,7 +253,7 @@ pub fn load_gltf(
                     &buffers,
                     &local_materials,
                     material_manager,
-                    Mat4::default(),
+                    neutral,
                     &mut num_lights,
                     device,
                 )
@@ -293,8 +294,7 @@ fn load_node(
             device,
         ));
     }
-    let mut global_transform = parent_transform * local_transform;
-    global_transform.y_axis *= -1.0;
+    let global_transform = parent_transform * local_transform;
 
     let mut meshes: Vec<Mesh> = vec![];
     if let Some(x) = node.mesh() {
@@ -321,7 +321,6 @@ fn load_node(
             if let Some(iter) = reader.read_tangents() {
                 tangents = iter.map(Vec4::from).collect();
             }
-
             let mat = gltf_primitive
                 .material()
                 .index()

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 glam = "0.25.0"
-gltf = { version = "1.2" , features = ["KHR_lights_punctual"]}
+gltf = { version = "1.2" , features = ["KHR_lights_punctual", ]}
 lib = {path = "../../../lib"}
 base64 = "0.21.2"
 urlencoding = "2.1.3"

@@ -1,6 +1,7 @@
 use egui::Ui;
 use glam::{Mat4, Vec3, Vec4};
 use rfd::FileDialog;
+use engine::lib::Dirtyable;
 
 use engine::lib::scene::model::Model;
 use engine::lib::scene::World;
@@ -198,13 +199,29 @@ fn draw_model_ui(
 
         if let Some(light) = model.light.as_mut() {
             egui::CollapsingHeader::new("Attached light").show(ui, |ui| {
-                light.color.editable(
-                    Some("Color:".into()),
-                    ui,
-                    Vec3::from([0.0, 0.0, 0.0]),
-                    Vec3::from([1.0, 1.0, 1.0]),
+                observe!(
+                    light.color,
+                    {
+                        light.color.editable(
+                            Some("Color:".into()),
+                            ui,
+                            Vec3::from([0.0, 0.0, 0.0]),
+                            Vec3::from([1.0, 1.0, 1.0]),
+                        );
+                    },
+                    |light| {
+                        light.set_dirty(true);
+                    }
                 );
-                light.intensity.editable(Some("Intensity:".into()), ui, 0.0, 1000.0);
+                observe!(
+                    light.intensity,
+                    {
+                        light.intensity.editable(Some("Intensity:".into()), ui, 0.0, 1000.0);
+                    },
+                    |light| {
+                        light.set_dirty(true);
+                    }
+                );
                 ui.label(format!("Range: {:?}", light.range));
             });
         }

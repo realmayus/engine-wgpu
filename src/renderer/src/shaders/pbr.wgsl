@@ -153,7 +153,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let dist = length(light_pos - in.frag_pos);
         let attenuation = 1.0 / (dist * dist);
-        let radiance: vec3<f32> = light.color * 5.0 * attenuation;
+        let radiance: vec3<f32> = light.color * (light.intensity / 10.0) * attenuation;
         // Fresnel equation F of DFG which is the specular part of BRDF
         let reflect_ratio = fresnel(max(dot(half_vec, view_dir), 0.0), f0);
         let normal_dist = distribution(normal, half_vec, roughness);
