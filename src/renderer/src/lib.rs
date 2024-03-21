@@ -124,8 +124,7 @@ impl RenderState {
             format: surface_format,
             width: size.width,
             height: size.height,
-            // present_mode: PresentMode::AutoVsync,
-            present_mode: PresentMode::AutoNoVsync,
+            present_mode: AutoVsync,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -187,7 +186,7 @@ impl RenderState {
                 frame_times: [0.0; FRAME_TIME_WINDOW],
                 index: 0,
                 show_grid: false,
-                vsync: false,
+                vsync: true,
             },
         }
     }
