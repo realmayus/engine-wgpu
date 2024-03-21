@@ -23,6 +23,7 @@ struct MeshInfo {
     material: u32,
     model_transform: mat4x4<f32>,
     normal_matrix: mat4x4<f32>,  // model_transform.inverse().transpose()
+    scale: vec3<f32>,
 }
 @group(0) @binding(0)
 var<storage, read> mesh_infos: array<MeshInfo>;
@@ -42,8 +43,12 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
     let model_transform = mesh_infos[push.mesh_index].model_transform;
-
-    out.clip_position = camera.proj_view * model_transform * vec4<f32>(in.position, 1.0);
+    let scale = mesh_infos[push.mesh_index].scale;
+    let mesh_scale_mat = mat4x4<f32>(scale.x, 0.0, 0.0, 0.0,
+                                    0.0, scale.y, 0.0, 0.0,
+                                    0.0, 0.0, scale.z, 0.0,
+                                    0.0, 0.0, 0.0, 1.0);
+    out.clip_position = camera.proj_view * model_transform * mesh_scale_mat * vec4<f32>(in.position, 1.0);
     out.color = push.color;
     out.frag_pos = (model_transform * vec4<f32>(in.position, 1.0)).xyz;
 

@@ -104,7 +104,7 @@ pub(crate) fn update_ui(ctx: &egui::Context, world: &mut World, camera: &mut Cam
         }
     });
 
-    egui::Window::new("Textures & Materials").show(ctx, |ui| {
+    egui::Window::new("Textures & Materials").default_open(false).show(ctx, |ui| {
         for (texid, texture) in world.textures.iter_with_ids() {
             egui::CollapsingHeader::new(format!(
                 "Texture {:?} {} {}",
@@ -170,6 +170,23 @@ fn draw_model_ui(
                     ui,
                     Vec4::from([-100.0, -100.0, -100.0, 1.0]),
                     Vec4::from([100.0, 100.0, 100.0, 1.0]),
+                );
+            },
+            |model| {
+                let mut mat = Mat4::IDENTITY;
+                mat.y_axis *= -1.0;
+                model.update_transforms(mat);
+            }
+        );
+
+        observe!(
+            model.scale,
+            {
+                model.scale.editable(
+                    Some("Scale:".into()),
+                    ui,
+                    Vec3::from([0.0, 0.0, 0.0]),
+                    Vec3::from([100.0, 100.0, 100.0]),
                 );
             },
             |model| {

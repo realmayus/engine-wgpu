@@ -40,9 +40,9 @@ impl Editable<glam::Vec3> for glam::Vec3 {
             if let Some(label) = label {
                 ui.label(label);
             }
-            ui.add(egui::DragValue::new(&mut self.x).clamp_range(min.x..=max.x));
-            ui.add(egui::DragValue::new(&mut self.y).clamp_range(min.y..=max.y));
-            ui.add(egui::DragValue::new(&mut self.z).clamp_range(min.z..=max.z));
+            ui.add(egui::DragValue::new(&mut self.x).clamp_range(min.x..=max.x).speed(0.1));
+            ui.add(egui::DragValue::new(&mut self.y).clamp_range(min.y..=max.y).speed(0.1));
+            ui.add(egui::DragValue::new(&mut self.z).clamp_range(min.z..=max.z).speed(0.1));
         });
     }
 }

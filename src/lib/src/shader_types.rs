@@ -110,7 +110,8 @@ pub struct MeshInfo {
     _align: [u32; 3],
     pub model_transform: [[f32; 4]; 4], // s64 o16
     pub normal_matrix: [[f32; 4]; 4],   // s36 o80
-                                        // _align2: [u32; 3],  // total size: 128
+    pub scale: [f32; 3],                 // s12 o80
+    _align2: u32,
 }
 impl MeshInfo {
     pub fn from_mesh(mesh: &Mesh, material_manager: &MaterialManager) -> Self {
@@ -118,8 +119,9 @@ impl MeshInfo {
             material: material_manager.get_material(mesh.material).shader_id(),
             _align: [0; 3],
             model_transform: mesh.global_transform.to_cols_array_2d(),
+            scale: mesh.scale.to_array(),
+            _align2: 0,
             normal_matrix: mesh.normal_matrix.to_cols_array_2d(),
-            // _align2: [0; 3],
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::scene::light::PointLight;
 use crate::scene::mesh::Mesh;
 use crate::Dirtyable;
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use rand::Rng;
 use std::fmt::{Debug, Formatter};
 
@@ -11,6 +11,7 @@ pub struct Model {
     pub children: Vec<Model>,
     pub name: Option<Box<str>>,
     pub local_transform: Mat4,
+    pub scale: Vec3,
     pub light: Option<PointLight>,
 }
 
@@ -28,6 +29,7 @@ impl Model {
             name,
             children,
             local_transform,
+            scale: Vec3::new(1.0, 1.0, 1.0),
             light,
         }
     }
@@ -39,6 +41,7 @@ impl Model {
     pub fn update_transforms(&mut self, parent: Mat4) {
         for mesh in self.meshes.as_mut_slice() {
             mesh.global_transform = parent * self.local_transform;
+            mesh.scale = self.scale;
             mesh.normal_matrix = mesh.global_transform.inverse().transpose();
             mesh.set_dirty(true);
         }

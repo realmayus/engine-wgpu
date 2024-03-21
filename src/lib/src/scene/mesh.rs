@@ -19,6 +19,7 @@ pub struct Mesh {
     pub material: MatId,
     pub uvs: Vec<Vec2>,
     pub global_transform: Mat4,
+    pub scale: Vec3,
     // computed as product of the parent models' local transforms
     pub normal_matrix: Mat4,
     // computed as inverse transpose of the global transform
@@ -53,6 +54,7 @@ impl Mesh {
             normal_matrix: global_transform.inverse().transpose(),
             vertex_inputs: Some(vertex_inputs),
             outline: false,
+            scale: Vec3::new(1.0, 1.0, 1.0),
         }
     }
 
@@ -78,6 +80,7 @@ impl Mesh {
             normal_matrix: self.normal_matrix,
             vertex_inputs: Some(vertex_inputs),
             outline: false,
+            scale: self.scale,
         }
     }
 
