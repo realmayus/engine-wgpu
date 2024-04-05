@@ -1,9 +1,9 @@
-# engine-vk [![Rust](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml/badge.svg)](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml)
-Vulkan game engine written in Rust. The goal is to have the entire engine as a separate library to ensure low coupling.
+# engine-wgpu [![Rust](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml/badge.svg)](https://github.com/realmayus/engine-vk/actions/workflows/rust.yml)
+wgpu game engine written in Rust. The goal is to have the entire engine as a separate library to ensure low coupling.
 
 This crate contains the following subcrates:
 - `lib`: contains structs and helpers that are shared across the entire engine, such as the world, scene, model, mesh, texture, and material structs
-- `renderer`: contains the abstraction that interfaces with vulkan through vulkano
+- `renderer`: contains rendering logic
 - `system::io`: contains various I/O functions such as loading/saving features and a glTF importer
 - `system::particle`: particle system, TBA
 - `system::physics`: physics engine, TBA
