@@ -1,332 +1,264 @@
-use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::slice::Iter;
-use std::sync::Arc;
 
-use glam::{Mat4, Vec2, Vec3, Vec4};
-use log::{debug, info};
+use glam::{Vec2, Vec3, Vec4};
+use hashbrown::HashMap;
+use itertools::izip;
+use log::debug;
 use rand::Rng;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer};
-use vulkano::device::Device;
-use vulkano::image::Image;
-use vulkano::image::sampler::{Sampler, SamplerCreateInfo};
-use vulkano::image::view::ImageView;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
+use wgpu::{BindGroupLayout, Buffer, BufferUsages, Device, Queue};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use crate::{Dirtyable, VertexInputBuffer};
+use crate::{Dirtyable, Material, SizedBuffer};
+use crate::buffer_array::{DynamicBufferArray, DynamicBufferMap};
+use crate::managers::{MaterialManager, TextureManager};
+use crate::scene::mesh::Mesh;
+use crate::scene::model::{DeepIter, Model};
+use crate::shader_types::{LightInfo, MeshInfo, PbrVertex};
 
-pub struct Texture {
-    pub id: u32,
-    pub name: Option<Box<str>>,
-    pub view: Arc<ImageView>,
-    pub img_path: PathBuf, // relative to run directory
-}
-
-impl Texture {
-    pub fn from(
-        view: Arc<ImageView>,
-        name: Option<Box<str>>,
-        id: u32,
-        img_path: PathBuf,
-    ) -> Self {
-        Self {
-            view,
-            name,
-            id,
-            img_path,
-        }
-    }
-}
-
-impl Debug for Texture {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{TEXTURE: name: {:?}, id: {}}}", self.name, self.id)
-    }
-}
-
-pub struct Material {
-    pub dirty: bool,
-    pub id: u32,
-    pub name: Option<Box<str>>,
-    pub albedo_texture: Option<Rc<Texture>>,
-    pub albedo: Vec4, // this scales the RGBA components of the base_texture if defined; otherwise defines the color
-    pub metallic_roughness_texture: Option<Rc<Texture>>,
-    pub metallic_roughness_factors: Vec2, // this scales the metallic & roughness components of the metallic_roughness_texture if defined; otherwise defines the reflection characteristics
-    pub normal_texture: Option<Rc<Texture>>,
-    pub occlusion_texture: Option<Rc<Texture>>,
-    pub occlusion_factor: f32,
-    pub emissive_texture: Option<Rc<Texture>>,
-    pub emissive_factors: Vec3,
-    pub buffer: Subbuffer<MaterialInfo>,
-}
-
-impl Material {
-    pub fn from_default(
-        base_texture: Option<Rc<Texture>>,
-        buffer: Subbuffer<MaterialInfo>,
-    ) -> Self {
-        Self {
-            dirty: true,
-            id: 0,
-            name: Some(Box::from("Default material")),
-            albedo_texture: base_texture,
-            albedo: Vec4::from((1.0, 0.957, 0.859, 1.0)),
-            metallic_roughness_texture: None,
-            metallic_roughness_factors: Vec2::from((0.5, 0.5)),
-            normal_texture: None,
-            occlusion_texture: None,
-            occlusion_factor: 0.0,
-            emissive_texture: None,
-            emissive_factors: Vec3::from((0.0, 0.0, 0.0)),
-            buffer,
-        }
-    }
-}
-
-impl Dirtyable for Material {
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty
-    }
-
-    fn update(&mut self) {
-        debug!("Updated material #{}", self.id);
-        self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.albedo_texture = self.albedo_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.albedo = self.albedo.to_array();
-        mapping.metal_roughness_texture = self
-            .metallic_roughness_texture
-            .as_ref()
-            .map(|t| t.id)
-            .unwrap_or(0);
-        mapping.metal_roughness_factors = self.metallic_roughness_factors.to_array();
-        mapping.normal_texture = self.normal_texture.as_ref().map(|t| t.id).unwrap_or(1);
-        mapping.occlusion_texture = self.occlusion_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.occlusion_factor = self.occlusion_factor;
-        mapping.emission_texture = self.emissive_texture.as_ref().map(|t| t.id).unwrap_or(0);
-        mapping.emission_factors = self.emissive_factors.to_array();
-    }
-}
-
-impl Debug for Material {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{MATERIAL: name: {}, base_texture: {}, base_color: {:?}, metallic_roughness_texture: {}, metallic_roughness_factors: {:?}, normal_texture: {}, occlusion_texture: {}, occlusion_strength: {}, emissive_texture: {}, emissive_factors: {:?}}}",
-            self.name.clone().unwrap_or_default(),
-            self.albedo_texture.clone().map(|t| t.id as i32).unwrap_or(-1),  // there really shouldn't be any int overflow :p
-            self.albedo,
-            self.metallic_roughness_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
-            self.metallic_roughness_factors,
-            self.normal_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
-            self.occlusion_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
-            self.occlusion_factor,
-            self.emissive_texture.clone().map(|t| t.id as i32).unwrap_or(-1),
-            self.emissive_factors,
-        )
-    }
-}
-
-#[derive(Clone)]
-pub struct Mesh {
-    dirty: bool,
-    pub id: u32, // for key purposes in GUIs and stuff
-    pub vertices: Vec<Vec3>,
-    pub indices: Vec<u32>,
-    pub normals: Vec<Vec3>,
-    pub tangents: Vec<Vec4>,
-    pub material: Rc<RefCell<Material>>,
-    pub uvs: Vec<Vec2>,
-    pub global_transform: Mat4, // computed as product of the parent models' local transforms
-    pub buffer: Subbuffer<MeshInfo>,
-}
-impl Mesh {
-    pub fn from(
-        vertices: Vec<Vec3>,
-        indices: Vec<u32>,
-        normals: Vec<Vec3>,
-        tangents: Vec<Vec4>,
-        material: Rc<RefCell<Material>>,
-        uvs: Vec<Vec2>,
-        global_transform: Mat4,
-        buffer: Subbuffer<MeshInfo>,
-    ) -> Self {
-        Self {
-            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
-            dirty: true,
-            vertices,
-            indices,
-            normals,
-            tangents,
-            material,
-            uvs,
-            global_transform,
-            buffer,
-        }
-    }
-}
-impl Dirtyable for Mesh {
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty
-    }
-
-    fn update(&mut self) {
-        self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.model_transform = self.global_transform.to_cols_array_2d();
-        mapping.material = self.material.borrow().id;
-    }
-}
-impl Debug for Mesh {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{MESH: # of vertices: {}, # of normals: {}, # of tangents: {}, # of indices: {}, material: {}, global transform: {}}}",
-            self.vertices.len(),
-            self.normals.len(),
-            self.tangents.len(),
-            self.indices.len(),
-            self.material.borrow().name.clone().unwrap_or_default(),
-            self.global_transform,
-        )
-    }
-}
-
-#[derive(Clone)]
-pub struct PointLight {
-    pub dirty: bool,
-    pub global_transform: Mat4,
-    pub index: usize,
-    pub color: Vec3,
-    pub intensity: f32,
-    pub range: Option<f32>,
-    pub buffer: Subbuffer<LightInfo>,
-    // TODO pass as set but fuck that right now
-    pub amount: u32,
-}
-impl Dirtyable for PointLight {
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty;
-    }
-
-    fn update(&mut self) {
-        info!("Updated light {}", self.index);
-        self.set_dirty(false);
-        let mut mapping = self.buffer.write().unwrap();
-        mapping.transform = self.global_transform.to_cols_array_2d();
-        mapping.color = self.color.to_array();
-        mapping.light = self.index as u32;
-        mapping.intensity = self.intensity;
-        mapping.amount = self.amount;
-        mapping.range = self.range.unwrap_or(1.0);
-    }
-}
-
-pub struct Model {
-    pub id: u32,
-    pub meshes: Vec<Mesh>,
-    pub children: Vec<Model>,
-    pub name: Option<Box<str>>,
-    pub local_transform: Mat4,
-    pub light: Option<PointLight>,
-}
-impl Model {
-    pub fn from(
-        meshes: Vec<Mesh>,
-        name: Option<Box<str>>,
-        children: Vec<Model>,
-        local_transform: Mat4,
-        light: Option<PointLight>,
-    ) -> Self {
-        Self {
-            id: rand::thread_rng().gen_range(0u32..1u32 << 31),
-            meshes,
-            name,
-            children,
-            local_transform,
-            light,
-        }
-    }
-
-    /**
-    Call this after changing the local_transform of a model, it updates the computed global_transforms of all meshes.
-    Sets dirty to true.
-    */
-    pub fn update_transforms(&mut self, parent: Mat4) {
-        for mesh in self.meshes.as_mut_slice() {
-            mesh.global_transform = parent * self.local_transform;
-            mesh.set_dirty(true);
-        }
-        for child in self.children.as_mut_slice() {
-            child.update_transforms(self.local_transform);
-        }
-        if let Some(ref mut light) = self.light {
-            light.global_transform = parent * self.local_transform;
-            light.set_dirty(true);
-        }
-    }
-}
-
-impl Debug for Model {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{MODEL: Name: {:?}, # of meshes: {}, local transform: {}, children: [{}]}}",
-            self.name,
-            self.meshes.len(),
-            self.local_transform,
-            self.children
-                .iter()
-                .map(|c| format!("\n - {:?}", c))
-                .collect::<String>(),
-        )
-    }
-}
-
-impl Clone for Model {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            meshes: self.meshes.clone(),
-            children: self.children.clone(),
-            name: self.name.clone(),
-            light: self.light.clone(),
-            local_transform: self.local_transform,
-        }
-    }
-}
+pub mod light;
+pub mod material;
+pub mod mesh;
+pub mod model;
 
 pub struct Scene {
     pub id: u32,
     pub models: Vec<Model>,
     pub name: Option<Box<str>>,
+    pub mesh_buffer: DynamicBufferMap<MeshInfo, u32>,
+    pub light_buffer: DynamicBufferArray<LightInfo>,
+    pub outline_width: u8,
+    pub outline_color: [u8; 3],
 }
 
 impl Scene {
-    pub fn from(models: Vec<Model>, name: Option<Box<str>>) -> Self {
+    pub fn from(
+        device: &Device,
+        queue: &Queue,
+        models: Vec<Model>,
+        material_manager: &MaterialManager,
+        name: Option<Box<str>>,
+        mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
+    ) -> Self {
+        let mut mesh_buffer = DynamicBufferMap::new(
+            device,
+            Some("Mesh Buffer".to_string()),
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mesh_bind_group_layout,
+        );
+        let mut light_buffer = DynamicBufferArray::new(
+            device,
+            Some("Light Buffer".to_string()),
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            light_bind_group_layout,
+        );
+        for model in models.iter() {
+            for mesh in model.meshes.iter() {
+                debug!("Adding mesh {} to meshbuffer", mesh.id);
+                mesh_buffer.push(
+                    device,
+                    queue,
+                    mesh.id,
+                    &[MeshInfo::from_mesh(mesh, material_manager)],
+                    mesh_bind_group_layout,
+                );
+            }
+            if let Some(light) = &model.light {
+                light_buffer.push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
+            }
+        }
+
         Self {
             id: rand::thread_rng().gen_range(0u32..1u32 << 31),
             models,
             name,
+            mesh_buffer,
+            light_buffer,
+            outline_width: 6,
+            outline_color: [255, 255, 255],
         }
     }
+
+    /*
+    Join another scene into this one, updating the mesh and light buffers accordingly. Note: you probably need to also update the light count in the camera.
+     */
+    pub fn join(
+        &mut self,
+        other: Scene,
+        device: &Device,
+        queue: &Queue,
+        material_manager: &MaterialManager,
+        mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
+    ) {
+        for model in other.models.iter() {
+            for mesh in model.meshes.iter() {
+                debug!(
+                    "Inserting mesh {} with material {:?} into meshbuffer",
+                    mesh.id, mesh.material
+                );
+                self.mesh_buffer.push(
+                    device,
+                    queue,
+                    mesh.id,
+                    &[MeshInfo::from_mesh(mesh, material_manager)],
+                    mesh_bind_group_layout,
+                );
+            }
+            if let Some(light) = &model.light {
+                self.light_buffer
+                    .push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
+            }
+        }
+        self.models.extend(other.models);
+        self.update_meshes(queue, material_manager);
+        self.update_lights(queue);
+    }
+
+    /*
+    Add a model to the scene, and update the mesh and light buffers accordingly. Note: you probably need to also update the light count in the camera.
+     */
+    pub fn add_model(
+        &mut self,
+        model: Model,
+        parent_id: Option<u32>,
+        device: &Device,
+        queue: &Queue,
+        material_manager: &MaterialManager,
+        mesh_bind_group_layout: &BindGroupLayout,
+        light_bind_group_layout: &BindGroupLayout,
+    ) {
+        for mesh in model.meshes.iter() {
+            debug!("Adding mesh {} to meshbuffer", mesh.id);
+            self.mesh_buffer.push(
+                device,
+                queue,
+                mesh.id,
+                &[MeshInfo::from_mesh(mesh, material_manager)],
+                mesh_bind_group_layout,
+            );
+        }
+        if let Some(light) = &model.light {
+            self.light_buffer
+                .push(device, queue, &[LightInfo::from(light)], light_bind_group_layout);
+        }
+        if let Some(parent_id) = parent_id {
+            self.models
+                .iter_mut()
+                .find(|m| m.id == parent_id)
+                .unwrap()
+                .children
+                .push(model);
+        } else {
+            self.models.push(model);
+        }
+        self.update_meshes(queue, material_manager);
+        self.update_lights(queue);
+    }
+    fn remove_model_deep(models: &mut Vec<Model>, model_id: u32) -> Option<Model> {
+        let mut found_model = None;
+        for (i, model) in models.iter_mut().enumerate() {
+            if model.id == model_id {
+                found_model = Some(i);
+                break;
+            }
+        }
+        if found_model.is_none() {
+            for model in models.iter_mut() {
+                if let Some(found_model) = Self::remove_model_deep(&mut model.children, model_id) {
+                    return Some(found_model);
+                }
+            }
+        }
+        Some(models.remove(found_model?))
+    }
+    pub fn remove_model(&mut self, model_id: u32, queue: &Queue, material_manager: &MaterialManager) -> Option<Model> {
+        let model = Self::remove_model_deep(&mut self.models, model_id);
+        self.update_meshes(queue, material_manager);
+        self.update_lights(queue);
+        model
+    }
+
     pub fn iter_meshes(&self) -> impl Iterator<Item = &Mesh> {
         self.models.iter().flat_map(|model| model.meshes.iter())
+    }
+
+    pub fn iter_models_deep(&self) -> impl Iterator<Item = &Model> {
+        self.models
+            .iter()
+            .chain(self.models.iter().flat_map(|model| model.children.iter_deep()))
+    }
+
+    pub fn update_meshes(&mut self, queue: &Queue, material_manager: &MaterialManager) {
+        for mesh in self
+            .models
+            .iter_mut()
+            .flat_map(|model| model.meshes.iter_mut())
+            .filter(|mesh| mesh.dirty())
+        {
+            debug!(
+                "Updating mesh {} with mesh info {:?}",
+                mesh.id,
+                MeshInfo::from_mesh(mesh, material_manager)
+            );
+            self.mesh_buffer
+                .update(queue, &mesh.id, MeshInfo::from_mesh(mesh, material_manager));
+            mesh.set_dirty(false);
+        }
+    }
+
+    pub fn update_lights(&mut self, queue: &Queue) {
+        for model in self
+            .models
+            .iter_mut()
+            .filter(|model| model.light.is_some() && model.light.as_ref().unwrap().dirty)
+        {
+            let light = model.light.as_mut().unwrap();
+            light.set_dirty(false);
+            self.light_buffer
+                .update(queue, light.index as u64, LightInfo::from(light)); // TODO is light.index what we want here?
+        }
+    }
+
+    fn get_model_rec_mut(parent: &mut Model, id: u32) -> Option<&mut Model> {
+        if parent.id == id {
+            return Some(parent);
+        }
+        for child in parent.children.iter_mut() {
+            let found = Self::get_model_rec_mut(child, id);
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    }
+    pub fn get_model_mut(&mut self, id: u32) -> Option<&mut Model> {
+        self.models
+            .iter_mut()
+            .map(|m| Self::get_model_rec_mut(m, id))
+            .find(|m| m.is_some())
+            .flatten()
+    }
+
+    fn get_mesh_rec_mut(model: &mut Model, id: u32) -> Option<&mut Mesh> {
+        if let Some(mesh) = model.meshes.iter_mut().find(|m| m.id == id) {
+            return Some(mesh);
+        }
+        for child in model.children.iter_mut() {
+            let found = Self::get_mesh_rec_mut(child, id);
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    }
+
+    pub fn get_mesh_mut(&mut self, id: u32) -> Option<&mut Mesh> {
+        self.models
+            .iter_mut()
+            .map(|m| Self::get_mesh_rec_mut(m, id))
+            .find(|m| m.is_some())
+            .flatten()
     }
 }
 
@@ -337,213 +269,91 @@ impl Debug for Scene {
             "{{SCENE: Name: {:?}, # of models: {}, models: [{}]}}",
             self.name,
             self.models.len(),
-            self.models
-                .iter()
-                .map(|c| format!("\n - {:?}", c))
-                .collect::<String>(),
+            self.models.iter().map(|c| format!("\n - {:?}", c)).collect::<String>(),
         )
     }
 }
 
-impl Clone for Scene {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            name: self.name.clone(),
-            models: self.models.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct TextureManager {
-    textures: Vec<Rc<Texture>>,
-}
-
-impl TextureManager {
-    pub fn new() -> Self {
-        Self { textures: vec![] }
-    }
-    pub fn add_texture(&mut self, mut texture: Texture) -> u32 {
-        let id = self.textures.len();
-        texture.id = id as u32;
-        self.textures.push(Rc::from(texture));
-        id as u32
-    }
-
-    pub fn get_texture(&self, id: u32) -> Rc<Texture> {
-        self.textures[id as usize].clone()
-    }
-
-    pub fn iter(&self) -> Iter<'_, Rc<Texture>> {
-        self.textures.iter()
-    }
-
-    pub fn get_view_sampler_array(
-        &self,
-        device: Arc<Device>,
-    ) -> Vec<(Arc<ImageView>, Arc<Sampler>)> {
-        //TODO Optimization: work out if we really need to enforce Vec everywhere or if slices are sufficient
-        self.iter()
-            .map(|t| {
-                (
-                    t.view.clone(),
-                    Sampler::new(device.clone(), SamplerCreateInfo::simple_repeat_linear())
-                        .unwrap(),
-                )
-            })
-            .collect()
-    }
-}
-
-#[derive(Default)]
-pub struct MaterialManager {
-    materials: Vec<Rc<RefCell<Material>>>,
-}
-
-impl MaterialManager {
-    pub fn new() -> Self {
-        Self { materials: vec![] }
-    }
-    pub fn add_material(&mut self, mut material: Material) -> u32 {
-        let id = self.materials.len();
-        material.id = id as u32;
-        self.materials.push(Rc::new(RefCell::new(material)));
-        id as u32
-    }
-
-    pub fn get_material(&self, id: u32) -> Rc<RefCell<Material>> {
-        self.materials[id as usize].clone()
-    }
-
-    pub fn get_default_material(&self) -> Rc<RefCell<Material>> {
-        self.materials[0].clone()
-    }
-
-    pub fn iter(&self) -> Iter<'_, Rc<RefCell<Material>>> {
-        self.materials.iter()
-    }
-
-    pub fn get_buffer_array(&self) -> Vec<Subbuffer<MaterialInfo>> {
-        self.iter().map(|mat| mat.borrow().buffer.clone()).collect()
-    }
-}
-
 pub struct World {
-    pub scenes: Vec<Scene>,
+    pub scenes: HashMap<usize, Scene>,
     pub active_scene: usize,
     pub materials: MaterialManager,
     pub textures: TextureManager,
 }
 
 impl World {
-    pub fn get_active_scene(&self) -> &Scene {
-        self.scenes.get(self.active_scene).unwrap()
+    pub fn get_active_scene(&self) -> Option<&Scene> {
+        self.scenes.get(&self.active_scene)
     }
 
-    pub fn get_active_scene_mut(&mut self) -> &mut Scene {
-        self.scenes.get_mut(self.active_scene).unwrap()
+    // TODO Optimization: the performance of this must be terrible!
+    pub fn pbr_meshes(&self) -> Option<impl Iterator<Item = &Mesh>> {
+        self.get_active_scene().map(|scene| {
+            scene
+                .iter_meshes()
+                .filter(|mesh| match *self.materials.get_material(mesh.material) {
+                    Material::Pbr(_) => true,
+                })
+        })
+    }
+
+    pub fn update_active_scene(&mut self, queue: &Queue) {
+        let Some(scene) = &mut self.scenes.get_mut(&self.active_scene) else {
+            return;
+        };
+        scene.update_meshes(queue, &self.materials);
+        scene.update_lights(queue);
     }
 }
 
-pub struct DrawableVertexInputs {
-    pub vertex_buffer: VertexInputBuffer,
-    pub normal_buffer: VertexInputBuffer,
-    pub uv_buffer: VertexInputBuffer,
-    pub tangent_buffer: VertexInputBuffer,
-    pub index_buffer: Subbuffer<[u32]>,
+// Data passed to the vertex shader as vertex inputs, contains the vertex positions, normals, tangents, UVs and indices for a mesh
+pub struct VertexInputs {
+    pub mesh_id: u32,
+    pub vertex_buffer: SizedBuffer,
+    pub index_buffer: SizedBuffer,
 }
 
-impl DrawableVertexInputs {
-    pub fn from_mesh(mesh: &Mesh, memory_allocator: Arc<StandardMemoryAllocator>) -> Self {
-        let vertex_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.vertices.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate vertex buffer");
+impl VertexInputs {
+    pub fn from_mesh(
+        mesh_id: u32,
+        vertices: &Vec<Vec3>,
+        normals: &Vec<Vec3>,
+        tangents: &Vec<Vec4>,
+        uvs: &Vec<Vec2>,
+        indices: &[u32],
+        device: &Device,
+    ) -> Self {
+        let mut buffers = vec![];
+        for (position, normal, tangent, uv) in izip!(vertices, normals, tangents, uvs) {
+            buffers.push(PbrVertex {
+                position: (*position).into(),
+                normal: (*normal).into(),
+                tangent: (*tangent).into(),
+                uv: (*uv).into(),
+            });
+        }
+        let vertex_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&buffers),
+            usage: BufferUsages::VERTEX,
+        });
 
-        let normal_buffer: Subbuffer<[[f32; 3]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.normals.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate normal buffer");
-
-        let tangent_buffer: Subbuffer<[[f32; 4]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.tangents.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate tangent buffer");
-
-        let uv_buffer: Subbuffer<[[f32; 2]]> = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.uvs.iter().map(|v| v.to_array()),
-        )
-        .expect("Couldn't allocate UV buffer");
-
-        let index_buffer = Buffer::from_iter(
-            memory_allocator,
-            BufferCreateInfo {
-                usage: BufferUsage::INDEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            mesh.indices.clone(),
-        )
-        .expect("Couldn't allocate index buffer");
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&indices.iter().map(|i| *i as u16).collect::<Vec<u16>>()),
+            usage: BufferUsages::INDEX,
+        });
 
         Self {
-            vertex_buffer: VertexInputBuffer {
-                subbuffer: vertex_buffer.into_bytes(),
-                vertex_count: mesh.vertices.len() as u32,
+            mesh_id,
+            vertex_buffer: SizedBuffer {
+                buffer: vertex_buffer,
+                count: vertices.len() as u32,
             },
-            normal_buffer: VertexInputBuffer {
-                subbuffer: normal_buffer.into_bytes(),
-                vertex_count: mesh.normals.len() as u32,
+            index_buffer: SizedBuffer {
+                buffer: index_buffer,
+                count: indices.len() as u32,
             },
-            tangent_buffer: VertexInputBuffer {
-                subbuffer: tangent_buffer.into_bytes(),
-                vertex_count: mesh.tangents.len() as u32,
-            },
-            uv_buffer: VertexInputBuffer {
-                subbuffer: uv_buffer.into_bytes(),
-                vertex_count: mesh.uvs.len() as u32,
-            },
-            index_buffer,
         }
     }
 }

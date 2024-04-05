@@ -1,13 +1,7 @@
-use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
-use lib::scene::PointLight;
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::str::FromStr;
+use std::path::Path;
 use std::{fs, io};
-use std::sync::Arc;
 
 use base64::{engine::general_purpose, Engine as _};
 use glam::{Mat4, Vec2, Vec3, Vec4};
@@ -15,18 +9,19 @@ use gltf::buffer::Data;
 use gltf::image::Source;
 use gltf::image::Source::View;
 use gltf::{Error, Node};
+use image::DynamicImage;
 use image::ImageFormat::{Jpeg, Png};
-use image::{DynamicImage, ImageFormat};
-use log::info;
-use vulkano::buffer::{Buffer, BufferCreateInfo, BufferUsage};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
-use vulkano::format::Format;
-use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
+use log::{debug, info};
+use wgpu::{BindGroupLayout, Device, Queue};
 
-use lib::scene::{Material, MaterialManager, Mesh, Model, Scene, Texture, TextureManager};
-use lib::shader_types::{LightInfo, MaterialInfo, MeshInfo};
-use lib::texture::create_texture;
-use lib::util::extract_image_to_file;
+use lib::managers::{MatId, MaterialManager, TextureManager};
+use lib::scene::light::PointLight;
+use lib::scene::material::PbrMaterial;
+use lib::scene::mesh::Mesh;
+use lib::scene::model::Model;
+use lib::scene::Scene;
+use lib::texture::{Texture, TextureKind};
+use lib::Material;
 
 fn read_to_end<P>(path: P) -> gltf::Result<Vec<u8>>
 where
@@ -88,31 +83,22 @@ impl<'a> Scheme<'a> {
         match Scheme::parse(uri) {
             // The path may be unused in the Scheme::Data case
             // Example: "uri" : "data:application/octet-stream;base64,wsVHPgA...."
-            Scheme::Data(_, base64) => general_purpose::STANDARD
-                .decode(base64)
-                .expect("Couldn't read b64"),
-            Scheme::File(path) if base.is_some() => {
-                read_to_end(path).expect("Couldn't read file at path")
+            Scheme::Data(_, base64) => general_purpose::STANDARD.decode(base64).expect("Couldn't read b64"),
+            Scheme::File(path) if base.is_some() => read_to_end(path).expect("Couldn't read file at path"),
+            Scheme::Relative(path) if base.is_some() => {
+                read_to_end(base.unwrap().join(&*path)).expect("Couldn't read image from relative path")
             }
-            Scheme::Relative(path) if base.is_some() => read_to_end(base.unwrap().join(&*path))
-                .expect("Couldn't read image from relative path"),
             Scheme::Unsupported => panic!("Unsupported scheme."),
             _ => panic!("External references aren't supported."),
         }
     }
 }
 
-fn load_image(
-    source: Source<'_>,
-    base: Option<&Path>,
-    buffer_data: &[Data],
-) -> (DynamicImage, u32, u32, Format, ImageFormat) {
-    let (decoded_image, file_format) = match source {
+fn load_image(source: Source<'_>, base: Option<&Path>, buffer_data: &[Data]) -> DynamicImage {
+    let (decoded_image, ..) = match source {
         Source::Uri { uri, mime_type } if base.is_some() => match Scheme::parse(uri) {
             Scheme::Data(Some(mime), base64) => {
-                let encoded_image = general_purpose::STANDARD
-                    .decode(base64)
-                    .expect("Couldn't parse b64");
+                let encoded_image = general_purpose::STANDARD.decode(base64).expect("Couldn't parse b64");
                 let encoded_format = match mime {
                     "image/png" => Png,
                     "image/jpeg" => Jpeg,
@@ -160,80 +146,17 @@ fn load_image(
         _ => panic!("Unsupported source"),
     };
 
-    let width = decoded_image.width();
-    let height = decoded_image.height();
-
-    match decoded_image {
-        DynamicImage::ImageLuma8(_) => {
-            (decoded_image, width, height, Format::R8_UNORM, file_format)
-        }
-        DynamicImage::ImageLumaA8(_) => (
-            decoded_image,
-            width,
-            height,
-            Format::R8G8_UNORM,
-            file_format,
-        ),
-        DynamicImage::ImageRgb8(_) => (
-            DynamicImage::from(decoded_image.to_rgba8()),
-            decoded_image.width(),
-            decoded_image.height(),
-            Format::R8G8B8A8_SRGB,
-            file_format,
-        ),
-        DynamicImage::ImageRgba8(_) => (
-            decoded_image,
-            width,
-            height,
-            Format::R8G8B8A8_SRGB,
-            file_format,
-        ),
-        DynamicImage::ImageLuma16(_) => {
-            (decoded_image, width, height, Format::R16_UINT, file_format)
-        }
-        DynamicImage::ImageLumaA16(_) => (
-            decoded_image,
-            width,
-            height,
-            Format::R16G16_UINT,
-            file_format,
-        ),
-        DynamicImage::ImageRgb16(_) => (
-            DynamicImage::from(decoded_image.to_rgba16()),
-            width,
-            height,
-            Format::R16G16B16A16_UINT,
-            file_format,
-        ),
-        DynamicImage::ImageRgba16(_) => (
-            decoded_image,
-            width,
-            height,
-            Format::R16G16B16A16_UINT,
-            file_format,
-        ),
-        DynamicImage::ImageRgb32F(_) => (
-            DynamicImage::from(decoded_image.to_rgba32f()),
-            width,
-            height,
-            Format::R32G32B32A32_SFLOAT,
-            file_format,
-        ),
-        DynamicImage::ImageRgba32F(_) => (
-            decoded_image,
-            width,
-            height,
-            Format::R32G32B32A32_SFLOAT,
-            file_format,
-        ),
-        _ => panic!("Unsupported input format."),
-    }
+    decoded_image
 }
 
 pub fn load_gltf(
     path: &Path,
-    allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    device: &Device,
+    queue: &Queue,
+    texture_bind_group_layout: &BindGroupLayout,
+    material_bind_group_layout: &BindGroupLayout,
+    mesh_bind_group_layout: &BindGroupLayout,
+    light_bind_group_layout: &BindGroupLayout,
     texture_manager: &mut TextureManager,
     material_manager: &mut MaterialManager,
 ) -> Vec<Scene> {
@@ -242,92 +165,54 @@ pub fn load_gltf(
     info!("GLTF has {:?} scenes", gltf.scenes().len());
 
     let mut scenes: Vec<Scene> = vec![];
-    let mut local_textures: Vec<Rc<Texture>> = vec![]; // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
-    let mut local_materials: Vec<Rc<RefCell<Material>>> = vec![]; // same thing with materials
-    let mut images: HashMap<u32, (DynamicImage, u32, u32, Format, ImageFormat)> =
-        HashMap::with_capacity(gltf.images().len());
+    let mut images: HashMap<u32, DynamicImage> = HashMap::with_capacity(gltf.images().len());
     for image in gltf.images() {
         images.insert(
             image.index() as u32,
             load_image(image.source(), Path::new(path).parent(), &buffers),
-        ); //TODO support relative paths
-    }
-
-    for gltf_texture in gltf.textures() {
-        let (img, width, height, format, file_format) = images
-            .remove(&(gltf_texture.source().index() as u32))
-            .unwrap();
-
-        let img_name = if let Some(name) = gltf_texture.name() {
-            format!(
-                "{}_{}",
-                Path::new(path)
-                    .file_name()
-                    .map(|s| s.to_str())
-                    .unwrap_or(Some(""))
-                    .unwrap_or("")
-                    .split('.')
-                    .next()
-                    .unwrap(),
-                name
-            ) //TODO fix this abomination
-        } else {
-            Path::new(path)
-                .file_name()
-                .map(|s| s.to_str())
-                .unwrap_or(Some(""))
-                .unwrap_or("")
-                .split('.')
-                .next()
-                .unwrap()
-                .to_string()
-        };
-
-        let path = extract_image_to_file(img_name.as_str(), &img, file_format);
-        let vk_texture = create_texture(
-            img.into_bytes(), //TODO: Texture load optimization: check if this clone is bad
-            format,
-            width,
-            height,
-            allocator.clone(),
-            cmd_buf_builder,
         );
-
-        let texture = Texture::from(
-            vk_texture,
-            gltf_texture.name().map(Box::from),
-            gltf_texture.index() as u32,
-            path,
-        );
-        let global_id = texture_manager.add_texture(texture);
-        local_textures.insert(gltf_texture.index(), texture_manager.get_texture(global_id));
     }
-    for gltf_mat in gltf.materials() {
-        if let Some(index) = gltf_mat.index() {
-            let mat = Material {
-                dirty: true, // must get updated upon start in order to prime the uniform
-                id: 0, // will get overwritten by call to MaterialManager::add_material() below
+    // because gltf texture IDs need not correspond to our global texture IDs, we have to keep track of them separately at first
+    let local_textures = gltf
+        .textures()
+        .map(|gltf_texture| {
+            let img = images.remove(&(gltf_texture.source().index() as u32)).unwrap();
+            let texture = Texture::from_image(device, queue, &img, gltf_texture.name(), TextureKind::Other)
+                .expect("Couldn't create texture");
+
+            let global_id = texture_manager.add_texture(texture);
+            (gltf_texture.index(), global_id)
+        })
+        .collect::<HashMap<_, _>>();
+
+    let local_materials = gltf
+        .materials()
+        .filter(|m| m.index().is_some())
+        .map(|gltf_mat| {
+            let index = gltf_mat.index().unwrap();
+            debug!(
+                "GLTF Material: {:?}",
+                gltf_mat.pbr_metallic_roughness().base_color_factor()
+            );
+            let mut mat = PbrMaterial {
+                // TODO only make initialization possible through material manager!
+                dirty: true,  // must get updated upon start in order to prime the uniform
+                shader_id: 0, // will get overwritten by call to MaterialManager::add_material() below
                 name: gltf_mat.name().map(Box::from),
                 albedo_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .base_color_texture()
                     .map(|t| t.texture().index())
-                    .map(|id| {
-                        local_textures
-                            .get(id)
-                            .expect("Couldn't find base texture")
-                            .clone()
-                    }),
+                    .map(|id| *local_textures.get(&id).expect("Couldn't find base texture")),
                 albedo: gltf_mat.pbr_metallic_roughness().base_color_factor().into(),
                 metallic_roughness_texture: gltf_mat
                     .pbr_metallic_roughness()
                     .metallic_roughness_texture()
                     .map(|t| t.texture().index())
                     .map(|id| {
-                        local_textures
-                            .get(id)
+                        *local_textures
+                            .get(&id)
                             .expect("Couldn't find metallic roughness texture")
-                            .clone()
                     }),
                 metallic_roughness_factors: Vec2::from((
                     gltf_mat.pbr_metallic_roughness().metallic_factor(),
@@ -336,91 +221,65 @@ pub fn load_gltf(
                 normal_texture: gltf_mat
                     .normal_texture()
                     .map(|t| t.texture().index())
-                    .map(|id| {
-                        local_textures
-                            .get(id)
-                            .expect("Couldn't find normal texture")
-                            .clone()
-                    }),
+                    .map(|id| *local_textures.get(&id).expect("Couldn't find normal texture")),
                 occlusion_texture: gltf_mat
                     .occlusion_texture()
                     .map(|t| t.texture().index())
-                    .map(|id| {
-                        local_textures
-                            .get(id)
-                            .expect("Couldn't find occlusion texture")
-                            .clone()
-                    }),
+                    .map(|id| *local_textures.get(&id).expect("Couldn't find occlusion texture")),
                 occlusion_factor: 1.0, // TODO: Impl: try to read strength from glTF
                 emissive_texture: gltf_mat
                     .emissive_texture()
                     .map(|t| t.texture().index())
-                    .map(|id| {
-                        local_textures
-                            .get(id)
-                            .expect("Couldn't find emissive texture")
-                            .clone()
-                    }),
+                    .map(|id| *local_textures.get(&id).expect("Couldn't find emissive texture")),
                 emissive_factors: gltf_mat.emissive_factor().into(),
-                buffer: Buffer::from_data(
-                    allocator.clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    MaterialInfo::default(),
-                )
-                .expect("Couldn't allocate MaterialInfo uniform"),
-            };
-            let global_id = material_manager.add_material(mat);
-            local_materials.insert(index, material_manager.get_material(global_id));
-        }
-    }
-
+                texture_bind_group: None,
+            }; // TODO move this into a function (automatically init texture_bind_group, buffer and MaterialInfo)
+            mat.create_texture_bind_group(device, texture_bind_group_layout, texture_manager);
+            let global_id =
+                material_manager.add_material(Material::Pbr(mat), device, queue, material_bind_group_layout);
+            (index, global_id)
+        })
+        .collect::<HashMap<_, _>>();
+    let mut neutral = Mat4::IDENTITY;
+    neutral.y_axis *= -1.0;
     for scene in gltf.scenes() {
         info!("Scene has {:?} nodes", scene.nodes().len());
         let mut num_lights = 0;
-        let mut models: Vec<Model> = scene
+        let models: Vec<Model> = scene
             .nodes()
             .map(|n| {
                 load_node(
                     &n,
                     &buffers,
                     &local_materials,
-                    allocator.clone(),
-                    material_manager.get_default_material(),
-                    Mat4::default(),
+                    material_manager,
+                    neutral,
                     &mut num_lights,
+                    device,
                 )
             })
             .collect();
-
-        models = models
-            .into_iter()
-            .map(|mut model| {
-                if let Some(ref mut light) = model.light {
-                    light.amount = num_lights;
-                }
-                model
-            })
-            .collect();
-        scenes.push(Scene::from(models, scene.name().map(Box::from)));
+        scenes.push(Scene::from(
+            device,
+            queue,
+            models,
+            material_manager,
+            scene.name().map(Box::from),
+            mesh_bind_group_layout,
+            light_bind_group_layout,
+        ));
     }
     scenes
 }
 
 fn load_node(
     node: &Node,
-    buffers: &Vec<Data>,
-    materials: &Vec<Rc<RefCell<Material>>>,
-    allocator: Arc<StandardMemoryAllocator>,
-    default_material: Rc<RefCell<Material>>,
+    buffers: &[Data],
+    materials: &HashMap<usize, MatId>,
+    material_manager: &MaterialManager,
     parent_transform: Mat4,
     num_lights: &mut u32,
+    device: &Device,
 ) -> Model {
     let mut children: Vec<Model> = vec![];
     let local_transform = Mat4::from_cols_array_2d(&node.transform().matrix());
@@ -429,14 +288,13 @@ fn load_node(
             &child,
             buffers,
             materials,
-            allocator.clone(),
-            default_material.clone(),
+            material_manager,
             parent_transform * local_transform,
             num_lights,
+            device,
         ));
     }
-    let mut global_transform = parent_transform * local_transform;
-    global_transform.y_axis *= -1.0;
+    let global_transform = parent_transform * local_transform;
 
     let mut meshes: Vec<Mesh> = vec![];
     if let Some(x) = node.mesh() {
@@ -449,7 +307,7 @@ fn load_node(
             let mut uvs: Vec<Vec2> = vec![];
             let reader = gltf_primitive.reader(|buffer| Some(&buffers[buffer.index()]));
             if let Some(iter) = reader.read_tex_coords(0) {
-                uvs = iter.into_f32().map(Vec2::from).collect();
+                uvs = iter.into_f32().map(|[u, v]| Vec2::from((u, v))).collect();
             }
             if let Some(iter) = reader.read_positions() {
                 positions = iter.map(Vec3::from).collect();
@@ -463,57 +321,32 @@ fn load_node(
             if let Some(iter) = reader.read_tangents() {
                 tangents = iter.map(Vec4::from).collect();
             }
-
             let mat = gltf_primitive
                 .material()
                 .index()
-                .map(|i| materials.get(i).expect("Couldn't find material").clone());
+                .map(|i| *materials.get(&i).expect("Couldn't find material"));
             meshes.push(Mesh::from(
                 positions,
                 indices,
                 normals,
                 tangents,
-                mat.unwrap_or(default_material.clone()),
+                mat.unwrap_or(material_manager.default_material),
                 uvs,
                 global_transform,
-                Buffer::from_data(
-                    allocator.clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    MeshInfo::from_data(0, Mat4::default().to_cols_array_2d()),
-                )
-                .expect("Couldn't allocate MeshInfo uniform"),
+                device,
             ));
         }
     }
 
-    let light = node.light().map(|light| PointLight {
-        dirty: true,
-        global_transform: parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
-        index: light.index(),
-        color: Vec3::from(light.color()),
-        intensity: light.intensity(),
-        range: light.range(),
-        amount: *num_lights,
-        buffer: Buffer::from_data(
-            allocator,
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE| MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            LightInfo::default(),
+    let light = node.light().map(|light| {
+        PointLight::new(
+            parent_transform * Mat4::from_cols_array_2d(&node.transform().matrix()),
+            light.index(),
+            Vec3::from(light.color()),
+            light.intensity(),
+            light.range(),
+            device,
         )
-        .expect("Couldn't allocate LightInfo buffer"),
     });
 
     if let Some(ref _light) = light {
@@ -521,58 +354,4 @@ fn load_node(
     }
 
     Model::from(meshes, node.name().map(Box::from), children, local_transform, light)
-}
-
-/// loads the hardcoded exr
-fn load_exr(
-    allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    tex_i: u32,
-) -> Texture {
-    let img = image::open(Path::new("assets/EXRs/little_paris_eiffel_tower_2k.exr"))
-        .expect("Couldn't load Exr.");
-    let exr_textureview = create_texture(
-        DynamicImage::from(img.to_rgba32f()).into_bytes(),
-        Format::R32G32B32A32_SFLOAT,
-        img.width(),
-        img.height(),
-        allocator,
-        cmd_buf_builder,
-    );
-    let name = "EXR".to_string().into_boxed_str();
-    Texture::from(
-        exr_textureview,
-        Some(name),
-        tex_i,
-        PathBuf::from_str("assets/EXRs/little_paris_eiffel_tower_2k.exr").unwrap(),
-    )
-}
-
-pub fn load_texture(
-    allocator: Arc<StandardMemoryAllocator>,
-    cmd_buf_builder:  &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    path: &Path,
-    index: u32,
-) -> Texture {
-    let img =
-        image::open(path).expect(format!("Couldn't load texture from path {:?}.", path).as_str());
-    let width = img.width();
-    let height = img.height();
-
-    let texture_view = create_texture(
-        DynamicImage::from(img.to_rgba8()).into_bytes(),
-        Format::R8G8B8A8_UNORM,
-        width,
-        height,
-        allocator,
-        cmd_buf_builder,
-    );
-    let mut path_buf = PathBuf::new();
-    path_buf.push(path);
-    Texture::from(
-        texture_view,
-        Some(path.to_str().unwrap().to_string().into_boxed_str()),
-        index,
-        PathBuf::from_str(path.to_str().unwrap()).unwrap(),
-    )
 }

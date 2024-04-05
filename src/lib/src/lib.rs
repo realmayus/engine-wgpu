@@ -1,5 +1,9 @@
-use vulkano::buffer::Subbuffer;
+use crate::scene::material::PbrMaterial;
+use wgpu::Buffer;
 
+pub mod buffer_array;
+mod geometry;
+pub mod managers;
 pub mod scene;
 pub mod scene_serde;
 pub mod shader_types;
@@ -16,14 +20,39 @@ pub trait Dirtyable {
     Sets object due for update
     */
     fn set_dirty(&mut self, dirty: bool);
-
-    /**
-    Call to update buffers. Sets dirty to false.
-    */
-    fn update(&mut self);
 }
 
-pub struct VertexInputBuffer {
-    pub subbuffer: Subbuffer<[u8]>,
-    pub vertex_count: u32,
+// A buffer that also stores the number of elements in it.
+pub struct SizedBuffer {
+    pub buffer: Buffer,
+    pub count: u32,
+}
+
+pub enum Material {
+    Pbr(PbrMaterial),
+}
+impl Material {
+    pub fn shader_id(&self) -> u32 {
+        match self {
+            Material::Pbr(pbr) => pbr.shader_id,
+        }
+    }
+
+    pub fn set_shader_id(&mut self, id: u32) {
+        match self {
+            Material::Pbr(pbr) => pbr.shader_id = id,
+        }
+    }
+
+    pub fn name(&self) -> &Option<Box<str>> {
+        match self {
+            Material::Pbr(pbr) => &pbr.name,
+        }
+    }
+
+    pub fn dirty(&self) -> bool {
+        match self {
+            Material::Pbr(pbr) => pbr.dirty(),
+        }
+    }
 }

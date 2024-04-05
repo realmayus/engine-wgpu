@@ -1,0 +1,22 @@
+[package]
+name = "example"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+engine = { path = ".." }
+pollster = "0.3.0"
+egui = "0.24.1"
+env_logger = "0.11.2"
+rfd = "0.14.0"
+glam = "0.25.0"
+flume = "0.11.0"
+log = "0.4.20"
+
+[profile.dev.package.engine]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3
